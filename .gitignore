@@ -112,6 +112,9 @@
 !scripts/ratelimit_check.sh
 !scripts/switch_cli.sh
 !scripts/dashboard-viewer.py
+!scripts/log_timing_event.sh
+!scripts/model_update_check.sh
+!scripts/analyze_timing.py
 
 # Queue directories
 !queue/
@@ -137,6 +140,7 @@ logs/
 !docs/philosophy.md
 !docs/vps_pr118_verification_plan.md
 !docs/my_setup.md
+!docs/loop_engineering_design.md
 
 # Screenshots (masked — no secrets)
 !images/
