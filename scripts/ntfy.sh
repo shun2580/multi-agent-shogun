@@ -21,5 +21,28 @@ while IFS= read -r line; do
     [ -n "$line" ] && AUTH_ARGS+=("$line")
 done < <(ntfy_get_auth_args "$SCRIPT_DIR/config/ntfy_auth.env")
 
-# shellcheck disable=SC2086
-curl -s "${AUTH_ARGS[@]}" -H "Tags: outbound" -d "$1" "https://ntfy.sh/$TOPIC" > /dev/null
+LOG_FILE="$SCRIPT_DIR/logs/ntfy.log"
+mkdir -p "$SCRIPT_DIR/logs"
+TIMESTAMP=$(date '+%Y-%m-%dT%H:%M:%S')
+MSG_SUMMARY="${1:0:80}"
+
+HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+    "${AUTH_ARGS[@]}" \
+    -H "Tags: outbound" \
+    -d "$1" \
+    "https://ntfy.sh/$TOPIC" 2>/dev/null)
+CURL_EXIT=$?
+
+if [ $CURL_EXIT -ne 0 ]; then
+    echo "[$TIMESTAMP] FAIL (curl error=$CURL_EXIT) topic=$TOPIC msg=$MSG_SUMMARY" >> "$LOG_FILE"
+    echo "ntfy送信失敗: curl exit=$CURL_EXIT" >&2
+    exit 1
+fi
+
+if [[ "$HTTP_STATUS" != 2* ]]; then
+    echo "[$TIMESTAMP] FAIL (HTTP $HTTP_STATUS) topic=$TOPIC msg=$MSG_SUMMARY" >> "$LOG_FILE"
+    echo "ntfy送信失敗: HTTP status=$HTTP_STATUS" >&2
+    exit 1
+fi
+
+echo "[$TIMESTAMP] OK (HTTP $HTTP_STATUS) topic=$TOPIC msg=$MSG_SUMMARY" >> "$LOG_FILE"

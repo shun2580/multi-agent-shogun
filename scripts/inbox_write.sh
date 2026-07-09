@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # inbox_write.sh — メールボックスへのメッセージ書き込み（排他ロック付き）
-# Usage: bash scripts/inbox_write.sh <target_agent> <content> <type> <from>
+# Usage: bash scripts/inbox_write.sh <target_agent> <content> <type> <from> [--cmd_id=X] [--task_id=Y] [--qc_result=pass|fail]
 # Example: bash scripts/inbox_write.sh karo "足軽5号、任務完了" report_received ashigaru5
+# Example (明示引数): bash scripts/inbox_write.sh karo "足軽5号、任務完了" report_received ashigaru5 --cmd_id=cmd_054 --task_id=subtask_054b2
+# Example (QC結果付き): bash scripts/inbox_write.sh karo "足軽5号QC完了" report_received gunshi --cmd_id=cmd_054 --task_id=subtask_054b2 --qc_result=pass
 
 set -e
 
@@ -10,15 +12,56 @@ TARGET="$1"
 CONTENT="$2"
 TYPE="$3"
 FROM="$4"
+shift 4 2>/dev/null || true
 
 INBOX="$SCRIPT_DIR/queue/inbox/${TARGET}.yaml"
 LOCKFILE="${INBOX}.lock"
 
 # Validate arguments
 if [ -z "$TARGET" ] || [ -z "$CONTENT" ] || [ -z "$TYPE" ] || [ -z "$FROM" ]; then
-    echo "Usage: inbox_write.sh <target_agent> <content> <type> <from>" >&2
+    echo "Usage: inbox_write.sh <target_agent> <content> <type> <from> [--cmd_id=X] [--task_id=Y] [--qc_result=pass|fail]" >&2
     exit 1
 fi
+
+# Optional explicit --cmd_id=/--task_id= args (fix2: preferred over CONTENT regex extraction)
+_ARG_CMD_ID=""
+_ARG_TASK_ID=""
+_ARG_REDO_OF=""
+_ARG_QC_RESULT=""
+for arg in "$@"; do
+    case "$arg" in
+        --cmd_id=*) _ARG_CMD_ID="${arg#--cmd_id=}" ;;
+        --task_id=*) _ARG_TASK_ID="${arg#--task_id=}" ;;
+        --redo_of=*) _ARG_REDO_OF="${arg#--redo_of=}" ;;
+        --qc_result=*) _ARG_QC_RESULT="${arg#--qc_result=}" ;;
+    esac
+done
+
+# Fix5 (cmd_072): resolve cmd_id/task_id BEFORE writing the message object,
+# so they can be embedded as fields on the message itself. Previously these
+# were computed only after the write succeeded (for log_timing_event.sh), so
+# inbox_watcher.sh had no choice but to regex-parse CONTENT for agent_started
+# events — which fails because task_assigned notification text never
+# contains subtask_id. Calculation logic is unchanged, only moved earlier.
+_TIMING_EVENT=""
+if [ -n "$_ARG_REDO_OF" ]; then
+    _TIMING_EVENT="redo_dispatched"
+else
+    case "$TYPE" in
+        cmd_new) _TIMING_EVENT="cmd_received" ;;
+        task_assigned) _TIMING_EVENT="assigned" ;;
+        report_received) _TIMING_EVENT="report_submitted" ;;
+    esac
+fi
+_TIMING_CMD_ID="${_ARG_CMD_ID:-$(printf '%s' "$CONTENT" | grep -oE 'cmd_[0-9]+[a-zA-Z]*' | head -1)}"
+_TIMING_TASK_ID="${_ARG_TASK_ID:-$(printf '%s' "$CONTENT" | grep -oE 'subtask_[0-9]+[a-zA-Z0-9]*' | head -1)}"
+
+# Python literals for embedding into the message object (null when empty,
+# matching log_timing_event.sh's none_if_empty() convention).
+_PY_CMD_ID="None"
+[ -n "$_TIMING_CMD_ID" ] && _PY_CMD_ID="'''$_TIMING_CMD_ID'''"
+_PY_TASK_ID="None"
+[ -n "$_TIMING_TASK_ID" ] && _PY_TASK_ID="'''$_TIMING_TASK_ID'''"
 
 # Self-send guard: reject messages where sender == target
 # Exception: clear_command type is allowed for self-send (karo self-/clear use case)
@@ -94,7 +137,9 @@ try:
         'timestamp': '$TIMESTAMP',
         'type': '$TYPE',
         'content': '''$CONTENT''',
-        'read': False
+        'read': False,
+        'cmd_id': $_PY_CMD_ID,
+        'task_id': $_PY_TASK_ID
     }
     data['messages'].append(new_msg)
 
@@ -127,7 +172,34 @@ except Exception as e:
         fi
         _release_lock
         trap - EXIT
-        [ $STATUS -eq 0 ] && exit 0
+        if [ $STATUS -eq 0 ]; then
+            if [ -n "$_TIMING_EVENT" ]; then
+                _TIMING_AGENT="$TARGET"
+                [ "$_TIMING_EVENT" = "report_submitted" ] && _TIMING_AGENT="$FROM"
+                # Fix4 (cmd_068): warn when neither explicit arg nor CONTENT regex
+                # resolved cmd_id, so a missed --cmd_id= is visible immediately
+                # instead of surfacing as a 92%-unmeasurable E2E result later.
+                if [ -z "$_TIMING_CMD_ID" ] && [ "$_TIMING_EVENT" != "agent_started" ]; then
+                    echo "[inbox_write] WARNING: cmd_id not resolved for timing event '$_TIMING_EVENT' (pass --cmd_id= explicitly)" >&2
+                fi
+                bash "${SCRIPT_DIR}/scripts/log_timing_event.sh" "$_TIMING_EVENT" "$_TIMING_CMD_ID" "$_TIMING_TASK_ID" "$_TIMING_AGENT" --redo_of="$_ARG_REDO_OF" --qc_result="$_ARG_QC_RESULT" --source=inbox_write.sh 2>/dev/null || true
+                if [ "$_TIMING_EVENT" = "redo_dispatched" ]; then
+                    _ESC_RESULT=$(bash "${SCRIPT_DIR}/scripts/check_event_escalation.sh" \
+                        "$_ARG_REDO_OF" redo_dispatched redo_of \
+                        --threshold="${REDO_ESCALATION_THRESHOLD:-2}" \
+                        --cooldown="${REDO_ESCALATION_COOLDOWN_MIN:-30}" \
+                        --jsonl="${SCRIPT_DIR}/logs/timing_events.jsonl" 2>/dev/null || echo "ERROR")
+                    case "$_ESC_RESULT" in
+                        FIRE:*)
+                            _ESC_COUNT="${_ESC_RESULT#FIRE:}"
+                            bash "${SCRIPT_DIR}/scripts/ntfy.sh" "🚨 redo${_ESC_COUNT}回到達: ${_ARG_REDO_OF} が${_ESC_COUNT}回redoされても未解決。殿の判断を仰ぐ" 2>/dev/null || true
+                            bash "${SCRIPT_DIR}/scripts/log_timing_event.sh" redo_dispatched_escalated "" "$_ARG_REDO_OF" "" --redo_of="$_ARG_REDO_OF" --source=inbox_write.sh 2>/dev/null || true
+                            ;;
+                    esac
+                fi
+            fi
+            exit 0
+        fi
         attempt=$((attempt + 1))
         [ $attempt -lt $max_attempts ] && sleep 1
     else

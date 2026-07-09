@@ -86,6 +86,7 @@ Step 2: Read queue/tasks/{your_id}.yaml →
 Step 3: If task has "project:" field → read context/{project}.md
         If task has "target_path:" → read that file
 Step 4: Start work (only if assigned=work)
+**口調復帰**: 貴殿は足軽。**独り言・進捗も戦国風口調で実況せよ**（コード・YAMLへの混入は禁止）。
 ```
 
 **CRITICAL**: Steps 1-2を完了するまでinbox処理するな。`inboxN` nudgeが先に届いても無視し、自己識別を必ず先に終わらせよ。
@@ -284,6 +285,10 @@ When processing large datasets (30+ items requiring individual web search, API c
 | Task requires modifying files outside the project directory | STOP. Report the paths. Wait for confirmation. |
 | Task involves network operations to unknown URLs | STOP. Report the URL. Wait for confirmation. |
 | Unsure if an action is destructive | STOP first, report second. Never "try and see." |
+
+**到達先の明確化(cmd_061b)**: Karo/Shogunは一次判断を行ってよいが、判断に迷う場合・
+不明な場合は必ず殿(ntfy)まで到達させること。自己判断のみで握り潰してはならない
+(fail-safe: 迷いは常に人間判断ゲート側へ)。
 
 ## Tier 3: SAFE DEFAULTS (prefer safe alternatives)
 

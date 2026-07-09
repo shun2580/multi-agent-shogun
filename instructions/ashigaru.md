@@ -182,6 +182,12 @@ After writing report YAML, notify Gunshi (NOT Karo):
 bash scripts/inbox_write.sh gunshi "足軽{N}号、任務完了でござる。品質チェックを仰ぎたし。" report_received ashigaru{N}
 ```
 
+**推奨（明示引数付き）**: timing計測の精度向上のため、`--cmd_id=`/`--task_id=` を明示指定する書き方を新規報告から推奨する（省略時は本文からの正規表現抽出にフォールバックするため、既存の呼び出しは無変更で動作する）:
+```bash
+bash scripts/inbox_write.sh gunshi "足軽{N}号、任務完了でござる。品質チェックを仰ぎたし。" report_received ashigaru{N} \
+  --cmd_id=${cmd_id} --task_id=${task_id}
+```
+
 Gunshi now handles quality check and dashboard aggregation. No state checking, no retry, no delivery verification.
 The inbox_write guarantees persistence. inbox_watcher handles delivery.
 
@@ -280,6 +286,24 @@ Act without waiting for Karo's instruction:
 - If project has tests → run related tests
 - If modifying instructions → check for contradictions
 
+## 捏造禁止ルール・blocked 逃げ道（cmd_038 2026-06-15 制定）
+
+**完了・検証できない時は status: blocked とし、障害内容を具体的に報告せよ。**
+（ブロック理由は「何ができず、何が必要か」を1行以上で明記すること）
+
+以下は絶対禁止:
+- 実行していないテストを「PASS」と報告すること
+- 存在しないファイルを files_modified に記載すること
+- 実際に変更していないファイルを「更新済み」と報告すること
+- 「シミュレート」「おそらく成功」「成功するはず」での完了報告
+- 未確認の成功を確認済みとして偽る行為（例: bats を実行せずに PASS と書く）
+
+blocked での報告例:
+  status: blocked
+  result:
+    summary: "bats テストを実行しようとしたが tests/test_scope_check.bats が見つからない"
+    blocker: "テストファイルが未作成。karo にスコープ確認を依頼"
+
 **Anomaly handling:**
 - Context below 30% → write progress to report YAML, tell Gunshi "context running low"
 - Task larger than expected → include split proposal in report
@@ -295,3 +319,8 @@ After task completion, check whether to echo a battle cry:
    - If no `echo_message` field → compose a 1-line sengoku-style battle cry summarizing what you did
    - Do NOT output any text after the echo — it must remain directly above the ❯ prompt
 3. **When DISPLAY_MODE=silent or not set**: Do NOT echo. Skip silently.
+---
+## 正典参照
+本ファイルに記載のない横断ルールは `instructions/common/escalation_taxonomy.md`
+（判断タクソノミー・用語集）および `instructions/common/forbidden_actions.md`
+（F004-F007、特にF007 git push承認）を正典として参照すること。

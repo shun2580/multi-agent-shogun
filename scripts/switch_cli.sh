@@ -425,5 +425,14 @@ tmux send-keys -t "$PANE_TARGET" Enter 2>/dev/null || true
 DISPLAY_NAME=$(get_model_display_name "$AGENT_ID")
 update_pane_metadata "$PANE_TARGET" "$TARGET_CLI_TYPE" "$DISPLAY_NAME"
 
+# Step 7: inbox_watcher 再起動（CLI切替後に stale watcher を停止 → supervisor が新規起動）
+# stale watcher が古い CLI 引数で動き続けると CLI drift ループが発生する
+log "Restarting inbox_watcher for ${AGENT_ID} (old watcher will be stopped, supervisor auto-restarts with new cli=${TARGET_CLI_TYPE})"
+pkill -f "scripts/inbox_watcher.sh ${AGENT_ID} " 2>/dev/null || true
+sleep 2
+log_file="${PROJECT_ROOT}/logs/inbox_watcher_${AGENT_ID}.log"
+nohup bash "${PROJECT_ROOT}/scripts/inbox_watcher.sh" "${AGENT_ID}" "${PANE_TARGET}" "${TARGET_CLI_TYPE}" >> "${log_file}" 2>&1 &
+log "New inbox_watcher started for ${AGENT_ID} with cli=${TARGET_CLI_TYPE}"
+
 log "=== CLI switch complete: ${AGENT_ID} → ${TARGET_CLI_TYPE}/${TARGET_MODEL} (${DISPLAY_NAME}) ==="
 echo "OK: ${AGENT_ID} → ${TARGET_CLI_TYPE}/${TARGET_MODEL}"

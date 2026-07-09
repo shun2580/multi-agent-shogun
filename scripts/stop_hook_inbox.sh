@@ -158,7 +158,7 @@ fi
 # and send a nudge, which is the correct behavior — the agent IS idle
 # between the block response and the next turn.
 # The flag will be removed naturally when the agent starts its next turn
-# (Claude Code removes it via the busy detection mechanism).
+# (PreToolUse hook scripts/pretooluse_clear_idle.sh removes it).
 
 # ─── Extract unread message summaries and build block JSON ───
 # Use a single python3 call with env vars to avoid shell quoting issues.

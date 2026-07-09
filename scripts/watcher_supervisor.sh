@@ -87,6 +87,11 @@ if ! bash "$SCRIPT_DIR/scripts/preflight_check.sh"; then
     exit 1
 fi
 
+# tmux bell抑制: multiagent:agents window (ashigaru/gunshi常駐) の bell 中継を止める。
+# 殿が手動操作する shogun/karo pane (multiagent:0 等) は対象外。
+# 冪等: monitor-bell off は状態設定のため何度実行しても副作用なし。
+tmux set-option -w -t multiagent:agents monitor-bell off 2>/dev/null || true
+
 while true; do
     start_all_watchers
     sleep 5

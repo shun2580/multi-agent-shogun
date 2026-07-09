@@ -1,0 +1,5 @@
+report:
+  task_id: subtask_fake
+  files_modified: []
+  tests_status: all_pass
+  test_command: "bats tests/test_scope_check_nonexistent.bats"

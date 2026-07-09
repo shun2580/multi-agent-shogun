@@ -117,6 +117,7 @@ fi
 # Time-based escalation: track how long unread messages have been waiting
 FIRST_UNREAD_SEEN=${FIRST_UNREAD_SEEN:-0}
 LAST_CLEAR_TS=${LAST_CLEAR_TS:-0}
+LAST_ASSIGNMENT_TS=${LAST_ASSIGNMENT_TS:-0}
 ESCALATE_PHASE1=${ESCALATE_PHASE1:-120}
 ESCALATE_PHASE2=${ESCALATE_PHASE2:-240}
 ESCALATE_COOLDOWN=${ESCALATE_COOLDOWN:-300}
@@ -135,6 +136,57 @@ HEAL_COOLDOWN_SEC=${HEAL_COOLDOWN_SEC:-120}
 DEAD_CLI_STREAK=0
 LAST_HEAL_TS=0
 
+# ─── Auto-heal escalation config (cmd_052d) ───
+# config/settings.yaml `auto_heal:` block, read via python3+yaml (this script's
+# existing convention for structured config; matches switch_cli.sh/inbox_write.sh).
+# Env vars override for ops/testing without editing settings.yaml.
+_read_auto_heal_setting() {
+    local key="$1" default="$2"
+    "$SCRIPT_DIR/.venv/bin/python3" -c "
+import yaml
+try:
+    with open('${SCRIPT_DIR}/config/settings.yaml', encoding='utf-8') as f:
+        data = yaml.safe_load(f) or {}
+    v = (data.get('auto_heal') or {}).get('$key')
+    if v is None:
+        v = '$default'
+    if isinstance(v, bool):
+        v = str(v).lower()
+    print(v)
+except Exception:
+    print('$default')
+" 2>/dev/null
+}
+AUTO_HEAL_SILENT_ENABLED=${AUTO_HEAL_SILENT_ENABLED:-$(_read_auto_heal_setting silent_heal_enabled true)}
+AUTO_HEAL_ESCALATION_WINDOW_MIN=${AUTO_HEAL_ESCALATION_WINDOW_MIN:-$(_read_auto_heal_setting escalation_window_minutes 10)}
+AUTO_HEAL_ESCALATION_THRESHOLD=${AUTO_HEAL_ESCALATION_THRESHOLD:-$(_read_auto_heal_setting escalation_threshold_count 3)}
+AUTO_HEAL_ESCALATION_COOLDOWN_MIN=${AUTO_HEAL_ESCALATION_COOLDOWN_MIN:-$(_read_auto_heal_setting cooldown_after_escalation_minutes 30)}
+
+# ─── Assignment grace window config (cmd_066) ───
+# config/settings.yaml `assignment_grace:` block. Right after a nudge/task
+# assignment is delivered, the PreToolUse hook (scripts/pretooluse_clear_idle.sh)
+# needs a moment to fire before the idle flag is actually cleared. This grace
+# window holds the escalation age at 0 during that lag so a real Phase1/2/3
+# false-positive isn't triggered on an agent that just started working.
+_read_assignment_grace_setting() {
+    local key="$1" default="$2"
+    "$SCRIPT_DIR/.venv/bin/python3" -c "
+import yaml
+try:
+    with open('${SCRIPT_DIR}/config/settings.yaml', encoding='utf-8') as f:
+        data = yaml.safe_load(f) or {}
+    v = (data.get('assignment_grace') or {}).get('$key')
+    if v is None:
+        v = '$default'
+    if isinstance(v, bool):
+        v = str(v).lower()
+    print(v)
+except Exception:
+    print('$default')
+" 2>/dev/null
+}
+ASSIGNMENT_GRACE_SECONDS=${ASSIGNMENT_GRACE_SECONDS:-$(_read_assignment_grace_setting after_nudge_seconds 30)}
+
 # ─── Nudge throttle ───
 # Avoid spamming the same "inboxN" into the pane every timeout tick.
 LAST_NUDGE_TS=${LAST_NUDGE_TS:-0}
@@ -148,6 +200,45 @@ NUDGE_COOLDOWN_SEC_OPENCODE=${NUDGE_COOLDOWN_SEC_OPENCODE:-300}
 reset_nudge_throttle() {
     LAST_NUDGE_TS=0
     LAST_NUDGE_COUNT=""
+}
+
+# ─── Timing hook: agent_started event (cmd_054c, cmd_id/task_id fix: cmd_068) ───
+# Fires alongside the "All messages read — escalation reset" log lines, i.e.
+# near the moment the agent has finished processing its inbox. Callers extract
+# cmd_id/task_id from the content of the most-recently-read message (via
+# extract_timing_ids_from_content) and pass them in; on extraction failure
+# they remain empty (log_timing_event.sh normalizes empty to null — same
+# fail-safe fallback as inbox_write.sh's CONTENT regex extraction).
+# Fire-and-forget: failure here must never affect the main watcher loop.
+log_agent_started_event() {
+    local cmd_id="${1:-}"
+    local task_id="${2:-}"
+    bash "${SCRIPT_DIR}/scripts/log_timing_event.sh" agent_started "$cmd_id" "$task_id" "$AGENT_ID" --source=inbox_watcher.sh 2>/dev/null || true
+}
+
+# Extract cmd_id/task_id from a message content string, using the same
+# regex as inbox_write.sh's CONTENT fallback (cmd_068 Fix1). Prints
+# "cmd_id<TAB>task_id" (either half may be empty on no-match).
+extract_timing_ids_from_content() {
+    local content="$1"
+    local cmd_id task_id
+    cmd_id=$(printf '%s' "$content" | grep -oE 'cmd_[0-9]+[a-zA-Z]*' | head -1)
+    task_id=$(printf '%s' "$content" | grep -oE 'subtask_[0-9]+[a-zA-Z0-9]*' | head -1)
+    printf '%s\t%s' "$cmd_id" "$task_id"
+}
+
+# Resolve cmd_id/task_id for the agent_started event (cmd_072 Fix5). Prefers
+# the message object's own cmd_id/task_id fields (set by inbox_write.sh at
+# write time — no ambiguity, no regex). Falls back to extract_timing_ids_from_content
+# only when both fields are absent, which happens solely for messages written
+# before Fix5 landed (backward compat, never touch new writes).
+resolve_timing_ids() {
+    local msg_cmd_id="$1" msg_task_id="$2" content="$3"
+    if [ -n "$msg_cmd_id" ] || [ -n "$msg_task_id" ]; then
+        printf '%s\t%s' "$msg_cmd_id" "$msg_task_id"
+    else
+        extract_timing_ids_from_content "$content"
+    fi
 }
 
 acquire_inbox_lock() {
@@ -441,10 +532,17 @@ try:
     with open(inbox, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
     messages = data.get("messages", []) or []
+    latest = messages[-1] if messages else {}
     unread_count = sum(1 for m in messages if not m.get("read", False))
-    print(json.dumps({"count": unread_count}))
+    latest_content = latest.get("content", "")
+    print(json.dumps({
+        "count": unread_count,
+        "latest_content": latest_content,
+        "latest_cmd_id": latest.get("cmd_id") or "",
+        "latest_task_id": latest.get("task_id") or "",
+    }))
 except Exception:
-    print(json.dumps({"count": 0}))
+    print(json.dumps({"count": 0, "latest_content": "", "latest_cmd_id": "", "latest_task_id": ""}))
 PY
 }
 
@@ -493,10 +591,15 @@ try:
     normal_count = len(unread) - len(specials)
     normal_msgs = [m for m in unread if m.get("type") not in special_types]
     has_task_assigned = any(m.get("type") == "task_assigned" for m in normal_msgs)
+    latest = messages[-1] if messages else {}
+    latest_content = latest.get("content", "")
     payload = {
         "count": normal_count,
         "has_task_assigned": has_task_assigned,
         "specials": [{"type": m.get("type", ""), "content": m.get("content", "")} for m in specials],
+        "latest_content": latest_content,
+        "latest_cmd_id": latest.get("cmd_id") or "",
+        "latest_task_id": latest.get("task_id") or "",
     }
     print(json.dumps(payload))
 except Exception:
@@ -951,6 +1054,7 @@ except Exception as e:
         if [[ "$effective_cli_for_nudge" == "codex" ]]; then
             # Codex echoes submitted text in the transcript; seeing inboxN after
             # Enter does not mean it is still stuck in the input field.
+            LAST_ASSIGNMENT_TS=$(date +%s)
             echo "[$(date)] Wake-up sent to $AGENT_ID (${unread_count} unread, attempt $((attempt+1)), cli=codex)" >&2
             return 0
         fi
@@ -969,6 +1073,7 @@ except Exception as e:
         # NOTE: アイドルフラグは削除しない。nudge送信≠エージェント起動確認。
         # フラグを消すと agent_is_busy()=true → 以降のnudge全スキップ → デッドロック。
         # フラグはエージェントが実際に作業開始した時に自然消滅する（stop_hook設計と整合）。
+        LAST_ASSIGNMENT_TS=$(date +%s)
         echo "[$(date)] Wake-up sent to $AGENT_ID (${unread_count} unread, attempt $((attempt+1)))" >&2
         return 0
     done
@@ -1065,6 +1170,12 @@ process_unread() {
         # no_idle_full_read guard: unread=0 and timeout path → no full inbox read
         if [ "$FIRST_UNREAD_SEEN" -ne 0 ]; then
             echo "[$(date)] All messages read for $AGENT_ID — escalation reset (fast-path)" >&2
+            local fast_latest_content fast_msg_cmd_id fast_msg_task_id fast_ids
+            fast_latest_content=$(echo "$fast_info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(json.load(sys.stdin).get('latest_content',''))" 2>/dev/null)
+            fast_msg_cmd_id=$(echo "$fast_info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(json.load(sys.stdin).get('latest_cmd_id',''))" 2>/dev/null)
+            fast_msg_task_id=$(echo "$fast_info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(json.load(sys.stdin).get('latest_task_id',''))" 2>/dev/null)
+            fast_ids=$(resolve_timing_ids "$fast_msg_cmd_id" "$fast_msg_task_id" "$fast_latest_content")
+            log_agent_started_event "$(printf '%s' "$fast_ids" | cut -f1)" "$(printf '%s' "$fast_ids" | cut -f2)"
         fi
         FIRST_UNREAD_SEEN=0
         NEW_CONTEXT_SENT=0
@@ -1200,6 +1311,7 @@ for s in data.get('specials', []):
         if [ "$has_task_assigned" = "1" ] && [ "$NEW_CONTEXT_SENT" -eq 0 ] && [ "$clear_seen" -eq 0 ]; then
             send_context_reset
             NEW_CONTEXT_SENT=1
+            LAST_ASSIGNMENT_TS=$(date +%s)
         fi
 
         # If startup prompt was just sent (Codex), skip follow-up nudge this cycle.
@@ -1227,6 +1339,15 @@ for s in data.get('specials', []):
         fi
 
         local age=$((now - FIRST_UNREAD_SEEN))
+
+        # Assignment grace window (cmd_066): right after a nudge/task_assigned is
+        # delivered, the PreToolUse hook needs a moment to fire and clear the idle
+        # flag. Hold age at 0 during that lag so Phase1/2/3 doesn't misfire on an
+        # agent that just started working.
+        if [ "${LAST_ASSIGNMENT_TS:-0}" -gt 0 ] && \
+           [ "$((now - LAST_ASSIGNMENT_TS))" -lt "$ASSIGNMENT_GRACE_SECONDS" ]; then
+            age=0
+        fi
 
         # CLI-aware escalation thresholds. Local LLMs (opencode) respond slowly;
         # the default 120s/240s windows misjudge active inference as unresponsive
@@ -1282,6 +1403,12 @@ for s in data.get('specials', []):
         # No unread messages — reset escalation tracker
         if [ "$FIRST_UNREAD_SEEN" -ne 0 ]; then
             echo "[$(date)] All messages read for $AGENT_ID — escalation reset" >&2
+            local latest_content msg_cmd_id msg_task_id ids
+            latest_content=$(echo "$info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(json.load(sys.stdin).get('latest_content',''))" 2>/dev/null)
+            msg_cmd_id=$(echo "$info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(json.load(sys.stdin).get('latest_cmd_id',''))" 2>/dev/null)
+            msg_task_id=$(echo "$info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(json.load(sys.stdin).get('latest_task_id',''))" 2>/dev/null)
+            ids=$(resolve_timing_ids "$msg_cmd_id" "$msg_task_id" "$latest_content")
+            log_agent_started_event "$(printf '%s' "$ids" | cut -f1)" "$(printf '%s' "$ids" | cut -f2)"
         fi
         FIRST_UNREAD_SEEN=0
         NEW_CONTEXT_SENT=0
@@ -1312,12 +1439,80 @@ if [ "${__INBOX_WATCHER_TESTING__:-}" != "1" ]; then
 # ─── Startup: process any existing unread messages ───
 process_unread_once
 
+# ─── Escalation threshold check (cmd_052d) ───
+# Counts this agent's auto_heal events in logs/auto_heal_events.jsonl within the
+# last AUTO_HEAL_ESCALATION_WINDOW_MIN minutes (the ts field is compared via
+# python3 datetime, not date(1), since jsonl already carries ISO8601+offset).
+# Prints one of: FIRE:<count> / COOLDOWN:<count> / BELOW:<count> / ERROR.
+check_auto_heal_escalation() {
+    local agent_id="$1"
+    local jsonl="${SCRIPT_DIR}/logs/auto_heal_events.jsonl"
+    [ -f "$jsonl" ] || { echo "BELOW:0"; return 0; }
+
+    AGENT_ID_FOR_ESC="$agent_id" \
+    WINDOW_MIN="$AUTO_HEAL_ESCALATION_WINDOW_MIN" \
+    THRESHOLD="$AUTO_HEAL_ESCALATION_THRESHOLD" \
+    COOLDOWN_MIN="$AUTO_HEAL_ESCALATION_COOLDOWN_MIN" \
+    JSONL_PATH="$jsonl" \
+    timeout 2 "$SCRIPT_DIR/.venv/bin/python3" -c "
+import datetime, json, os
+
+agent = os.environ['AGENT_ID_FOR_ESC']
+window_min = float(os.environ['WINDOW_MIN'])
+threshold = int(os.environ['THRESHOLD'])
+cooldown_min = float(os.environ['COOLDOWN_MIN'])
+path = os.environ['JSONL_PATH']
+
+now = datetime.datetime.now().astimezone()
+window_start = now - datetime.timedelta(minutes=window_min)
+cooldown_start = now - datetime.timedelta(minutes=cooldown_min)
+
+heal_count = 0
+last_escalation_ts = None
+try:
+    with open(path, encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except Exception:
+                continue
+            if rec.get('agent') != agent:
+                continue
+            ts_raw = rec.get('ts')
+            if not ts_raw:
+                continue
+            try:
+                ts = datetime.datetime.fromisoformat(ts_raw)
+            except Exception:
+                continue
+            if rec.get('event') == 'auto_heal' and ts >= window_start:
+                heal_count += 1
+            elif rec.get('event') == 'auto_heal_escalated':
+                if last_escalation_ts is None or ts > last_escalation_ts:
+                    last_escalation_ts = ts
+except Exception:
+    print('ERROR')
+    raise SystemExit
+
+if heal_count < threshold:
+    print(f'BELOW:{heal_count}')
+elif last_escalation_ts is not None and last_escalation_ts >= cooldown_start:
+    print(f'COOLDOWN:{heal_count}')
+else:
+    print(f'FIRE:{heal_count}')
+" 2>/dev/null || echo "ERROR"
+}
+
 # ─── Auto-heal watchdog ───
 # If the CLI's TUI process has crashed, the pane drops back to a bare login
 # shell. Detect that (requiring 2 consecutive observations to avoid catching the
 # brief shell window during a normal switch_cli relaunch) and revive the agent.
 check_and_heal_dead_cli() {
     [ "${ASW_AUTO_HEAL:-1}" = "1" ] || return 0
+    [ -f "${SCRIPT_DIR}/logs/auto_heal_paused/${AGENT_ID}" ] && return 0
 
     local pane_cmd
     pane_cmd=$(timeout 2 tmux display-message -t "$PANE_TARGET" -p '#{pane_current_command}' 2>/dev/null || echo "")
@@ -1344,11 +1539,227 @@ check_and_heal_dead_cli() {
     local configured_cli
     configured_cli=$(get_effective_cli_type)
     echo "[$(date)] [AUTO-HEAL] $AGENT_ID CLI ($configured_cli) appears dead (pane_cmd=$pane_cmd, streak=$DEAD_CLI_STREAK). Relaunching via switch_cli.sh." >&2
+    local heal_event_ts
+    heal_event_ts=$(date +%Y-%m-%dT%H:%M:%S%:z)
+    mkdir -p "${SCRIPT_DIR}/logs" 2>/dev/null || true
+
+    # ─── Root cause snapshot (cmd_052c) ───
+    # Collected here — the last moment before switch_cli.sh overwrites the pane
+    # by relaunching the CLI. All sub-commands are timeout-guarded (2s) so this
+    # never delays revival.
+    local rc_pane_tail rc_pane_tail_40 rc_errno5_found rc_pane_size
+    local rc_backend_alive rc_backend_method rc_snapshot_json
+
+    rc_pane_tail=$(timeout 2 tmux capture-pane -t "$PANE_TARGET" -p -S -200 2>/dev/null || echo "")
+    rc_pane_tail_40=$(printf '%s' "$rc_pane_tail" | tail -n 40)
+
+    if printf '%s' "$rc_pane_tail" | grep -aEq 'setRawMode|errno[ :]?5|EIO|ENOTTY'; then
+        rc_errno5_found=true
+    else
+        rc_errno5_found=false
+    fi
+
+    rc_pane_size=$(timeout 2 tmux display-message -t "$PANE_TARGET" -p '#{pane_width}x#{pane_height}' 2>/dev/null || echo "unknown")
+
+    # Backend health check: connection reachability only (curl "000" = unreachable).
+    # A non-"000" HTTP code (even 401/404) means the backend process is up.
+    case "$AGENT_ID" in
+        ashigaru3)
+            rc_backend_method="curl openrouter models endpoint (2s timeout)"
+            local rc_http_code
+            rc_http_code=$(timeout 2 curl -s -o /dev/null -w '%{http_code}' https://openrouter.ai/api/v1/models 2>/dev/null || echo "000")
+            [ -n "$rc_http_code" ] && [ "$rc_http_code" != "000" ] && rc_backend_alive=true || rc_backend_alive=false
+            ;;
+        ashigaru4)
+            rc_backend_method="curl ollama tags endpoint (2s timeout)"
+            local rc_http_code
+            rc_http_code=$(timeout 2 curl -s -o /dev/null -w '%{http_code}' http://localhost:11434/api/tags 2>/dev/null || echo "000")
+            [ -n "$rc_http_code" ] && [ "$rc_http_code" != "000" ] && rc_backend_alive=true || rc_backend_alive=false
+            ;;
+        *)
+            rc_backend_method="n/a (Claude-family agent, not applicable)"
+            rc_backend_alive="not_applicable"
+            ;;
+    esac
+
+    # JSON escaping (jq非依存): python3 json.dumps()に一任し、制御文字含む全エッジケースをカバーする。
+    local rc_pane_tail_escaped
+    rc_pane_tail_escaped=$(printf '%s' "$rc_pane_tail_40" | "$SCRIPT_DIR/.venv/bin/python3" -c \
+        "import json,sys; print(json.dumps(sys.stdin.read())[1:-1])")
+
+    local rc_backend_alive_json
+    if [ "$rc_backend_alive" = "true" ] || [ "$rc_backend_alive" = "false" ]; then
+        rc_backend_alive_json="$rc_backend_alive"
+    else
+        rc_backend_alive_json="\"$rc_backend_alive\""
+    fi
+
+    rc_snapshot_json=$(printf '"root_cause_snapshot":{"pane_tail_last_40":"%s","errno5_signature_found":%s,"pane_size":"%s","backend_alive":%s,"backend_check_method":"%s"}' \
+        "$rc_pane_tail_escaped" "$rc_errno5_found" "$rc_pane_size" "$rc_backend_alive_json" "$rc_backend_method")
+
+    printf '{"ts":"%s","agent":"%s","event":"auto_heal","cli":"%s","pane_cmd_before":"%s","cooldown_sec":%s,%s}\n' \
+        "$heal_event_ts" "$AGENT_ID" "$configured_cli" "$pane_cmd" "$HEAL_COOLDOWN_SEC" "$rc_snapshot_json" \
+        >> "${SCRIPT_DIR}/logs/auto_heal_events.jsonl" 2>/dev/null || true
+
+    # ─── Escalation ntfy + auto-heal pause (cmd_052d / cmd_069) ───
+    # Runs BEFORE the relaunch below: switch_cli.sh's inbox_watcher restart
+    # (Step 7 pkill) self-terminates this very watcher process, so anything
+    # placed after the switch_cli.sh call never executes. This block — ntfy,
+    # jsonl logging, and pause-marker creation — must land on disk first.
+    # silent_heal_enabled=false → skip entirely, preserving pre-052d silent behavior.
+    if [ "${AUTO_HEAL_SILENT_ENABLED}" = "true" ]; then
+        local esc_result
+        esc_result=$(check_auto_heal_escalation "$AGENT_ID")
+        case "$esc_result" in
+            FIRE:*)
+                local esc_count="${esc_result#FIRE:}"
+                echo "[$(date)] [AUTO-HEAL-ESCALATION] $AGENT_ID reached ${esc_count} auto_heal(s) within ${AUTO_HEAL_ESCALATION_WINDOW_MIN}min — firing ntfy." >&2
+                bash "${SCRIPT_DIR}/scripts/ntfy.sh" "🚨 auto_heal閾値到達: ${AGENT_ID}が${AUTO_HEAL_ESCALATION_WINDOW_MIN}分内${esc_count}回蘇生。以後のauto-healを一時停止した" >&2 || true
+                local esc_ts
+                esc_ts=$(date +%Y-%m-%dT%H:%M:%S%:z)
+                printf '{"ts":"%s","agent":"%s","event":"auto_heal_escalated","window_minutes":%s,"count":%s}\n' \
+                    "$esc_ts" "$AGENT_ID" "$AUTO_HEAL_ESCALATION_WINDOW_MIN" "$esc_count" \
+                    >> "${SCRIPT_DIR}/logs/auto_heal_events.jsonl" 2>/dev/null || true
+                mkdir -p "${SCRIPT_DIR}/logs/auto_heal_paused" 2>/dev/null || true
+                touch "${SCRIPT_DIR}/logs/auto_heal_paused/${AGENT_ID}" 2>/dev/null || true
+                printf '{"ts":"%s","agent":"%s","event":"auto_heal_paused","reason":"escalation_threshold_reached","count":%s,"window_minutes":%s}\n' \
+                    "$esc_ts" "$AGENT_ID" "$esc_count" "$AUTO_HEAL_ESCALATION_WINDOW_MIN" \
+                    >> "${SCRIPT_DIR}/logs/auto_heal_events.jsonl" 2>/dev/null || true
+                ;;
+            COOLDOWN:*)
+                echo "[$(date)] [AUTO-HEAL-ESCALATION] $AGENT_ID over threshold but cooldown active — skipping ntfy." >&2
+                ;;
+            BELOW:*) ;;  # under threshold — no-op
+            *)
+                echo "[$(date)] WARNING: check_auto_heal_escalation failed for $AGENT_ID (result=$esc_result)" >&2
+                ;;
+        esac
+    fi
+
     LAST_HEAL_TS=$now
     DEAD_CLI_STREAK=0
     bash "${SCRIPT_DIR}/scripts/switch_cli.sh" "$AGENT_ID" 2>&1 | while IFS= read -r line; do
         echo "[$(date)] [switch_cli] $line" >&2
     done
+    return 0
+}
+
+# ─── Dashboard staleness watchdog (cmd_065 Part A-2) ───
+# dashboard.md の🚨要対応項目が created_at (HTMLコメント埋込) から
+# dashboard_staleness.hours 経過しても放置されている場合、ntfy で再通知する。
+# karo の inbox_watcher インスタンスのみが呼び出す(配線側でAGENT_ID判定)。
+_read_dashboard_staleness_setting() {
+    local key="$1" default="$2"
+    "$SCRIPT_DIR/.venv/bin/python3" -c "
+import yaml
+try:
+    with open('${SCRIPT_DIR}/config/settings.yaml', encoding='utf-8') as f:
+        data = yaml.safe_load(f) or {}
+    v = (data.get('dashboard_staleness') or {}).get('$key')
+    if v is None:
+        v = '$default'
+    print(v)
+except Exception:
+    print('$default')
+" 2>/dev/null
+}
+
+check_dashboard_staleness() {
+    local marker="${SCRIPT_DIR}/logs/.dashboard_staleness_last_check"
+    local interval_min
+    interval_min=$(_read_dashboard_staleness_setting check_interval_minutes 30)
+    [ -n "$interval_min" ] || interval_min=30
+
+    mkdir -p "${SCRIPT_DIR}/logs" 2>/dev/null || true
+
+    if [ -f "$marker" ]; then
+        local last_check now_epoch elapsed_min
+        last_check=$(stat -c %Y "$marker" 2>/dev/null || echo 0)
+        now_epoch=$(date +%s)
+        elapsed_min=$(( (now_epoch - last_check) / 60 ))
+        if [ "$elapsed_min" -lt "$interval_min" ]; then
+            return 0
+        fi
+    fi
+    touch "$marker" 2>/dev/null || true
+
+    local hours cooldown_min
+    hours=$(_read_dashboard_staleness_setting hours 24)
+    cooldown_min=$(_read_dashboard_staleness_setting cooldown_after_escalation_minutes 360)
+    [ -n "$hours" ] || hours=24
+    [ -n "$cooldown_min" ] || cooldown_min=360
+
+    local dashboard_path="${SCRIPT_DIR}/dashboard.md"
+    [ -f "$dashboard_path" ] || return 0
+
+    DASHBOARD_PATH="$dashboard_path" \
+    DASHBOARD_STALE_HOURS="$hours" \
+    DASHBOARD_STALE_COOLDOWN_MIN="$cooldown_min" \
+    TIMING_JSONL="${SCRIPT_DIR}/logs/timing_events.jsonl" \
+    "$SCRIPT_DIR/.venv/bin/python3" -c "
+import datetime, json, os, re
+
+dashboard_path = os.environ['DASHBOARD_PATH']
+stale_hours = float(os.environ['DASHBOARD_STALE_HOURS'])
+cooldown_min = float(os.environ['DASHBOARD_STALE_COOLDOWN_MIN'])
+jsonl_path = os.environ['TIMING_JSONL']
+
+try:
+    with open(dashboard_path, encoding='utf-8') as f:
+        content = f.read()
+except Exception:
+    raise SystemExit
+
+now = datetime.datetime.now()
+cooldown_start = now - datetime.timedelta(minutes=cooldown_min)
+
+# 直近cooldown内に通知済みのcreated_atを集める(単一情報源=timing_events.jsonl)
+notified_recently = set()
+try:
+    with open(jsonl_path, encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except Exception:
+                continue
+            if rec.get('event') != 'dashboard_stale_notified':
+                continue
+            tid = rec.get('task_id')
+            ts_raw = rec.get('ts')
+            if not tid or not ts_raw:
+                continue
+            try:
+                ts = datetime.datetime.fromisoformat(ts_raw)
+            except Exception:
+                continue
+            if ts.tzinfo is not None:
+                ts = ts.replace(tzinfo=None)
+            if ts >= cooldown_start:
+                notified_recently.add(tid)
+except Exception:
+    pass
+
+for m in re.finditer(r'<!-- created_at: (\S+) -->\s*\n(.+)', content):
+    created_at_raw, text = m.group(1), m.group(2)
+    try:
+        created_at = datetime.datetime.fromisoformat(created_at_raw)
+    except Exception:
+        continue
+    age_hours = (now - created_at).total_seconds() / 3600
+    if age_hours < stale_hours:
+        continue
+    if created_at_raw in notified_recently:
+        continue
+    print(created_at_raw + '\t' + text.strip()[:50])
+" 2>/dev/null | while IFS=$'\t' read -r created_at_raw snippet; do
+        [ -n "$created_at_raw" ] || continue
+        bash "${SCRIPT_DIR}/scripts/ntfy.sh" "🚨 24時間放置: ${snippet}" >&2 || true
+        bash "${SCRIPT_DIR}/scripts/log_timing_event.sh" dashboard_stale_notified "" "$created_at_raw" karo --source=inbox_watcher.sh || true
+    done
+
     return 0
 }
 
@@ -1404,6 +1815,9 @@ while true; do
 
     if [ "$rc" -eq 2 ]; then
         check_and_heal_dead_cli
+        if [ "$AGENT_ID" = "karo" ]; then
+            check_dashboard_staleness || true
+        fi
         if [ "${ASW_PROCESS_TIMEOUT:-1}" = "1" ]; then
             process_unread "timeout"
         fi

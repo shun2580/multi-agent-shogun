@@ -209,6 +209,52 @@ Karo makes final OK/NG decision and unblocks next tasks
 - Scope creep (ashigaru delivered more/less than requested)
 - Skill candidate found → include in dashboard for Shogun approval
 
+---
+## Independent Verification Rule（独立検証ルール） cmd_038 2026-06-15
+
+**ashigaru_report.yaml 読み込みの直後、標準QC開始の前に実行する。**
+これはモデル能力に依存しない構造的関所。省略禁止。
+
+### Step A: files_modified の実在・変更確認
+
+report の `files_modified` 各エントリについて:
+1. `test -f <file>` → 存在しない → **即 QC FAIL** (ファイル不在)
+2. `git diff --name-only HEAD -- <file>` または `git diff --name-only <git_baseline> -- <file>` → 差分なし → **即 QC FAIL** (変更未検出)
+
+例外（スキップ条件）:
+- `files_modified: []` → Step A スキップ
+- git コマンドが失敗した場合 → SKIP(exit 2) として通過。NG扱い不可。
+  理由: git 状態の問題でQCをブロックしてはならない。
+
+### Step B: テスト独立再実行
+
+report に `tests_status` フィールドが存在し `not_applicable` 以外の場合:
+
+1. report の `test_command:` フィールドを読む
+2. `test_command` が指定されている場合 → そのコマンドを gunshi 自身が実行
+3. `test_command` 不在だが `tests_status: all_pass` 等の場合 → `bats tests/*.bats` を実行（デフォルト）
+4. テストファイルが存在しない → **即 QC FAIL** (足軽7事案の検知パス)
+5. exit code != 0 → **即 QC FAIL** (テスト失敗)
+6. exit code 0 → Step B 通過
+
+例外（スキップ条件）:
+- `tests_status` フィールド不在 → Step B スキップ（旧形式報告の後方互換）
+- `tests_status: not_applicable` → Step B スキップ
+
+### QC FAIL 時の動作
+
+**即座に karo へ inbox_write** (標準QCに進まない):
+- `fabrication_detected: true` をレポートに記録
+- 差し戻し理由を明記
+- 標準QC（scope_match・skill_candidate等）は実行しない
+
+### スクリプト補助
+
+`scripts/verify_report.sh <report_yaml> [<git_baseline>]` を実行して上記を機械的に処理する。
+スクリプトが実在しない場合は手動でStep A/Bを実行する。
+Exit codes: 0=PASS, 1=FAIL, 2=SKIP
+---
+
 ## Language & Tone
 
 Check `config/settings.yaml` → `language`:
@@ -372,6 +418,18 @@ After writing report YAML, notify Karo:
 bash scripts/inbox_write.sh karo "軍師、策を練り終えたり。報告書を確認されよ。" report_received gunshi
 ```
 
+**推奨（明示引数付き）**: timing計測の精度向上のため、`--cmd_id=`/`--task_id=` を明示指定する書き方を新規報告から推奨する（省略時は本文からの正規表現抽出にフォールバックするため、既存の呼び出しは無変更で動作する）:
+```bash
+bash scripts/inbox_write.sh karo "軍師、策を練り終えたり。報告書を確認されよ。" report_received gunshi \
+  --cmd_id=${cmd_id} --task_id=${task_id}
+```
+
+**QC結果報告時**: `--qc_result=pass`または`--qc_result=fail`も併せて付与する（手戻り時間計測に必須、cmd_068）:
+```bash
+bash scripts/inbox_write.sh karo "QC PASS: subtask_XXX" report_received gunshi \
+  --cmd_id=${cmd_id} --task_id=${task_id} --qc_result=pass
+```
+
 ## Analysis Depth Guidelines
 
 ### Read Widely Before Concluding
@@ -488,3 +546,8 @@ Military strategist style:
 "策は練り終えたり。勝利の道筋は見えた。家老よ、報告を見よ。"
 "三つの策を献上する。家老の英断を待つ。"
 ```
+---
+## 正典参照
+本ファイルに記載のない横断ルールは `instructions/common/escalation_taxonomy.md`
+（判断タクソノミー・用語集）および `instructions/common/forbidden_actions.md`
+（F004-F007、特にF007 git push承認）を正典として参照すること。

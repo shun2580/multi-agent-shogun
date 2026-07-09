@@ -79,24 +79,24 @@ Claude Max 5x（$100/月）にアップグレードし、自分のPCスペック
 │
 ├──────────┬──────────┬──────────┬──────────┬──────────┬──────────┐
 ▼          ▼          ▼          ▼          ▼          ▼          ▼
-足軽1      足軽2      足軽3      足軽4      足軽5      足軽6      足軽7
-Sonnet     Sonnet     Gemini     Ollama     Haiku      Gemini     Gemini
-4.6        4.6        2.5 Flash  qwen3.5:9b 4.5        2.5 Flash  2.5 Flash
-（重量）   （重量）   （無料）   （ローカル）（高速軽量） （無料）   （無料）
+足軽1      足軽2      足軽3         足軽4      足軽5      足軽6      足軽7
+Sonnet     Sonnet     gpt-oss       Ollama     Haiku      Haiku      Haiku
+4.6        4.6        120b:free     qwen3.5:9b 4.5        4.5        4.5
+（重量）   （重量）   （OpenRouter） （ローカル）（軽量）   （軽量）   （軽量）
 ```
 
 ### エージェント一覧
 
 | エージェント | CLI | モデル | 役割 |
 |---|---|---|---|
-| 将軍（Shogun） | Claude Code | claude-sonnet-4-6 | 戦略決定・家老へのcmd下達 |
-| 家老（Karo） | Claude Code | claude-sonnet-4-6 | タスク分解・足軽への割当・品質判定 |
-| 軍師（Gunshi） | Claude Code | claude-sonnet-4-6 | 品質チェック・ダッシュボード更新 |
-| 足軽1/2（Ashigaru1/2） | Claude Code | claude-sonnet-4-6 | 重量実行タスク（常時稼働） |
-| 足軽3（Ashigaru3） | Gemini CLI | gemini-2.5-flash | 実装・調査系タスク（無料枠） |
+| 将軍（Shogun） | Claude Code | claude-opus-4-8 | 戦略決定・家老へのcmd下達 |
+| 家老（Karo） | Claude Code | claude-sonnet-5 | タスク分解・足軽への割当・品質判定 |
+| 軍師（Gunshi） | Claude Code | claude-sonnet-5 | 品質チェック・ダッシュボード更新 |
+| 足軽1/2（Ashigaru1/2） | Claude Code | claude-sonnet-5 | 重量実行タスク（常時稼働） |
+| 足軽3（Ashigaru3） | OpenCode + OpenRouter | openai/gpt-oss-120b:free | 汎用業務・コード生成・調査（無料枠・複数プロバイダ安定） |
 | 足軽4（Ashigaru4） | OpenCode | ollama/qwen3.5:9b | ローカル実行（GPU推論・Claude枠ゼロ） |
 | 足軽5（Ashigaru5） | Claude Code | claude-haiku-4-5-20251001 | 高速軽量タスク（常時稼働） |
-| 足軽6/7（Ashigaru6/7） | Gemini CLI | gemini-2.5-flash | 並列実行・調査系タスク（無料枠） |
+| 足軽6/7（Ashigaru6/7） | Claude Code | claude-haiku-4-5-20251001 | 高速軽量タスク（Haiku枠） |
 
 ---
 
@@ -105,7 +105,7 @@ Sonnet     Sonnet     Gemini     Ollama     Haiku      Gemini     Gemini
 | 項目 | コスト |
 |---|---|
 | Claude Max 5x（将軍・家老・軍師・足軽1/2/5） | $100/月（固定） |
-| Gemini CLI（足軽3/6/7） | 無料（無料枠） |
+| OpenRouter（足軽3） | 無料（$10一度購入で1000req/日解放・以降は無料運用） |
 | Ollama（足軽4） | 無料（自PC・GPU推論） |
 | **合計** | **$100/月** |
 

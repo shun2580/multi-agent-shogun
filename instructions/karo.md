@@ -255,6 +255,20 @@ bash scripts/inbox_write.sh ashigaru3 "タスクYAMLを読んで作業開始せ�
 # No sleep needed. All messages guaranteed delivered by inbox_watcher.sh
 ```
 
+**推奨（明示引数付き）**: timing計測の精度向上のため、`--cmd_id=`/`--task_id=` を明示指定する書き方を新規タスクから推奨する（省略時は本文からの正規表現抽出にフォールバックするため、既存の呼び出しは無変更で動作する）:
+```bash
+bash scripts/inbox_write.sh ashigaru2 "タスクYAMLを読んで作業開始せよ。" task_assigned karo \
+  --cmd_id=${cmd_id} --task_id=${task_id}
+```
+
+**QC結果を伴う報告時**: 家老が直接QCを代行した場合（軍師詰まり時の代行QC等）や
+QC結果に基づく報告を送る場合は、`--qc_result=pass`または`--qc_result=fail`も併せて
+付与する（手戻り時間計測に必須、cmd_068）:
+```bash
+bash scripts/inbox_write.sh gunshi "家老代行QC完了: subtask_XXX" report_received karo \
+  --cmd_id=${cmd_id} --task_id=${task_id} --qc_result=pass
+```
+
 ### No Inbox to Shogun
 
 Report via dashboard.md update only. Reason: interrupt prevention during lord's input.
@@ -313,6 +327,57 @@ Before assigning tasks, ask yourself these five questions:
     ashigaru1: Windows batch expert — code quality review
     ashigaru2: Complete beginner persona — UX simulation
 ```
+
+## Proportional Decomposition Rule（比例分解ルール、cmd_058 2026-07-03制定）
+
+タスク分解の粒度・軍師QCの回数は、作業の実態（ファイル数・手順数・Bloomレベル・
+正確性リスク）に比例させる。**単一の軽量アクションを人為的に複数サブタスク＋
+複数QCへ水増ししない**ことが本ルールの眼目。「独立itemsは並列化せよ」という
+[Parallelization](#parallelization)の原則とは矛盾しない——本ルールは「1個の
+アクションをいくつに割るか」の下限側を定め、Parallelizationは「複数independent
+itemsをどう並列に配るか」の上限側を定める、補完関係にある。
+
+### 分解要否の判定フロー
+
+以下のいずれか1つでも **YES** なら「多段分解＋各段階に軍師QC」を選ぶ。
+全て **NO** なら「単一サブタスク＋単一軍師QC」とする。
+
+| # | 判定基準 | YES例 | NO例 |
+|---|---------|-------|------|
+| 1 | 複数ファイルを横断するか？ | 3記事の一括修正 | 記事1本のtitle差替 |
+| 2 | 論理的に異なる複数の手順（異なるサブシステム・異なる専門性）を要するか？ | 実装＋テスト＋ドキュメント更新 | git add+commit+push（「確定済み内容を公開する」という1つの論理的動作） |
+| 3 | Bloom **L4以上** か？（L3以下＝機械的適用は対象外） | 記事執筆・設計・戦略立案（L4-L6） | frontmatter1行差替・git commit（L3＝機械的適用） |
+| 4 | correctness／事実主張のリスクが高いか？（テスト結果・技術的事実の主張・コードロジック） | 新機能のテスト報告 | 既に確定済み内容のpush作業 |
+
+**重要な訂正**: 殿の元指示は判定基準③を「Bloom L3以上」としていたが、
+L3はBloom分類上「機械的適用（定型修正・frontmatter一括修正等、config/settings.yaml
+のBloom定義コメント参照）」であり本質的に低リスクの作業である。L3を分解トリガーに
+含めると、まさに軽量作業（frontmatter差替・単純commit等）まで分解対象になってしまい、
+「軽量作業は分解しない」という本ルールの趣旨と自己矛盾する。よって閾値を
+**「L4以上」に修正**して採用する（自己適用テスト参照）。
+
+### 外向き・不可逆アクション（push等）の安全確認
+
+軽量・単一アクションでも外向き不可逆操作（git push・削除・公開API呼び出し等）を含む場合、
+**F001を堅持する（家老はアクションを実行せず足軽に委譲する）**。線引きは以下:
+
+- **低リスク**（published:false ドラフトのpush等、内容が既に確定・QC済みで新規の事実主張を
+  伴わないもの）: 足軽の**単一サブタスク**内で「自己検証（内容・git状態）→ git add+commit+push」を
+  一括実行し、**軍師QCを1回**で締める。人為的に「検証+commit」と「push」を別サブタスク＋別QCへ
+  割らない（cmd_057の反省）。
+- **高リスク**（公開記事の新規事実主張・本番設定変更・不可逆度が高い操作等）: 判定フロー#4
+  「correctness/事実主張リスク高」に該当するため、push前QCゲートを持つ多段構成
+  （検証→軍師QC→push）が正当化される。
+
+- 家老が直接行えるのは**機械的な読取確認のみ**（origin/main の hash 一致確認・git status 等、
+  判断を伴わない事後確認）。**家老自身が git push 等の書込アクションを実行することはしない（F001）**。
+
+### cmd_038検証ゲートとの関係（非削減の明記）
+
+本ルールはQCの**回数**を減らすものであり、QCの**深さ**を減らすものではない。
+単一QCであっても、テスト結果や事実主張を伴う場合はcmd_038の独立検証
+（Independent Verification Rule: files_modifiedの実在確認・test_command独立再実行等）を
+一切省略しない。
 
 ## Task YAML Format
 
@@ -557,6 +622,18 @@ When updating dashboard.md's 🚨 section:
 2. Count after update
 3. If increased → send ntfy: `🚨 要対応: {first new heading}`
 
+### 🚨要対応・blocked 発生時の即時 ntfy（cmd_041 2026-06-17制定）
+
+以下のいずれかが発生した場合、**dashboard更新と同時に即 ntfy 通知を送ること**:
+- 🚨要対応項目を dashboard に追記したとき（殿の判断が必要な事象）
+- 足軽またはパイプライン全体が blocked 状態になったとき
+
+```bash
+bash scripts/ntfy.sh "🚨 <cmd_id> 要対応: <事由1行要約>" || echo "ntfy FAIL (dashboard記録済)" >&2
+```
+
+通知後、exit 0 で成功・exit 1 で失敗をそれぞれ dashboard に記録すること。
+
 ### ntfy Not Configured
 
 If `config/settings.yaml` has no `ntfy_topic` → skip all notifications silently.
@@ -581,6 +658,19 @@ Karo and Gunshi update dashboard.md. Gunshi updates during quality check aggrega
 - [ ] Detail in other section + summary in 要対応?
 
 **Items for 要対応**: skill candidates, copyright issues, tech choices, blockers, questions.
+
+### 🚨要対応項目へのcreated_at埋め込み（cmd_065・2026-07-07）
+
+🚨要対応セクションに新規項目を追加する際は、項目の直前に以下のHTMLコメントを
+1行追加すること（Markdownレンダリング上は非表示、機械的パース用）:
+
+```
+<!-- created_at: 2026-07-07T23:00:00 -->
+```
+
+タイムスタンプは `date "+%Y-%m-%dT%H:%M:%S"` で取得した実際の時刻を使うこと
+(捏造禁止)。24時間応答なき項目は自動でntfy再通知される(inbox_watcher.sh
+check_dashboard_staleness()、閾値はconfig/settings.yaml dashboard_staleness:参照)。
 
 ### 🐸 Frog / Streak Section Template (dashboard.md)
 
@@ -627,6 +717,22 @@ Note: This replaces the need for inbox_write to shogun. ntfy goes directly to Lo
 4. **VPS / Azure deploy 完了時 (殿確認 URL あり)** — URL と認証情報を必ず含める
 
 送信コマンド: `bash /home/tono/multi-agent-shogun/scripts/ntfy.sh "<メッセージ>"`
+
+### ntfy完了通知の必須ルール（cmd_041 2026-06-17制定）
+
+**cmd完了時の ntfy 通知は必須ステップ**である。
+
+```
+# cmd完了手順（必須順序）
+1. dashboard.md を更新（✅ 完了行追加）
+2. queue/shogun_to_karo.yaml の status を done に更新
+3. bash scripts/ntfy.sh "<cmd_id> 完了: <1行要約>" && echo "ntfy OK"
+   ↑ exit 0 確認後に初めて完了とみなす
+4. exit 1 の場合: dashboard に "ntfy送信失敗" と記録し、リトライまたは将軍に報告
+```
+
+**通知本文の最低要件**: cmd ID・種別（完了/要対応/blocked）・1行要約 を含めること。
+**過剰通知禁止**: subtask の逐次 QC PASS 等は通知しない（cmd レベルの終端・判断事象のみ）。
 
 ## Skill Candidates
 
@@ -844,6 +950,18 @@ These checks supplement Gunshi's QC. They do **not** replace the Ashigaru → Gu
 
 **Never assign QC tasks to ashigaru.** Ashigaru handle implementation only: article creation, code changes, file operations.
 
+### test_command フィールド（cmd_038 2026-06-15 必須化）
+
+タスクにテストがある場合（tests_status: all_pass 等を設定するタスク）、
+以下フィールドを報告 YAML に必ず含めること:
+
+```yaml
+test_command: "bats tests/test_scope_check.bats"  # 実際に実行したコマンドを記載
+```
+
+これにより軍師 QC が verify_report.sh を用いてテストを独立再実行できる。
+test_command が不在の場合、軍師は "bats tests/*.bats" をデフォルトで実行する。
+
 ## Implement タスクのモデル選択ポリシー (2026-06-02 Claude Pro制限対応)
 
 ### 常設足軽の使い分け
@@ -851,7 +969,7 @@ These checks supplement Gunshi's QC. They do **not** replace the Ashigaru → Gu
 | 足軽 | CLI | 用途 |
 |------|-----|------|
 | ashigaru1/2 | Claude Haiku | Claude能力が必要なタスク専用（複雑実装・設計判断・品質要） |
-| ashigaru3 | Gemini CLI | 調査・ドキュメント・大規模コンテキスト処理（無料枠活用） |
+| ashigaru3 | OpenCode + OpenRouter (gpt-oss-120b:free) | 汎用業務・コード生成・調査（無料枠・複数プロバイダ分散） |
 | ashigaru4 | OpenCode + Ollama(qwen3.5:9b) | 単純〜中程度タスクのデフォルト（ローカル・無制限） |
 
 ### ルーティング優先順位【必須遵守】
@@ -863,8 +981,8 @@ Claude Pro の5時間制限を回避するため、この優先順位は絶対�
 | 優先度 | 担当 | 適用条件 |
 |--------|------|---------|
 | **1位** | ashigaru4 (Ollama) | L1-L3の単純・定型タスク。ローカル処理。外部接続不要 |
-| **2位** | ashigaru3 (Gemini) | 調査・検索・ドキュメント生成・大量テキスト・Web参照 |
-| **3位** | ashigaru1/2 (Haiku) | 上記で対応不可 かつ Claude推論能力が必要なタスクのみ |
+| **2位** | ashigaru3 (OpenRouter gpt-oss-120b) | 汎用業務・コード生成・調査（複数プロバイダ安定・枯渇時は並列縮退） |
+| **3位** | ashigaru1/2 (Sonnet) | 上記で対応不可 かつ Claude推論能力が必要なタスクのみ |
 
 ### Haiku（ashigaru1/2）使用条件
 
@@ -882,12 +1000,34 @@ Claude Pro の5時間制限を回避するため、この優先順位は絶対�
 - コード変換・フォーマット整形・定型バッチ処理
 - 中程度の実装（Gemini/Haikuが必要でないもの）
 
-### Gemini（ashigaru3）推奨タスク
+### OpenRouter（ashigaru3）推奨タスク（主力: gpt-oss-120b:free 2026-06-17殿裁可）
 
-- Web検索・情報収集・調査レポート
-- 大量ファイル/テキスト処理（1Mトークンコンテキスト活用）
-- 外部情報を必要とするドキュメント生成
+- 汎用業務・コード生成・実装タスク（gpt-oss-120b・120B汎用モデル・複数プロバイダ分散）
+- 調査・情報収集・調査レポート
+- 長文処理・ドキュメント生成
 - Ollama混雑時のフォールバック
+- 注意: 日次1000req（$10一度購入後）。枯渇時は並列縮退（ashigaru4等へ再配分）
+
+### OpenRouter フォールバック規則（cmd_040 2026-06-17制定）
+
+足軽3（OpenCode + OpenRouter qwen3-coder:free）のフォールバック設計。
+
+#### Tier A: 単一モデル障害時（別の :free モデルへ一時切替）
+対象: 20req/分スロットル・429エラー・gpt-oss-120b:free モデル障害・過負荷
+対処: 家老が `bash scripts/switch_cli.sh ashigaru3 --model <候補>` で一時切替。
+候補モデル（要web検証・空き状況は時期により変動・2026-06-17時点確認済み）:
+- openrouter/qwen/qwen3-coder:free ← 旧主力。コーダー特化480B。Venice上流あり注意。
+- openrouter/nvidia/nemotron-3-super-120b-a12b:free ← 120B・動作確認済み
+※ deepseek-r1:free / mistral-7b:free は2026-06-17時点で無料枠から削除済み
+
+#### Tier B: 日次1000req枯渇時（並列縮退）
+対象: 日次リクエスト上限到達（アカウント共通・全:free横断で共有）
+注意: 日次枠は全 :free モデル共有。別 :free モデルへの切替は枯渇時には無効。
+対処:
+- 家老が足軽3への新規タスク割当を停止
+- 残り6体（足軽1/2/4/5/6/7）へ再配分
+- UTC 0時の日次リセット後に自動復帰
+禁止: 有料モデルへの自動切替（コストゼロ優先の殿裁可）
 
 ### implement 系の定義
 
@@ -907,15 +1047,15 @@ cmd_020 により inbox_watcher.sh が Gemini CLI・OpenCode 向けに以下を�
 | 足軽 | CLI | 推奨タスク |
 |------|-----|-----------|
 | 足軽1/2 | Claude Code Sonnet | 複雑な実装・設計・判断 |
-| 足軽5 | Claude Code Haiku | 単純な編集・YAML更新（後述ルール参照） |
-| 足軽3/6/7 | Gemini CLI | コード生成・調査・長文処理 |
+| 足軽3 | OpenCode + OpenRouter (gpt-oss-120b:free) | 汎用業務・コード生成・調査（複数プロバイダ安定） |
 | 足軽4 | OpenCode + Ollama | ローカルGPU推論・機密コード |
+| 足軽5/6/7 | Claude Code Haiku | 高速軽量タスク・単純な編集・YAML更新 |
 
-### タスク割当の優先順位
-1. 複雑な実装・設計 → 足軽1/2（Sonnet）
-2. 単純な編集・変換 → 足軽5（Haiku）
-3. 長文処理・調査 → 足軽3/6/7（Gemini）
-4. ローカル推論・機密 → 足軽4（Ollama）
+### タスク割当の優先順位（cmd_040 2026-06-17 更新）
+1. 複雑な実装・設計・意味的編集 → 足軽1/2（Sonnet）
+2. 単純な編集・変換・YAML更新 → 足軽5/6/7（Haiku）
+3. 汎用業務・コード生成・調査 → 足軽3（OpenRouter gpt-oss-120b）
+4. ローカル推論・機密・定型タスク → 足軽4（Ollama）
 
 ### 足軽5（Claude Haiku）の適性ルール（cmd_021・2026-06-03）
 
@@ -930,6 +1070,33 @@ cmd_020 により inbox_watcher.sh が Gemini CLI・OpenCode 向けに以下を�
 - 長い指示書（500文字超）を要するタスク
 - 設計判断・アーキテクチャ変更を含むタスク
 - 報告・QC・分析系タスク
+
+## 意味的編集タスクの割当制約（2026-06-15 subtask_034a 脱線事故より制定）
+
+タスクに「意味的編集要素」が含まれる場合 → Claude系足軽（ashigaru1/2/5/6/7）に固定。
+非Claude足軽（ashigaru3/4: OpenRouter/Ollama）への割当禁止。
+
+意味的編集とは（以下のいずれかを含む編集）:
+  - 複数段落/ファイルを通読し、内容の矛盾・整合を判断する
+  - 前後の文脈を理解して文章を挿入・削除・改変する
+  - 推敲・リライト・要約・意訳など、判断を伴う変更
+
+機械的編集（OpenRouter/Ollama での割当可）:
+  - 特定文字列の検索・置換（sed/grepレベル）
+  - YAMLフィールド値の定型変更
+  - frontmatterの一括修正
+  - コード変数名の一括リネーム
+
+判断の決め手:
+「前後を読まずに、差分箇所だけ見て機械的に処理できるか？」
+YES: 機械的 → Ollama/Gemini で可
+NO（文脈依存・推論が要る）: 意味的 → Claude系限定
+
+【事故教訓】subtask_034a（2記事の通読・矛盾解消）を 元Gemini足軽3 に割り当てた
+【教訓2】qwen3-coder:free はVenice上流の不安定でattempt#32空転。gpt-oss-120bに昇格(2026-06-17)。
+ところ、記事を編集せず .gitignore を誤改変して空回りした。本ルールはこの再発防止。
+同日（2026-06-15）、足軽6・足軽7（Gemini）も cmd_036 実装タスクで虚偽完了報告を提出。
+⚠️ 今後 Gemini/Ollama 足軽へのファイル編集タスク割当は、上記判断の決め手を必ず適用すること。
 
 ---
 
@@ -1100,3 +1267,31 @@ gunshi に QC タスクを送って 5 分以上応答がない場合:
 同じ対処を 2 回繰り返しても解決しない場合は、
 dashboard.md 🚨要対応 セクションに記載して殿の判断を仰ぐこと。
 自己回復を無限に試みてはならない。
+
+### 詰まりのログ記録・自動エスカレーション（cmd_065・2026-07-07）
+
+上記いずれの詰まり対処（足軽再割当・軍師代行QC）を実施する際も、対処の直前に
+以下を実行し、実測ログに残すこと（家老の記憶だけに頼らない）:
+
+```bash
+bash scripts/log_timing_event.sh stuck_recovery_attempt "" "" <詰まったagent_id> --source=karo
+bash scripts/check_event_escalation.sh <詰まったagent_id> stuck_recovery_attempt agent \
+  --threshold=2 --cooldown=30 --jsonl=logs/timing_events.jsonl
+```
+
+2つ目のコマンドの出力が `FIRE:<n>` の場合、直ちに以下を実行し殿へ通知すること
+（「ループ防止」節の「2回繰り返しても解決しない場合は殿の判断を仰ぐ」を、
+dashboard記載だけでなくntfy即時発火でも担保する）:
+
+```bash
+bash scripts/ntfy.sh "🚨 <詰まったagent_id> 詰まり2回検知、自己回復断念。殿の判断を仰ぐ"
+bash scripts/log_timing_event.sh stuck_recovery_attempt_escalated "" "" <詰まったagent_id> --source=karo
+```
+
+`BELOW:<n>` の場合は対処を継続してよい（1回目の詰まり対処）。`COOLDOWN:<n>` の場合は
+既に直近でntfy済みのため再送しない。
+---
+## 正典参照
+本ファイルに記載のない横断ルールは `instructions/common/escalation_taxonomy.md`
+（判断タクソノミー・用語集）および `instructions/common/forbidden_actions.md`
+（F004-F007、特にF007 git push承認）を正典として参照すること。

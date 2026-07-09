@@ -110,6 +110,17 @@ run_preflight() {
         bash "${SCRIPT_DIR}/scripts/ntfy.sh" "🚨 起動失敗 — 必須依存が欠落。ターミナルを確認してください。" 2>/dev/null || true
     fi
 
+    # ── 警告のみ: OpenRouter API キー確認 ──
+    settings_yaml="${SCRIPT_DIR}/config/settings.yaml"
+    if grep -q "openrouter/" "$settings_yaml" 2>/dev/null; then
+        if [ -z "${OPENROUTER_API_KEY:-}" ] && [ ! -f "${HOME}/.opencode/auth.json" ]; then
+            echo -e "\033[1;33m【PREFLIGHT WARN】\033[0m OpenRouter 対応足軽が設定されていますが OPENROUTER_API_KEY が未設定です"
+            echo "  設定方法: export OPENROUTER_API_KEY=<your_key> を起動シェルに追加"
+            echo "         または: opencode auth login openrouter"
+            echo "  ※ OPENROUTER_API_KEY が無い場合、当該足軽 (OpenCode+OpenRouter) は動作しません"
+        fi
+    fi
+
     return "$fatal"
 }
 

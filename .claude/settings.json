@@ -21,6 +21,17 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/pretooluse_clear_idle.sh",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   },
   "permissions": {

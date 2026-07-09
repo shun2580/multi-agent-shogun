@@ -598,6 +598,65 @@ if [[ ${#OPENCODE_AGENTS[@]} -gt 0 ]]; then
         model="${AGENT_MODEL[$agent]}"
         printf "  %s: %s (%s)\n" "$agent" "$cli" "$model"
     done
+
+    # OpenRouter sub-section (when openrouter models are in use)
+    _or_has_openrouter=false
+    for agent in "${OPENCODE_AGENTS[@]}"; do
+        _raw_model=$(get_agent_model "$agent" 2>/dev/null || echo "")
+        if [[ "$_raw_model" == *"openrouter/"* ]]; then
+            _or_has_openrouter=true
+            break
+        fi
+    done
+
+    if [[ "$_or_has_openrouter" == "true" ]]; then
+        printf "\n  ── OpenRouter ─────────────────────\n"
+        # Prefer env var; fall back to auth.json (opencode auth login openrouter)
+        _or_api_key="${OPENROUTER_API_KEY:-}"
+        if [[ -z "$_or_api_key" ]]; then
+            _or_auth_json="${HOME}/.local/share/opencode/auth.json"
+            if [[ -f "$_or_auth_json" ]]; then
+                _or_api_key=$(python3 -c "
+import json, sys
+try:
+    d = json.load(open('${_or_auth_json}'))
+    print(d.get('openrouter', {}).get('key', ''))
+except:
+    pass
+" 2>/dev/null || echo "")
+            fi
+        fi
+        if [[ -z "$_or_api_key" ]]; then
+            printf "  OPENROUTER_API_KEY 未設定・auth.json なし — 利用状況を取得できません\n"
+            printf "  設定方法: export OPENROUTER_API_KEY=<your_key> または opencode auth login openrouter\n"
+        else
+            _or_response=$(curl -s --max-time 5 \
+                -H "Authorization: Bearer ${_or_api_key}" \
+                "https://openrouter.ai/api/v1/auth/key" 2>/dev/null || echo "")
+            if [[ -z "$_or_response" ]]; then
+                printf "  OpenRouter API 取得失敗 (タイムアウトまたはネットワークエラー)\n"
+            elif echo "$_or_response" | grep -q '"data"'; then
+                _or_info=$(echo "$_or_response" | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    data = d.get('data', {})
+    rl = data.get('rate_limit', {})
+    requests = rl.get('requests', '?')
+    interval = rl.get('interval', '?')
+    usage = data.get('usage', '?')
+    limit = data.get('limit', None)
+    limit_str = str(limit) if limit is not None else '無制限'
+    print(f'  レート上限: {requests}req/{interval} | 累計使用: {usage} | 日次上限: {limit_str}')
+except:
+    print('  レスポンスの解析に失敗しました')
+" 2>/dev/null || echo "  python3 parse error")
+                printf "%s\n" "$_or_info"
+            else
+                printf "  OpenRouter API レスポンス異常\n"
+            fi
+        fi
+    fi
 fi
 
 # --- Other CLIs ---

@@ -1,0 +1,113 @@
+task:
+  task_id: subtask_082_evidence
+  parent_cmd: cmd_082
+  type: analysis
+  bloom_level: L5
+  assigned_to: gunshi
+  status: done
+  timestamp: "2026-07-09T00:08:00"
+  description: |
+    【cmd_082(証拠提示フェーズのみ・Hard Gate・ラウンド3): 捏造疑い2件を含む
+    4claimの出所特定】
+
+    ■ 絶対最優先: 殿の未コミット編集を保全せよ
+    articles/opencode-ollama-timeout-tui-hang.md には殿の未コミット編集
+    (対応節の経済比較・「未検証の改善策」の理由・「timeout発火が実測で
+    確認できた」表現・スニペット注記)が存在する。着手前に
+    `cd zenn-content && git diff -- articles/opencode-ollama-timeout-tui-hang.md`
+    で現状(25行追加・17行削除)を確認せよ。**本タスクは証拠提示のみ**。
+    記事は1バイトも変更するな。git commitも一切しない。安全網
+    バックアップ:
+    /tmp/claude-1000/-home-nishikawa-projects-multi-agent-shogun/6b4ad8f8-198c-4635-b0ac-4189b003636a/scratchpad/article_BACKUP_round3_2357.md
+
+    ■ 背景(重要・正直に伝える)
+    外部レビューで「cmd_080調査結果に無い事実の混入(捏造疑い)」2件が
+    指摘された。このうち証拠1の「ashigaru4が1ヶ月以上安定稼働・
+    クラッシュ記録なし」という記述は、**家老(karo)自身がcmd_081の
+    ashigaru6向けタスク説明文に書いた文言**が、そのまま記事へ書き
+    写された結果である。家老はdashboard.mdの布陣スナップショット
+    (2026-06-02/06-03/06-15、いずれも「Ollama×1(ashigaru4)」と記載)
+    とcmd_013(足軽4のOllama切戻し記録)から「1ヶ月以上の稼働実績」を
+    導いたが、**「クラッシュ記録なし」は家老の狭い検索範囲からの
+    誤った推論であり、直接裏取りしていなかった**。家老自身が以下を
+    追加確認したところ、この推論は誤りだったと判明した:
+    /home/nishikawa/projects/zenn-content/articles/shogun-opencode-setraw-errno5.md
+    の205行目付近に「2026-06-15〜06-16の2日間で計4回、番犬(対策B)が
+    ashigaru4のTUIを自動で蘇生させています([AUTO-HEAL]エントリと
+    switch_cli.logの再起動時刻が一致)」という記述があり、**これは
+    ashigaru4の実際のクラッシュ記録そのものである**。「クラッシュ
+    記録なし」は事実と矛盾する。
+
+    **そなたの役割**: 家老のこの気づきを鵜呑みにせず、上記ファイルと
+    根拠ログを自分で独立に再確認し、正式な結論として報告に記録する
+    こと(cmd_038 Independent Verification Ruleに基づく、家老自身の
+    誤りへの検証も例外ではない)。
+
+    ■ 証拠1: ashigaru4稼働実績の再検証(最重要)
+    - 上記errno5記事205行目付近の「2026-06-15〜06-16の2日間で計4回、
+      AUTO-HEALがashigaru4のTUIを蘇生」という記述を、実際のログ
+      (logs/auto_heal_events.jsonl、switch_cli.log等、当時のファイルが
+      現存する範囲で)照合できるか確認せよ。
+    - ashigaru4がopencode+Ollamaを担当していた実際の期間(開始日時・
+      終了日時=cmd_071での役割交代)を、queue/reports/ashigaru4_report.yaml
+      (家老が確認した限りではcmd_071以降のsubtask_071_verify_a4しか
+      存在しない=Ollama時代の完了報告は同ファイルには残っていない)・
+      dashboard.mdの布陣スナップショット・cmd_013から特定せよ。
+    - 結論として「1ヶ月以上稼働」という期間の主張と「クラッシュ記録
+      なし」という無事故主張を分離し、後者は**誤り(実際には最低4回の
+      TUIクラッシュ記録がある)**と明記せよ。
+
+    ■ 証拠2: 隔離テストの「コールド状態」根拠
+    記事65行目付近「このテスト段階ではモデルがコールド状態(初回ロード)
+    で実施されました」の根拠を、cmd_076のgunshi_report.yaml
+    (subtask_076_investigate、段階4「opencode run単体隔離実行」の
+    記述)から確認せよ。家老が確認した限りでは、段階4の記述には
+    テスト直前の`ollama ps`確認等、コールド状態を直接裏付ける記述が
+    見当たらなかった(コールド状態の直接的な傍証があるのは段階1の
+    curlテストのみで、段階4=opencode run単体テストとは別の実験)。
+    そなた自身が段階4を実施した当事者であるため、当時の実際の状況
+    (直前にollama psを確認したか、他の根拠があるか)を思い出して
+    正直に報告せよ。**提示できない場合は「提示不能」と明記し、記事の
+    該当記述は修正フェーズで削除・弱体化する対象とする**。
+
+    ■ 証拠3: 隔離テストログの原文タイムスタンプ
+    以下のファイルの該当行をそのまま引用せよ(Zサフィックスの有無を
+    確認、記事の「Zサフィックスが付いており」という注記との整合を
+    取るため):
+    /tmp/claude-1000/-home-nishikawa-projects-multi-agent-shogun/fdc2ae48-3f4c-47f4-a484-c2c286ea1247/scratchpad/opencode_run_warm.log
+    家老が確認した限りでは、該当行は
+    `timestamp=2026-07-08T09:13:36.184Z level=INFO ... message=stream
+    providerID=ollama modelID=qwen3.5:9b ...`および
+    `timestamp=2026-07-08T09:14:36.197Z level=ERROR ... error.error=
+    "TimeoutError: The operation timed out."`であり、確かに末尾に
+    "Z"が付いている。そなた自身で再度grepし、原文をそのまま報告に
+    貼ること。
+
+    ■ 証拠4: cmd_074の実行者(重要な誤帰属の疑い)
+    記事23-25行目付近は「調査チーム(以降「軍師」)がopencodeの設定
+    ファイルを確認すると...そこで、単純な対応を入れました」と、
+    まるで軍師(そなた)が設定ファイルの実装(opencode.jsoncへの
+    ollamaブロック追加)まで行ったかのように書かれている。しかし
+    家老が確認した限りでは、queue/reports/ashigaru2_report.yamlに
+    `task_id: subtask_074_implement`のエントリがあり、**実際に
+    opencode.jsoncを編集したのはashigaru2(足軽2)であり、軍師は
+    cmd_073で根因を診断し、cmd_074実装後にgunshi_qc_074_implementで
+    QCを行った立場**である。そなた自身の役割分担ルール
+    (instructions/karo.md「Task Routing: Ashigaru vs. Gunshi」——
+    「軍師は考える、足軽が実行する。軍師に実装をさせるな」)に照らし
+    ても、軍師が直接ファイルを編集することはない。そなた自身の記憶・
+    queue/tasks/ashigaru2.yaml・queue/reports/ashigaru2_report.yaml
+    (subtask_074_implement)を確認し、実行者が足軽2であったことを
+    確定して報告せよ。
+
+    ■ 完了報告と停止(Hard Gate厳守)
+    queue/reports/gunshi_report.yaml に task_id: subtask_082_evidence で、
+    証拠1(誤り確定・正しい事実)・証拠2(提示可否)・証拠3(原文引用)・
+    証拠4(実行者確定)をまとめ、家老へ報告して**そこで停止**せよ。
+    修正作業には一切着手しないこと。記事ファイルは1バイトも変更しない
+    こと(git diffで自己確認してから報告すること)。推測で埋めることは
+    絶対禁止——確認できない項目は正直に「提示不能」「不明」と書け。
+
+    bash /home/nishikawa/projects/multi-agent-shogun/scripts/inbox_write.sh karo \
+      "subtask_082_evidence 完了(証拠提示のみ・修正未着手・Hard Gate厳守)。cmd_082証拠1-4の結果をgunshi_report.yamlに記録した。殿の承認待ち。確認されたし。" \
+      report_received gunshi --cmd_id=cmd_082 --task_id=subtask_082_evidence
