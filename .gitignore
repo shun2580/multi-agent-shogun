@@ -116,6 +116,7 @@
 !scripts/model_update_check.sh
 !scripts/analyze_timing.py
 !scripts/archive_report.sh
+!scripts/deadman_watcher.sh
 
 # Queue directories
 !queue/
