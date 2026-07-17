@@ -36,13 +36,18 @@ start_watcher_if_missing() {
     local pane="$2"
     local log_file="$3"
     local cli
+    # cmd_093発見: shogun等、末尾のペインインデックス(.0等)無しで実際には
+    # 起動している既存watcherも重複と正しく判定できるよう、インデックス
+    # 除去形(pane_bare)でも一致を確認する。完全一致のみだと本日の
+    # インシデントで観測されたshogun重複watcherを検知できない。
+    local pane_bare="${pane%.*}"
 
     ensure_inbox_file "$agent"
     if ! pane_exists "$pane"; then
         return 0
     fi
 
-    if pgrep -f "scripts/inbox_watcher.sh ${agent} ${pane}( |$)" >/dev/null 2>&1; then
+    if pgrep -f "scripts/inbox_watcher.sh ${agent} (${pane}|${pane_bare})( |$)" >/dev/null 2>&1; then
         return 0
     fi
 
@@ -88,23 +93,25 @@ start_deadman_watcher_if_missing() {
     nohup bash scripts/deadman_watcher.sh >> logs/deadman_watcher.log 2>&1 &
 }
 
-if [ "${1:-}" = "--print-watchers" ]; then
-    watcher_specs
-    exit 0
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    if [ "${1:-}" = "--print-watchers" ]; then
+        watcher_specs
+        exit 0
+    fi
+
+    # Preflight check (致命依存欠落なら中止)
+    if ! bash "$SCRIPT_DIR/scripts/preflight_check.sh"; then
+        echo "[$(date)] [FATAL] 必須依存が欠落。起動を中止します。" >&2
+        exit 1
+    fi
+
+    # tmux bell抑制: multiagent:agents window (ashigaru/gunshi常駐) の bell 中継を止める。
+    # 殿が手動操作する shogun/karo pane (multiagent:0 等) は対象外。
+    # 冪等: monitor-bell off は状態設定のため何度実行しても副作用なし。
+    tmux set-option -w -t multiagent:agents monitor-bell off 2>/dev/null || true
+
+    while true; do
+        start_all_watchers
+        sleep 5
+    done
 fi
-
-# Preflight check (致命依存欠落なら中止)
-if ! bash "$SCRIPT_DIR/scripts/preflight_check.sh"; then
-    echo "[$(date)] [FATAL] 必須依存が欠落。起動を中止します。" >&2
-    exit 1
-fi
-
-# tmux bell抑制: multiagent:agents window (ashigaru/gunshi常駐) の bell 中継を止める。
-# 殿が手動操作する shogun/karo pane (multiagent:0 等) は対象外。
-# 冪等: monitor-bell off は状態設定のため何度実行しても副作用なし。
-tmux set-option -w -t multiagent:agents monitor-bell off 2>/dev/null || true
-
-while true; do
-    start_all_watchers
-    sleep 5
-done
