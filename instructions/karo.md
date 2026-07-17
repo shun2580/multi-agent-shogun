@@ -379,6 +379,38 @@ L3はBloom分類上「機械的適用（定型修正・frontmatter一括修正�
 （Independent Verification Rule: files_modifiedの実在確認・test_command独立再実行等）を
 一切省略しない。
 
+## Fast-Lane Exception（cmd_086 Part C 2026-07-10制定・2026-07-17再構成）
+
+**再構成に関する注記**: 本節は2026-07-11〜07-17の間に原因未特定のまま消失した
+（詳細はdashboard.md該当節・cmd_090/091参照）。逐語(verbatim)の原文は現存せず、
+`config/settings.yaml`のコメント・dashboard.mdの当時要約・`scripts/scope_check.sh`の
+実装（ground truth）・過去の完了報告の断片から**再構成**したものである。原文と
+細部の文言・語順・具体例が異なる可能性がある。
+
+些事（軽量・単一アクション）タスクについて、承認ゲート（軍師QC等の段階）を
+条件付きで短縮できる例外を定める。**F001（家老の自己実行禁止）・CLAUDE.md
+Report Flow表の原則本文は一切変更しない**——あくまで下記の機械判定を満たした
+場合に限る条件付き例外の追記である。
+
+### 適用条件（機械判定）
+
+`scripts/scope_check.sh` の `scope_check_fastlane_eligible()` が exit 0 を返す
+場合にのみ適用可。以下3条件の**全て**を満たすことを要する:
+
+1. **単一ファイルの単一git操作であること**（複数ファイル横断は対象外）
+2. **変更ファイルがコード/設定ファイルでないこと**（`*.sh`/`*.py`/`*.js`/`*.ts`/
+   `*.json`/`*.yaml`/`*.yml`・`config/*`・`scripts/*`・`lib/*`・`.github/*` は対象外）
+3. **既存scope_check.shの通常ロジック（allowed_paths適合）にも適合すること**
+   （違反=exit 1・SKIP=exit 2はいずれも「不可」に倒す安全側判定。cmd_038
+   Independent Verification RuleのSKIP=通過とは意図的に逆）
+
+### 暫定運用・revert条件
+
+本運用は**試行運用**とし、実cmd 3件の累積をもって常用可否を評価する
+（評価結果は別途レポートで報告）。誤判定が1件でも発生した場合、家老は
+即座に`config/settings.yaml`の`features.fastlane_enabled`を`false`へ変更し、
+通常フローへrevertする。
+
 ## Task YAML Format
 
 ```yaml
