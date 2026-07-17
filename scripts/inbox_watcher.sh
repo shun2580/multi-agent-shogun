@@ -216,6 +216,12 @@ log_agent_started_event() {
     bash "${SCRIPT_DIR}/scripts/log_timing_event.sh" agent_started "$cmd_id" "$task_id" "$AGENT_ID" --source=inbox_watcher.sh 2>/dev/null || true
 }
 
+log_agent_notified_event() {
+    local cmd_id="${1:-}"
+    local task_id="${2:-}"
+    bash "${SCRIPT_DIR}/scripts/log_timing_event.sh" agent_notified "$cmd_id" "$task_id" "$AGENT_ID" --source=inbox_watcher.sh 2>/dev/null || true
+}
+
 # Extract cmd_id/task_id from a message content string, using the same
 # regex as inbox_write.sh's CONTENT fallback (cmd_068 Fix1). Prints
 # "cmd_id<TAB>task_id" (either half may be empty on no-match).
@@ -317,6 +323,12 @@ read_count: $READ_COUNT
 bytes_read: $READ_BYTES_TOTAL
 estimated_tokens: $ESTIMATED_TOKENS_TOTAL
 EOF
+    # cmd_085 Phase2 item3: append-only history for cross-session/cross-cmd analysis.
+    local hist_file="${SCRIPT_DIR}/queue/metrics/${AGENT_ID:-unknown}_selfwatch_history.jsonl"
+    mkdir -p "$(dirname "$hist_file")" 2>/dev/null || true
+    printf '{"ts":"%s","agent_id":"%s","unread_latency_sec":%s,"read_count":%s,"bytes_read":%s}\n' \
+        "$(date -Iseconds)" "${AGENT_ID:-unknown}" "$unread_latency_sec" "$READ_COUNT" "$READ_BYTES_TOTAL" \
+        >> "$hist_file" 2>/dev/null || true
 }
 
 disable_normal_nudge() {
@@ -1326,6 +1338,12 @@ for s in data.get('specials', []):
         # Track when we first saw unread messages
         if [ "$FIRST_UNREAD_SEEN" -eq 0 ]; then
             FIRST_UNREAD_SEEN=$now
+            local notify_content notify_cmd_id notify_task_id notify_ids
+            notify_content=$(echo "$info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(json.load(sys.stdin).get('latest_content',''))" 2>/dev/null)
+            notify_cmd_id=$(echo "$info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(json.load(sys.stdin).get('latest_cmd_id',''))" 2>/dev/null)
+            notify_task_id=$(echo "$info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(json.load(sys.stdin).get('latest_task_id',''))" 2>/dev/null)
+            notify_ids=$(resolve_timing_ids "$notify_cmd_id" "$notify_task_id" "$notify_content")
+            log_agent_notified_event "$(printf '%s' "$notify_ids" | cut -f1)" "$(printf '%s' "$notify_ids" | cut -f2)"
         fi
 
         if [ "${ASW_DISABLE_ESCALATION:-0}" = "1" ]; then
@@ -1388,6 +1406,19 @@ for s in data.get('specials', []):
                     send_wakeup_with_escape "$normal_count"
                 else
                     echo "[$(date)] ESCALATION Phase 3: Agent $AGENT_ID unresponsive for ${age}s. Sending /clear." >&2
+                    # cmd_087 Part B: Phase3発火時の状態計装(しきい値・判定条件は無変更)
+                    local p3_busy p3_pane_cmd p3_age p3_content p3_cmd_id p3_task_id p3_ids
+                    if agent_is_busy; then p3_busy="true"; else p3_busy="false"; fi
+                    p3_pane_cmd=$(timeout 2 tmux display-message -t "$PANE_TARGET" -p '#{pane_current_command}' 2>/dev/null || echo "")
+                    p3_age="$age"
+                    p3_content=$(echo "$info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(json.load(sys.stdin).get('latest_content',''))" 2>/dev/null)
+                    p3_cmd_id=$(echo "$info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(json.load(sys.stdin).get('latest_cmd_id',''))" 2>/dev/null)
+                    p3_task_id=$(echo "$info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(json.load(sys.stdin).get('latest_task_id',''))" 2>/dev/null)
+                    p3_ids=$(resolve_timing_ids "$p3_cmd_id" "$p3_task_id" "$p3_content")
+                    extra_json=$(printf '{"busy":"%s","pane_cmd":"%s","age_sec":"%s"}' "$p3_busy" "$p3_pane_cmd" "$p3_age")
+                    bash "${SCRIPT_DIR}/scripts/log_timing_event.sh" phase3_fired \
+                        "$(printf '%s' "$p3_ids" | cut -f1)" "$(printf '%s' "$p3_ids" | cut -f2)" "$AGENT_ID" \
+                        --source="inbox_watcher.sh:phase3" --extra="$extra_json"
                     send_cli_command "/clear"
                     LAST_CLEAR_TS=$now
                     FIRST_UNREAD_SEEN=0  # Reset — will re-detect on next cycle

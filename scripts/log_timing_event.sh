@@ -16,12 +16,14 @@ shift 4 2>/dev/null || true
 redo_of=""
 qc_result=""
 source_name=""
+extra=""
 
 for arg in "$@"; do
     case "$arg" in
         --redo_of=*) redo_of="${arg#--redo_of=}" ;;
         --qc_result=*) qc_result="${arg#--qc_result=}" ;;
         --source=*) source_name="${arg#--source=}" ;;
+        --extra=*) extra="${arg#--extra=}" ;;
     esac
 done
 
@@ -32,7 +34,7 @@ mkdir -p "${SCRIPT_DIR}/logs" 2>/dev/null || true
 "${SCRIPT_DIR}/.venv/bin/python3" -c "
 import json, sys
 
-ts, event, cmd_id, task_id, agent, redo_of, qc_result, source = sys.argv[1:9]
+ts, event, cmd_id, task_id, agent, redo_of, qc_result, source, extra = sys.argv[1:10]
 
 def none_if_empty(v):
     return v if v != '' else None
@@ -46,9 +48,10 @@ record = {
     'redo_of': none_if_empty(redo_of),
     'qc_result': none_if_empty(qc_result),
     'source': none_if_empty(source),
+    'extra': none_if_empty(extra),
 }
 print(json.dumps(record, ensure_ascii=False))
-" "$ts" "$event" "$cmd_id" "$task_id" "$agent" "$redo_of" "$qc_result" "$source_name" \
+" "$ts" "$event" "$cmd_id" "$task_id" "$agent" "$redo_of" "$qc_result" "$source_name" "$extra" \
     >> "${SCRIPT_DIR}/logs/timing_events.jsonl" 2>/dev/null || true
 
 exit 0
