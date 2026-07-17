@@ -117,6 +117,7 @@
 !scripts/analyze_timing.py
 !scripts/archive_report.sh
 !scripts/deadman_watcher.sh
+!scripts/scope_check.sh
 
 # Queue directories
 !queue/
