@@ -119,6 +119,14 @@ bash scripts/inbox_write.sh ashigaru2 "タスクYAMLを読んで作業開始せ�
   --cmd_id=${cmd_id} --task_id=${task_id}
 ```
 
+**QC結果を伴う報告時**: 家老が直接QCを代行した場合（軍師詰まり時の代行QC等）や
+QC結果に基づく報告を送る場合は、`--qc_result=pass`または`--qc_result=fail`も併せて
+付与する（手戻り時間計測に必須、cmd_068）:
+```bash
+bash scripts/inbox_write.sh gunshi "家老代行QC完了: subtask_XXX" report_received karo \
+  --cmd_id=${cmd_id} --task_id=${task_id} --qc_result=pass
+```
+
 ### No Inbox to Shogun
 
 Report via dashboard.md update only. Reason: interrupt prevention during lord's input.
@@ -508,6 +516,19 @@ Karo and Gunshi update dashboard.md. Gunshi updates during quality check aggrega
 - [ ] Detail in other section + summary in 要対応?
 
 **Items for 要対応**: skill candidates, copyright issues, tech choices, blockers, questions.
+
+### 🚨要対応項目へのcreated_at埋め込み（cmd_065・2026-07-07）
+
+🚨要対応セクションに新規項目を追加する際は、項目の直前に以下のHTMLコメントを
+1行追加すること（Markdownレンダリング上は非表示、機械的パース用）:
+
+```
+<!-- created_at: 2026-07-07T23:00:00 -->
+```
+
+タイムスタンプは `date "+%Y-%m-%dT%H:%M:%S"` で取得した実際の時刻を使うこと
+(捏造禁止)。24時間応答なき項目は自動でntfy再通知される(inbox_watcher.sh
+check_dashboard_staleness()、閾値はconfig/settings.yaml dashboard_staleness:参照)。
 
 ### 🐸 Frog / Streak Section Template (dashboard.md)
 
@@ -1104,6 +1125,29 @@ gunshi に QC タスクを送って 5 分以上応答がない場合:
 同じ対処を 2 回繰り返しても解決しない場合は、
 dashboard.md 🚨要対応 セクションに記載して殿の判断を仰ぐこと。
 自己回復を無限に試みてはならない。
+
+### 詰まりのログ記録・自動エスカレーション（cmd_065・2026-07-07）
+
+上記いずれの詰まり対処（足軽再割当・軍師代行QC）を実施する際も、対処の直前に
+以下を実行し、実測ログに残すこと（家老の記憶だけに頼らない）:
+
+```bash
+bash scripts/log_timing_event.sh stuck_recovery_attempt "" "" <詰まったagent_id> --source=karo
+bash scripts/check_event_escalation.sh <詰まったagent_id> stuck_recovery_attempt agent \
+  --threshold=2 --cooldown=30 --jsonl=logs/timing_events.jsonl
+```
+
+2つ目のコマンドの出力が `FIRE:<n>` の場合、直ちに以下を実行し殿へ通知すること
+（「ループ防止」節の「2回繰り返しても解決しない場合は殿の判断を仰ぐ」を、
+dashboard記載だけでなくntfy即時発火でも担保する）:
+
+```bash
+bash scripts/ntfy.sh "🚨 <詰まったagent_id> 詰まり2回検知、自己回復断念。殿の判断を仰ぐ"
+bash scripts/log_timing_event.sh stuck_recovery_attempt_escalated "" "" <詰まったagent_id> --source=karo
+```
+
+`BELOW:<n>` の場合は対処を継続してよい（1回目の詰まり対処）。`COOLDOWN:<n>` の場合は
+既に直近でntfy済みのため再送しない。
 ---
 ## 正典参照
 本ファイルに記載のない横断ルールは `instructions/common/escalation_taxonomy.md`

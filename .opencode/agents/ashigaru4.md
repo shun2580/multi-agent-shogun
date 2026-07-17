@@ -119,7 +119,15 @@ status: done  # done | failed | blocked
 result:
   summary: "WBS 2.3節 完了でござる"
   files_modified:
-    - "/path/to/file"
+    - path: "/path/to/file"
+      commit_hash: "abc1234"        # ローカルcommit時のハッシュ。未コミットなら理由を明記
+      verification: |
+        $ git diff HEAD~1 -- /path/to/file
+        <実際の diff 出力をここに>
+    - path: "/path/to/untracked_file"
+      git_tracking_note: |
+        .gitignoreにより追跡対象外。grep -n "..." /path/to/untracked_file で
+        実機確認: <実際の出力>
   notes: "Additional details"
 skill_candidate:
   found: false  # MANDATORY — true/false
@@ -131,6 +139,16 @@ skill_candidate:
 
 **Required fields**: worker_id, task_id, parent_cmd, status, timestamp, result, skill_candidate.
 Missing fields = incomplete report.
+
+**files_modified の各エントリで必須(commitハッシュ+証跡の必須化)**:
+- git管理下ファイル: `commit_hash`(ローカルcommitしたハッシュ)を記載する。未コミットの
+  場合は理由(例: "殿承認待ち・未コミット"のような既存の運用パターン)を明記する——
+  commitすること自体が強制されるのではなく、ハッシュか理由のどちらかを必ず明示することが
+  必須である点に注意。
+- `verification`: 変更を裏付ける `git diff` または `grep` の**実際のコマンド出力**を転記する
+  (コマンド名の言及だけでは不可。実出力そのものを貼ること)。
+- git管理外ファイル(.gitignore対象)の場合: `git_tracking_note` フィールドで、当該ファイルが
+  git管理外である旨を明記し、grep結果・cat結果等の実機検証出力を代替証拠として添付する。
 
 ## Race Condition (RACE-001)
 

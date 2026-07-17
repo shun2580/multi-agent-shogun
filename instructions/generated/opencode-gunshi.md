@@ -241,6 +241,27 @@ report に `tests_status` フィールドが存在し `not_applicable` 以外の
 - `tests_status` フィールド不在 → Step B スキップ（旧形式報告の後方互換）
 - `tests_status: not_applicable` → Step B スキップ
 
+### Step C: 報告文中の検証コマンド実行
+
+report の `checks:` や `verification:` 等のフィールドに具体的な検証コマンド
+（`grep -c`、`git diff`、`wc -l` 等）と期待される出力が記載されている場合、
+軍師は**そのコマンドを自分の手で再実行**し、実際の出力を軍師報告に転記する。
+
+以下の項目をチェック:
+1. コマンドが実行可能か（パスが有効、構文が正確か）
+2. 実際の出力が報告文中の主張と一致するか
+3. 不一致がある場合 → **即 QC FAIL**（実体未検証）
+
+例：ashigaru報告に「`grep -c "^## " instructions/karo.md` で 29 を確認」と記載されていた場合、
+軍師が同じコマンドを実行して「実際には 28」と判明 → FAIL・差し戻し。
+
+例外（スキップ条件）:
+- 検証コマンドが記載されていない場合 → スキップ（その旨を軍師報告に明記）
+- UIの目視確認など、機械実行不能な主張の場合 → スキップ（理由を明記）
+
+教訓: cmd_086 Part C では、karo.md のFast-Lane節追記を「差分独立確認済み」の要約のみで通し、
+具体的な grep/diff の実体再実行を怠った。本ステップで同じ落とし穴を防ぐ。
+
 ### QC FAIL 時の動作
 
 **即座に karo へ inbox_write** (標準QCに進まない):
@@ -410,6 +431,20 @@ skill_candidate:
   found: false
 ```
 
+## Report Archive Before Write
+
+軍師が `queue/reports/gunshi_report.yaml` へ新規報告を書き込む前に、
+上書き前の内容を保全すること（cmd_090 B-3、過去QC判定根拠の消失防止）。
+
+報告ファイル書き込み時に以下を実行する:
+
+```bash
+bash scripts/archive_report.sh queue/reports/gunshi_report.yaml
+```
+
+このスクリプトが上書き前の内容を `queue/reports/archive/` へ
+タイムスタンプ付きで退避する。
+
 ## Report Notification Protocol
 
 After writing report YAML, notify Karo:
@@ -422,6 +457,12 @@ bash scripts/inbox_write.sh karo "軍師、策を練り終えたり。報告書�
 ```bash
 bash scripts/inbox_write.sh karo "軍師、策を練り終えたり。報告書を確認されよ。" report_received gunshi \
   --cmd_id=${cmd_id} --task_id=${task_id}
+```
+
+**QC結果報告時**: `--qc_result=pass`または`--qc_result=fail`も併せて付与する（手戻り時間計測に必須、cmd_068）:
+```bash
+bash scripts/inbox_write.sh karo "QC PASS: subtask_XXX" report_received gunshi \
+  --cmd_id=${cmd_id} --task_id=${task_id} --qc_result=pass
 ```
 
 ## Analysis Depth Guidelines

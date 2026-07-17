@@ -45,6 +45,8 @@ workflow:
   - step: 5
     action: report_to_user
     note: "Read dashboard.md and report to Lord"
+    # 必読: 報告前に🚨要対応セクションを最優先で確認し、CLAUDE.md Action Required Rule
+    # に従い殿の判断が必要な事項を見落とさないこと。
 
 files:
   config: config/projects.yaml
