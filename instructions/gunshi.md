@@ -262,6 +262,31 @@ report の `checks:` や `verification:` 等のフィールドに具体的な検
 教訓: cmd_086 Part C では、karo.md のFast-Lane節追記を「差分独立確認済み」の要約のみで通し、
 具体的な grep/diff の実体再実行を怠った。本ステップで同じ落とし穴を防ぐ。
 
+### Step D: 呼び出し経路の実在確認（B-2姉妹ルール、cmd_097 Part B）
+
+report が新規スクリプト・ガード・フック・監視機構の納品を含む場合、足軽の完了報告には
+「呼び出し経路の実在確認」（何が・いつ・どこから呼ぶかの明記、または「手動実行のみ／
+配線は別タスク」の明示宣言）が記載されているはずである（instructions/ashigaru.md側で
+必須化）。軍師は以下を行う:
+
+1. 記載がある場合 → 主張された呼び出し元ファイル・行を実際にgrepで再実行し、
+   Step Cと同じ方法論で実体検証する。
+2. 主張されたファイル・行が実在しない、またはgrepで該当箇所が見つからない場合
+   → **即QC FAIL**（配線未実証）。
+3. 「手動実行のみ／配線は別タスク」という明示宣言がある場合はこのチェックを
+   スキップしてよい（その旨をQC報告に記録）。
+4. 記載自体が無い場合（新規スクリプト・ガード・フック・監視機構の納品であるにも
+   かかわらず言及が無い場合）→ **即QC FAIL**（記載漏れ自体が不備）。
+
+例外（スキップ条件）:
+- 納品物が新規スクリプト・ガード・フック・監視機構ではない場合（既存文書への
+  追記、手順書の更新等）→ Step D自体が対象外。その旨を軍師報告に明記する。
+
+教訓: 2026-07-17、fast-lane配線消失の未検知・scope_check未配線・supervisor長期未稼働の
+3件が同日に顕在化。「実在する物が実際に呼ばれるか」を誰も検証していなかったことが
+共通原因。B-1（成果物の実在証跡）・Step A-C（QCの実体検証）だけでは塞げない穴を
+Step Dで塞ぐ。
+
 ### QC FAIL 時の動作
 
 **即座に karo へ inbox_write** (標準QCに進まない):
@@ -274,6 +299,65 @@ report の `checks:` や `verification:` 等のフィールドに具体的な検
 `scripts/verify_report.sh <report_yaml> [<git_baseline>]` を実行して上記を機械的に処理する。
 スクリプトが実在しない場合は手動でStep A/Bを実行する。
 Exit codes: 0=PASS, 1=FAIL, 2=SKIP
+---
+
+## Scope Check Advisory 配線（cmd_097 Part A） 2026-07-17
+
+scope_check.sh（cmd_036の足軽スコープ逸脱防止策）が実行系から一度も自動的に呼ばれて
+いなかったことがcmd_095で確定した。本節はその主目的（スコープ逸脱検出）を軍師のQCフローへ
+**advisory（記録のみ・PASS/FAIL判定には反映しない）モード**で配線する。
+
+**事前確認**: `config/settings.yaml` → `features.scope_check_advisory` を確認する。
+`false`の場合は本節全体をスキップする。
+
+**実行タイミング**: files_modifiedを伴うタスクのQC時、Independent Verification Rule
+（Step A〜D）と同じタイミングで実行する。
+
+**実行内容**:
+1. 当該タスクのtask_yaml（`queue/tasks/ashigaru{N}.yaml`）を確認する。QC時点で
+   次タスクにより既に上書きされている場合はSKIP扱いとし、その旨を記録する。
+2. git_baselineを決定する（報告にgit_baselineの明記があればそれを使う。無ければ
+   報告記載のcommit_hashから`<commit_hash>~1`を算出する等、妥当な基準を明記する）。
+3. 次を実行する:
+   ```bash
+   bash scripts/scope_check.sh <task_yaml> <git_baseline>
+   ```
+4. exit code（0=適合・1=逸脱検出・2=SKIP）とstderr出力を記録する。
+
+**記録**: QC報告に以下のフィールドを追加する:
+```yaml
+scope_check_advisory:
+  exit_code: 0
+  output: "<stderr出力、または空文字>"
+```
+
+**PASS/FAIL不変更**: exit 1（逸脱検出）でも**QCのPASS/FAIL判定には一切反映しない**
+（従来基準＝Independent Verification Rule + 標準QC基準で判定する）。ただしexit 1の
+場合は報告に目立つ形（見出し「⚠️ advisory逸脱検出」＋非適合ファイル一覧）で記載し、
+家老がdashboardの🚨要対応へ「advisory逸脱検出」として転記できるよう明記すること
+（dashboard更新自体は家老の専管——軍師は報告に書くだけでよい）。
+
+**追記型ログ**: 判定結果を `logs/scope_check_advisory.jsonl` へ1行のJSON（改行区切り）
+として追記する。フィールド: `timestamp`（ISO8601、dateコマンド実測）・`task_id`・
+`exit_code`・`violating_files`（exit 1時のみ非空配列、exit 0/2時は空配列`[]`）。
+ログファイルが無ければ新規作成する（既存ログには一切手を加えない・追記のみ）。
+jqが使えない環境も想定し、printfで1行JSONを組み立てる例:
+
+```bash
+mkdir -p logs
+TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+TASK_ID="subtask_097_example"
+EXIT_CODE=1
+# 違反ファイルが無い場合は空配列 []
+VIOLATING_FILES='["path/to/file1", "path/to/file2"]'
+printf '{"timestamp":"%s","task_id":"%s","exit_code":%s,"violating_files":%s}\n' \
+  "$TS" "$TASK_ID" "$EXIT_CODE" "$VIOLATING_FILES" >> logs/scope_check_advisory.jsonl
+```
+
+**評価予定**: 1週間（2026-07-24目安、deadmanレビューと同時期）のadvisoryデータ
+（実行率・exit分布・偽陽性有無）をもって、強制化の要否を殿が裁定する
+（実際のdashboard記載は家老が別途行う）。
+
 ---
 
 ## Language & Tone
