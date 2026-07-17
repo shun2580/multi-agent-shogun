@@ -115,6 +115,7 @@
 !scripts/log_timing_event.sh
 !scripts/model_update_check.sh
 !scripts/analyze_timing.py
+!scripts/archive_report.sh
 
 # Queue directories
 !queue/
