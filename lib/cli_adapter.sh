@@ -202,6 +202,11 @@ build_cli_command() {
             if [[ -n "$model" ]]; then
                 cmd="$cmd --model $model"
             fi
+            local effort
+            effort=$(get_agent_effort "$agent_id")
+            if [[ -n "$effort" ]]; then
+                cmd="$cmd --effort $effort"
+            fi
             cmd="$cmd $permission_flag"
             ;;
         codex)
@@ -384,6 +389,13 @@ get_agent_model() {
             esac
             ;;
     esac
+}
+
+# get_agent_effort(agent_id)
+# エージェントに明示すべきeffortレベルを返す（未設定なら空文字＝--effort付与なし）
+get_agent_effort() {
+    local agent_id="$1"
+    _cli_adapter_read_yaml "cli.agents.${agent_id}.effort" ""
 }
 
 # get_model_display_name(agent_id)
