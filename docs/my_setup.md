@@ -89,7 +89,7 @@ Sonnet     Sonnet     gpt-oss       Ollama     Haiku      Haiku      Haiku
 
 | エージェント | CLI | モデル | 役割 |
 |---|---|---|---|
-| 将軍（Shogun） | Claude Code | claude-opus-4-8 | 戦略決定・家老へのcmd下達 |
+| 将軍（Shogun） | Claude Code | claude-opus-5 | 戦略決定・家老へのcmd下達 |
 | 家老（Karo） | Claude Code | claude-sonnet-5 | タスク分解・足軽への割当・品質判定 |
 | 軍師（Gunshi） | Claude Code | claude-sonnet-5 | 品質チェック・ダッシュボード更新 |
 | 足軽1/2（Ashigaru1/2） | Claude Code | claude-sonnet-5 | 重量実行タスク（常時稼働） |
