@@ -10,6 +10,19 @@ setup() {
     export TEST_PYTHON="$PROJECT_ROOT/.venv/bin/python3"
     [ -x "$TEST_PYTHON" ] || TEST_PYTHON="python3"
     mkdir -p "$SHOGUN_QUEUE_DIR"/{tasks,reports,inbox}
+
+    # Fail-loud parse-error alerts (cmd_111 Part B) call ntfy.sh and append
+    # to dashboard.md. Override both so tests never fire a real push
+    # notification and can assert on what would have been sent.
+    export SLIM_YAML_NTFY_LOG="$TEST_TMPDIR/ntfy.log"
+    export SLIM_YAML_NTFY_SCRIPT="$TEST_TMPDIR/fake_ntfy.sh"
+    cat > "$SLIM_YAML_NTFY_SCRIPT" <<'EOS'
+#!/bin/bash
+echo "$*" >> "$SLIM_YAML_NTFY_LOG"
+EOS
+    chmod +x "$SLIM_YAML_NTFY_SCRIPT"
+    export SLIM_YAML_DASHBOARD_MD="$TEST_TMPDIR/dashboard.md"
+    printf '## 🚨 要対応\n' > "$SLIM_YAML_DASHBOARD_MD"
 }
 
 teardown() {
@@ -162,4 +175,75 @@ data = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))
 ids = [item["id"] for item in data["inbox"]]
 assert ids == ["pending-old", "done-old"], ids
 PY
+}
+
+# --- cmd_111 Part B: load_yaml() fail-loud on parse failure ---
+
+@test "corrupt shogun_to_karo.yaml fires the fail-loud alert path (ntfy + dashboard) and exits non-zero" {
+    write_yaml "$SHOGUN_QUEUE_DIR/shogun_to_karo.yaml" $'queue:\n  bad: [unclosed\n'
+
+    run run_slim karo
+    assert_failure
+    assert_output --partial "Error: failed to parse"
+
+    # ntfy.sh (stubbed) was invoked with a parse-failure alert
+    assert [ -f "$SLIM_YAML_NTFY_LOG" ]
+    run cat "$SLIM_YAML_NTFY_LOG"
+    assert_output --partial "YAML破損検知"
+    assert_output --partial "shogun_to_karo.yaml"
+
+    # dashboard.md 🚨要対応 section got an entry a deadman/human can see
+    run cat "$SLIM_YAML_DASHBOARD_MD"
+    assert_output --partial "YAMLパース失敗検知"
+    assert_output --partial "shogun_to_karo.yaml"
+}
+
+@test "corrupt single task file is skipped without blocking other agents' task files, exit non-zero" {
+    write_yaml "$SHOGUN_QUEUE_DIR/shogun_to_karo.yaml" "queue: []"
+    write_yaml "$SHOGUN_QUEUE_DIR/tasks/ashigaru1.yaml" $'worker_id: ashigaru1\nstatus: done\n'
+    write_yaml "$SHOGUN_QUEUE_DIR/tasks/ashigaru2.yaml" $'worker_id: ashigaru2\nstatus: [unclosed\n'
+
+    run run_slim karo
+    assert_failure
+    assert_output --partial "failed to parse task file ashigaru2.yaml"
+
+    # Healthy file still processed (reset to idle) despite the sibling's corruption
+    [ "$(yaml_value "$SHOGUN_QUEUE_DIR/tasks/ashigaru1.yaml" "status")" = "idle" ]
+    # Corrupt file left untouched, not silently emptied or archived
+    run cat "$SHOGUN_QUEUE_DIR/tasks/ashigaru2.yaml"
+    assert_output --partial "[unclosed"
+}
+
+@test "empty file and inbox: with no value are normal-empty, do not fire the fail-loud alert" {
+    write_yaml "$SHOGUN_QUEUE_DIR/shogun_to_karo.yaml" "queue: []"
+    : > "$SHOGUN_QUEUE_DIR/ntfy_inbox.yaml"
+
+    run run_slim karo --dry-run
+    assert_success
+    refute_output --partial "failed to parse"
+    [ ! -s "$SLIM_YAML_NTFY_LOG" ]
+    run cat "$SLIM_YAML_DASHBOARD_MD"
+    refute_output --partial "YAMLパース失敗検知"
+
+    # `inbox:` present with no value parses to {'inbox': None} -- syntactically
+    # valid YAML, not a parse failure, so the fail-loud path must not fire.
+    write_yaml "$SHOGUN_QUEUE_DIR/ntfy_inbox.yaml" $'inbox:\n'
+    run run_slim karo --dry-run
+    assert_success
+    refute_output --partial "failed to parse"
+    refute_output --partial "ntfy inbox is not a list"
+}
+
+@test "regression: queue/ntfy_inbox.yaml 'inbox:' empty-value no longer reports 'not a list' (the cmd_111 incident case)" {
+    write_yaml "$SHOGUN_QUEUE_DIR/shogun_to_karo.yaml" "queue: []"
+    # Exact real-world shape that broke for ~2 months: `inbox:` key present
+    # with no value -> yaml.safe_load gives {'inbox': None}. The old
+    # `data.get('inbox', [])` only substitutes the default when the key is
+    # ABSENT, so it returned None -> isinstance(None, list) is False ->
+    # "ntfy inbox is not a list" -> return False -> exit 1, silently, forever.
+    write_yaml "$SHOGUN_QUEUE_DIR/ntfy_inbox.yaml" $'inbox:\n'
+
+    run run_slim karo
+    assert_success
+    refute_output --partial "ntfy inbox is not a list"
 }
