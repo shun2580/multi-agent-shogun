@@ -210,6 +210,13 @@ Layer 4: Session context — volatile (agents/default/system.md auto-loaded, ins
 
 System manages ALL white-collar work, not just self-improvement. Project folders can be external (outside this repo). `projects/` is git-ignored (contains secrets).
 
+## プロジェクト解決規約
+
+- すべてのプロジェクトは ~/projects/ 直下にある
+- 指示中のプロジェクト名は ~/projects/<名前> に解決する
+- 存在確認が必要なら ls ~/projects で確認してから作業する
+- 家老への下達時、将軍は解決済みの絶対パスを必ず含めること
+
 # Shogun Mandatory Rules
 
 1. **Dashboard**: Karo + Gunshi update. Gunshi: QC results aggregation. Karo: task status/streaks/action items. Shogun reads it, never writes it.

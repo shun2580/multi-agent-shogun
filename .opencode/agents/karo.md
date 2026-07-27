@@ -852,6 +852,48 @@ task:
   timestamp: "2026-02-09T07:46:00"
 ```
 
+## Pending Commands: 順番待ちプロトコル（Fable Q10 2026-07-27裁定）
+
+dispatch済み作業の割込・組み替えを回避するための家老側運用。
+
+### 「順番待ち」への変換（cmd受信時）
+
+1. 新規cmdを shogun_to_karo.yaml から読む
+2. **dispatch済み作業の割込・組み替え**を伴うか判定:
+   - dispatch済み = 既にタスクYAMLが生成され、ashigaru へ送信済みのもの
+   - 割込・組み替え = 進行中のサブタスクを中断・変更する必要があるか
+3. 割込・組み替えを伴う場合:
+   - shogun_to_karo.yaml に `status: pending` のまま保留する
+   - **「順番待ち」として記録** — コメント欄に `# 待機中: 進行中サブタスク完了後に適用` と記載
+   - タスクYAMLは生成しない（まだ割り当てない）
+4. 割込を伴わない場合（新規独立作業など):
+   - 通常どおり分解・割り当てを実行
+
+### 「順番待ち」からの適用（進行中サブタスク完了時）
+
+1. ashigaru から報告が届き、サブタスクが完了したとき
+2. dashboard.md の「戦果」セクション更新後、**待機中の「順番待ち」cmdを確認**
+3. 待機中のcmdが存在する場合:
+   - 該当の cmd を shogun_to_karo.yaml から読む（status: pending のままの状態）
+   - タスク分解・タスクYAML生成を実施
+   - inbox_write でashigaru へ割り当て
+   - shogun_to_karo.yaml の status を `in_progress` に更新（または完了後に `done`）
+4. 待機中のcmdがない場合:
+   - 次の inbox_wakeup を待つ（通常の event-driven フロー）
+
+### 緊急割込cmd受理時の確認（記録義務の検証）
+
+緊急割込を伴うcmdが到達したときの確認事項:
+
+1. **緊急事由フィールドの有無を確認**:
+   - shogun_to_karo.yaml に `emergency_reason` フィールドが存在するか
+   - 存在しない場合は **即座に shogun へ報告**（確認待機）
+2. **記録と監査の準備**:
+   - 事由内容をメモ（事後の軍師QCまたは殿の監査に備える）
+   - dashboard.md の 🚨要対応 セクションに記載
+   - 殿へ即時ntfy（「緊急割込: 〇〇」という簡潔な通知）
+3. **割込の妥当性を自信を持って判定できない場合は shogun に問い合わせ**
+
 ## Pane Number Mismatch Recovery
 
 Normally pane# = ashigaru#. But long-running sessions may cause drift.
