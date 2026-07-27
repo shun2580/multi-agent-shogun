@@ -934,6 +934,52 @@ NINJA_EOF
 
     log_success "  └─ $((_ASHIGARU_COUNT + 3))エージェント分のinbox_watcher起動完了（将軍+家老+足軽${_ASHIGARU_COUNT}+軍師）"
 
+    # ═══════════════════════════════════════════════════════════════════
+    # STEP 6.6.5: watcher_supervisor.sh 起動（冪等）+ dashboard常設可視化
+    # cmd_113 Part1-B: watcher_supervisor.sh/deadman_watcher.shはこれまで
+    # shutsujin_departure.shに一切組み込まれておらず、システム非稼働を挟むと
+    # 誰も起こさないライフサイクルの穴があった。既存プロセス検出時は
+    # 二重起動しない（冪等）。
+    # ═══════════════════════════════════════════════════════════════════
+    log_info "🛡️ watcher_supervisor.sh（deadman監視の親プロセス）起動確認中..."
+    source "$SCRIPT_DIR/lib/watcher_lifecycle.sh"
+    _watcher_status_line=$(start_watcher_supervisor_if_missing "$SCRIPT_DIR" "$SCRIPT_DIR/logs/watcher_supervisor.log")
+    echo "  $_watcher_status_line"
+    log_success "  └─ watcher_supervisor.sh 稼働確認完了"
+
+    # dashboard.mdへ常設表示（サイレント死の再発を次回セッション開始で必ず目に入るようにする）
+    # cmd_113可視化バグ修正: watcher_supervisor.shはpreflight_check+全エージェント
+    # watcherループを経てからdeadman_watcher.shを起動するため、単発pgrepでは
+    # 「未起動」と誤検出する競合状態があった。ポーリングで実際の起動を待つ。
+    _watcher_pid=$(wait_for_process_pid "scripts/watcher_supervisor.sh" 10)
+    _deadman_pid=$(wait_for_process_pid "scripts/deadman_watcher.sh" 30)
+    _watcher_check_time=$(date "+%Y-%m-%d %H:%M:%S")
+    if [ -f "$SCRIPT_DIR/dashboard.md" ]; then
+        _dashboard_tmp=$(mktemp)
+        awk -v spid="${_watcher_pid:-未起動}" -v dpid="${_deadman_pid:-未起動}" -v ts="$_watcher_check_time" '
+            BEGIN { in_block=0; inserted=0 }
+            /^<!-- WATCHER_STATUS_START -->$/ { in_block=1; next }
+            /^<!-- WATCHER_STATUS_END -->$/ { in_block=0; next }
+            in_block { next }
+            {
+                print
+                if (!inserted && $0 ~ /^最終更新/) {
+                    print ""
+                    print "<!-- WATCHER_STATUS_START -->"
+                    print "## 🛡️ Watcher稼働状態"
+                    print "- watcher_supervisor.sh PID: " spid
+                    print "- deadman_watcher.sh PID: " dpid
+                    print "- 最終確認時刻: " ts
+                    print "<!-- WATCHER_STATUS_END -->"
+                    inserted=1
+                }
+            }
+        ' "$SCRIPT_DIR/dashboard.md" > "$_dashboard_tmp"
+        mv "$_dashboard_tmp" "$SCRIPT_DIR/dashboard.md"
+        log_info "  └─ dashboard.md へ Watcher稼働状態を記載"
+    fi
+    echo ""
+
     # STEP 6.7 は廃止 — CLAUDE.md Session Start (step 1: tmux agent_id) で各自が自律的に
     # 自分のinstructions/*.mdを読み込む。検証済み (2026-02-08)。
     log_info "📜 指示書読み込みは各エージェントが自律実行（CLAUDE.md Session Start）"
