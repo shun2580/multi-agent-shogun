@@ -15,7 +15,7 @@ if [ -z "$TOPIC" ]; then
   exit 1
 fi
 
-# 送信抑止(dry-run)判定 (cmd_119/cmd_117欠陥2):
+# 送信抑止(dry-run)判定 (cmd_119/cmd_117欠陥2、cmd_122で設計反転):
 # - 明示指定: NTFY_DRY_RUN=1 (または true)
 # - 既存の隔離テスト環境マーカーを継承した場合の自動抑止
 #   (preflight_check.sh/inbox_watcher.shのテストが実プロセスとして本スクリプトを
@@ -27,6 +27,23 @@ esac
 if [ "${__PREFLIGHT_TESTING__:-}" = "1" ] || [ "${__INBOX_WATCHER_TESTING__:-}" = "1" ]; then
   DRY_RUN=1
 fi
+
+# cmd_122: 実行コンテキスト判定(列挙方式→既定抑止方式への反転)。
+# 背景: 上記のマーカー列挙方式は、マーカーを立てない新しいテスト経路が
+# 増えるたびに既定で漏れる。実例: yaml_guardの隔離セッション試験(mktemp -dで
+# 作った一時プロジェクトへcdして実行)がどちらのマーカーも立てないまま
+# 本番のscripts/ntfy.shを直接叩き、fail-open警報が本番ntfyトピックへ実送信
+# された(2026-07-27 21:53、logs/ntfy.log参照)。この試験ではNTFY_SCRIPT自体は
+# 常に本番リポジトリ実体を指す(pretooluse_yaml_guard.shのSCRIPT_DIRはBASH_SOURCE
+# 由来で不変)ため、ntfy.sh自身の設置場所チェックでは検知できない。異常の実体は
+# 「呼び出し元のカレントディレクトリが本番リポジトリの外にある」ことなので、
+# 判定基準もそこに置く: CWDが本番リポジトリ(SCRIPT_DIR)配下でなければ、
+# マーカーの有無を問わず既定でdry-runとする(列挙方式→包含方式への反転)。
+CALLER_CWD="$(pwd)"
+case "$CALLER_CWD" in
+  "$SCRIPT_DIR"|"$SCRIPT_DIR"/*) ;;
+  *) DRY_RUN=1 ;;
+esac
 
 # 認証引数を取得（設定がなければ空 = 後方互換）
 AUTH_ARGS=()

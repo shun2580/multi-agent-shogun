@@ -7,6 +7,13 @@
 # T-NTFY-005: NTFY_DRY_RUN未設定(既定) → 従来どおり実送信される (cmd_119)
 # T-NTFY-006: __PREFLIGHT_TESTING__=1継承 → 自動でdry-run抑止される (cmd_119)
 # T-NTFY-007: __INBOX_WATCHER_TESTING__=1継承 → 自動でdry-run抑止される (cmd_119)
+#
+# cmd_122: 設計反転(マーカー列挙→本番リポジトリ外からの呼び出しは既定で抑止)。
+# 上記T-NTFY-001/002/003/005/006/007は「本番リポジトリ内(MOCK_PROJECT配下)から
+# 呼ばれた」ことを`env -C "$MOCK_PROJECT"`で固定して検証する(cmd_122で追加した
+# CWD判定ロジックが誤って本来の送信まで抑止しないことの回帰確認)。
+# T-NTFY-008: 隔離パス(リポジトリ外CWD)から呼ぶと、マーカー未設定でも自動でdry-run抑止される (cmd_122)
+# T-NTFY-009: 本番リポジトリ配下のCWDから呼ぶと、従来どおり実送信される (cmd_122)
 
 setup_file() {
     export PROJECT_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
@@ -52,7 +59,7 @@ echo "200"
 CURL
     chmod +x "$MOCK_BIN/curl"
 
-    run bash "$MOCK_PROJECT/scripts/ntfy.sh" "テスト通知"
+    run env -C "$MOCK_PROJECT" bash "$MOCK_PROJECT/scripts/ntfy.sh" "テスト通知"
     [ "$status" -eq 0 ]
     [ -f "$MOCK_PROJECT/logs/ntfy.log" ]
     grep -q "OK" "$MOCK_PROJECT/logs/ntfy.log"
@@ -67,7 +74,7 @@ echo "400"
 CURL
     chmod +x "$MOCK_BIN/curl"
 
-    run bash "$MOCK_PROJECT/scripts/ntfy.sh" "テスト通知"
+    run env -C "$MOCK_PROJECT" bash "$MOCK_PROJECT/scripts/ntfy.sh" "テスト通知"
     [ "$status" -eq 1 ]
     [ -f "$MOCK_PROJECT/logs/ntfy.log" ]
     grep -q "FAIL" "$MOCK_PROJECT/logs/ntfy.log"
@@ -82,7 +89,7 @@ exit 6
 CURL
     chmod +x "$MOCK_BIN/curl"
 
-    run bash "$MOCK_PROJECT/scripts/ntfy.sh" "テスト通知"
+    run env -C "$MOCK_PROJECT" bash "$MOCK_PROJECT/scripts/ntfy.sh" "テスト通知"
     [ "$status" -eq 1 ]
     [ -f "$MOCK_PROJECT/logs/ntfy.log" ]
     grep -q "FAIL" "$MOCK_PROJECT/logs/ntfy.log"
@@ -98,7 +105,7 @@ echo "200"
 CURL
     chmod +x "$MOCK_BIN/curl"
 
-    NTFY_DRY_RUN=1 run bash "$MOCK_PROJECT/scripts/ntfy.sh" "テスト通知"
+    NTFY_DRY_RUN=1 run env -C "$MOCK_PROJECT" bash "$MOCK_PROJECT/scripts/ntfy.sh" "テスト通知"
     [ "$status" -eq 0 ]
     [ ! -f "$MOCK_PROJECT/CURL_WAS_CALLED" ]
     [ -f "$MOCK_PROJECT/logs/ntfy.log" ]
@@ -115,7 +122,7 @@ CURL
     chmod +x "$MOCK_BIN/curl"
 
     unset NTFY_DRY_RUN __PREFLIGHT_TESTING__ __INBOX_WATCHER_TESTING__
-    run bash "$MOCK_PROJECT/scripts/ntfy.sh" "テスト通知"
+    run env -C "$MOCK_PROJECT" bash "$MOCK_PROJECT/scripts/ntfy.sh" "テスト通知"
     [ "$status" -eq 0 ]
     [ -f "$MOCK_PROJECT/logs/ntfy.log" ]
     grep -q "OK (HTTP 200)" "$MOCK_PROJECT/logs/ntfy.log"
@@ -131,7 +138,7 @@ echo "200"
 CURL
     chmod +x "$MOCK_BIN/curl"
 
-    __PREFLIGHT_TESTING__=1 run bash "$MOCK_PROJECT/scripts/ntfy.sh" "テスト通知"
+    __PREFLIGHT_TESTING__=1 run env -C "$MOCK_PROJECT" bash "$MOCK_PROJECT/scripts/ntfy.sh" "テスト通知"
     [ "$status" -eq 0 ]
     [ ! -f "$MOCK_PROJECT/CURL_WAS_CALLED" ]
     grep -q "DRY-RUN" "$MOCK_PROJECT/logs/ntfy.log"
@@ -146,8 +153,46 @@ echo "200"
 CURL
     chmod +x "$MOCK_BIN/curl"
 
-    __INBOX_WATCHER_TESTING__=1 run bash "$MOCK_PROJECT/scripts/ntfy.sh" "テスト通知"
+    __INBOX_WATCHER_TESTING__=1 run env -C "$MOCK_PROJECT" bash "$MOCK_PROJECT/scripts/ntfy.sh" "テスト通知"
     [ "$status" -eq 0 ]
     [ ! -f "$MOCK_PROJECT/CURL_WAS_CALLED" ]
     grep -q "DRY-RUN" "$MOCK_PROJECT/logs/ntfy.log"
+}
+
+# T-NTFY-008: 隔離パス(リポジトリ外CWD)から呼ぶと、マーカー未設定でも自動でdry-run抑止される(cmd_122)
+@test "T-NTFY-008: called from outside the repo (isolated CWD) auto-suppresses even without markers" {
+    cat > "$MOCK_BIN/curl" << 'CURL'
+#!/bin/bash
+touch "$MOCK_PROJECT/CURL_WAS_CALLED"
+echo "200"
+CURL
+    chmod +x "$MOCK_BIN/curl"
+
+    # yaml_guardの隔離セッション試験を模す: CWDがMOCK_PROJECT(本番相当)の外
+    # (TEST_TMPDIR直下、mktemp -dで作った一時ディレクトリ相当)にある状態で
+    # ntfy.shを呼ぶ。マーカーは一切設定しない。
+    unset NTFY_DRY_RUN __PREFLIGHT_TESTING__ __INBOX_WATCHER_TESTING__
+    run env -C "$TEST_TMPDIR" bash "$MOCK_PROJECT/scripts/ntfy.sh" "テスト通知"
+    [ "$status" -eq 0 ]
+    [ ! -f "$MOCK_PROJECT/CURL_WAS_CALLED" ]
+    [ -f "$MOCK_PROJECT/logs/ntfy.log" ]
+    grep -q "DRY-RUN" "$MOCK_PROJECT/logs/ntfy.log"
+    ! grep -q "OK (HTTP" "$MOCK_PROJECT/logs/ntfy.log"
+}
+
+# T-NTFY-009: 本番リポジトリ配下のCWDから呼ぶと、従来どおり実送信される(cmd_122・回帰確認)
+@test "T-NTFY-009: called from within the repo root (production CWD) still sends for real" {
+    cat > "$MOCK_BIN/curl" << 'CURL'
+#!/bin/bash
+touch "$MOCK_PROJECT/CURL_WAS_CALLED"
+echo "200"
+CURL
+    chmod +x "$MOCK_BIN/curl"
+
+    unset NTFY_DRY_RUN __PREFLIGHT_TESTING__ __INBOX_WATCHER_TESTING__
+    run env -C "$MOCK_PROJECT" bash "$MOCK_PROJECT/scripts/ntfy.sh" "テスト通知"
+    [ "$status" -eq 0 ]
+    [ -f "$MOCK_PROJECT/CURL_WAS_CALLED" ]
+    grep -q "OK (HTTP 200)" "$MOCK_PROJECT/logs/ntfy.log"
+    ! grep -q "DRY-RUN" "$MOCK_PROJECT/logs/ntfy.log"
 }
