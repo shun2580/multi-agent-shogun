@@ -3,6 +3,10 @@
 # T-NTFY-001: 正常系 (HTTP 200) → exit 0 + ntfy.log に OK記録
 # T-NTFY-002: 異常系 (HTTP 400) → exit 1 + stderr出力 + ntfy.log に FAIL記録
 # T-NTFY-003: curl通信失敗 → exit 1 + stderr出力 + ntfy.log に FAIL記録
+# T-NTFY-004: NTFY_DRY_RUN=1 → curl未実行・実送信なし・DRY-RUN記録・exit 0 (cmd_119)
+# T-NTFY-005: NTFY_DRY_RUN未設定(既定) → 従来どおり実送信される (cmd_119)
+# T-NTFY-006: __PREFLIGHT_TESTING__=1継承 → 自動でdry-run抑止される (cmd_119)
+# T-NTFY-007: __INBOX_WATCHER_TESTING__=1継承 → 自動でdry-run抑止される (cmd_119)
 
 setup_file() {
     export PROJECT_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
@@ -82,4 +86,68 @@ CURL
     [ "$status" -eq 1 ]
     [ -f "$MOCK_PROJECT/logs/ntfy.log" ]
     grep -q "FAIL" "$MOCK_PROJECT/logs/ntfy.log"
+}
+
+# T-NTFY-004: NTFY_DRY_RUN=1 → curl未実行・DRY-RUN記録・exit 0
+@test "T-NTFY-004: NTFY_DRY_RUN=1 suppresses real send" {
+    # curlが呼ばれたら即座に検知できるよう、呼ばれた場合はマーカーファイルを作成して失敗させる
+    cat > "$MOCK_BIN/curl" << 'CURL'
+#!/bin/bash
+touch "$MOCK_PROJECT/CURL_WAS_CALLED"
+echo "200"
+CURL
+    chmod +x "$MOCK_BIN/curl"
+
+    NTFY_DRY_RUN=1 run bash "$MOCK_PROJECT/scripts/ntfy.sh" "テスト通知"
+    [ "$status" -eq 0 ]
+    [ ! -f "$MOCK_PROJECT/CURL_WAS_CALLED" ]
+    [ -f "$MOCK_PROJECT/logs/ntfy.log" ]
+    grep -q "DRY-RUN" "$MOCK_PROJECT/logs/ntfy.log"
+    ! grep -q "OK (HTTP" "$MOCK_PROJECT/logs/ntfy.log"
+}
+
+# T-NTFY-005: NTFY_DRY_RUN未設定(既定) → 従来どおり実送信される(回帰なし確認)
+@test "T-NTFY-005: no dry-run env vars set → real send still happens as before" {
+    cat > "$MOCK_BIN/curl" << 'CURL'
+#!/bin/bash
+echo "200"
+CURL
+    chmod +x "$MOCK_BIN/curl"
+
+    unset NTFY_DRY_RUN __PREFLIGHT_TESTING__ __INBOX_WATCHER_TESTING__
+    run bash "$MOCK_PROJECT/scripts/ntfy.sh" "テスト通知"
+    [ "$status" -eq 0 ]
+    [ -f "$MOCK_PROJECT/logs/ntfy.log" ]
+    grep -q "OK (HTTP 200)" "$MOCK_PROJECT/logs/ntfy.log"
+    ! grep -q "DRY-RUN" "$MOCK_PROJECT/logs/ntfy.log"
+}
+
+# T-NTFY-006: __PREFLIGHT_TESTING__=1 継承(preflight_check.shのテストからの実漏出経路) → 自動dry-run
+@test "T-NTFY-006: inherited __PREFLIGHT_TESTING__=1 auto-suppresses real send" {
+    cat > "$MOCK_BIN/curl" << 'CURL'
+#!/bin/bash
+touch "$MOCK_PROJECT/CURL_WAS_CALLED"
+echo "200"
+CURL
+    chmod +x "$MOCK_BIN/curl"
+
+    __PREFLIGHT_TESTING__=1 run bash "$MOCK_PROJECT/scripts/ntfy.sh" "テスト通知"
+    [ "$status" -eq 0 ]
+    [ ! -f "$MOCK_PROJECT/CURL_WAS_CALLED" ]
+    grep -q "DRY-RUN" "$MOCK_PROJECT/logs/ntfy.log"
+}
+
+# T-NTFY-007: __INBOX_WATCHER_TESTING__=1 継承 → 自動dry-run
+@test "T-NTFY-007: inherited __INBOX_WATCHER_TESTING__=1 auto-suppresses real send" {
+    cat > "$MOCK_BIN/curl" << 'CURL'
+#!/bin/bash
+touch "$MOCK_PROJECT/CURL_WAS_CALLED"
+echo "200"
+CURL
+    chmod +x "$MOCK_BIN/curl"
+
+    __INBOX_WATCHER_TESTING__=1 run bash "$MOCK_PROJECT/scripts/ntfy.sh" "テスト通知"
+    [ "$status" -eq 0 ]
+    [ ! -f "$MOCK_PROJECT/CURL_WAS_CALLED" ]
+    grep -q "DRY-RUN" "$MOCK_PROJECT/logs/ntfy.log"
 }
