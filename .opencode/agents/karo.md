@@ -214,6 +214,51 @@ Part 2のフック実装が「`settings.json`登録を最後の一手とする�
 
 [配線確認の設計時決定（cmd_097）](#配線確認の設計時決定cmd_097-2026-07-17制定b-1の姉妹ルール)との関係: 配線確認は「呼ばれる経路が実在するか」を扱い、本ルールは「その経路に検証前の変更が混入しないか」を扱う。両者は独立した観点であり、両方を満たして初めて安全な設計時決定と言える。
 
+### 標準化2点（Fable裁定 2026-07-27 Q3反映）
+
+前節の具体例（commit `dda6b30`）が示す教訓は、フックの登録そのものではなく
+「flag=trueのまま登録・commitされたこと」にある。ルールの牙は「デフォルト
+off」の側にあるという原則を、以下2点として恒久的な標準に明文化する。
+
+**1. 新規feature flag導入時のQC受け入れ条件**
+
+新規feature flagを導入するタスクのQCは、「導入直後のデフォルト状態がoff
+（または安全側）であること」の確認を**受け入れ条件に必ず含める**。家老は
+タスク分解時にこれをacceptance_criteriaへ明記し、軍師はQC時にflagの初期値
+を実際にgrepするなどして確認する。「flagを導入した」だけでは受け入れ条件を
+満たさない——「off状態でcommitされた」ことまで確認して初めて合格とする。
+
+実例: `config/settings.yaml`の`features.yaml_guard_enabled`は「無効側を既定
+とせよ」という明示的指示があったにもかかわらず`true`のままcommitされ
+（commit `dda6b30`）、家老の緊急是正を要した。
+
+**2. flagを持つ機構のbatsテスト標準**
+
+feature flagを持つ機構のbatsテストには、「**flag=off時は検証ロジックに
+一切入らず即exit 0**」を確認するテストケースを追加することを標準化する。
+
+具体形は`scripts/pretooluse_yaml_guard.sh`の実装と
+`tests/unit/test_pretooluse_yaml_guard.bats`の既存テストに倣う。同スクリプト
+は設定ファイルを`grep`し、flagが`true`でなければ即`exit 0`する早期リターン
+を持つ（`scripts/pretooluse_clear_idle.sh`のような、flag自体を持たない常時
+有効の機構には本標準は適用対象外）。対応するテストケースは以下の形をとる:
+
+```bash
+@test "feature flag disabled: exits 0 with no output even for target path + broken YAML" {
+    local payload='{"tool_name":"Write","tool_input":{"file_path":".../ashigaru9.yaml","content":": broken : ["}}'
+    run env YAML_GUARD_SETTINGS="$SETTINGS_OFF" ... \
+        bash -c "printf '%s' '$payload' | bash '$GUARD_SCRIPT'"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+```
+
+要点は2つ: (a) flag=off設定を注入した環境で実行すること、(b)「対象パス+
+壊れた入力」など、本来ならdenyされるはずの条件を**あえて**与えて、それでも
+検証ロジックに入らず素通りすることを確認すること。flag=off時にたまたま
+無害な入力を使うテストでは、「本当に検証ロジックへ入っていないか」を証明
+できない。
+
 ## Proportional Decomposition Rule（比例分解ルール、cmd_058 2026-07-03制定）
 
 タスク分解の粒度・軍師QCの回数は、作業の実態（ファイル数・手順数・Bloomレベル・
