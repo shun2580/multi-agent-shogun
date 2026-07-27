@@ -948,15 +948,16 @@ NINJA_EOF
     log_success "  └─ watcher_supervisor.sh 稼働確認完了"
 
     # dashboard.mdへ常設表示（サイレント死の再発を次回セッション開始で必ず目に入るようにする）
-    # cmd_113可視化バグ修正: watcher_supervisor.shはpreflight_check+全エージェント
-    # watcherループを経てからdeadman_watcher.shを起動するため、単発pgrepでは
-    # 「未起動」と誤検出する競合状態があった。ポーリングで実際の起動を待つ。
-    _watcher_pid=$(wait_for_process_pid "scripts/watcher_supervisor.sh" 10)
-    _deadman_pid=$(wait_for_process_pid "scripts/deadman_watcher.sh" 30)
+    # cmd_116 S-2修正: wait_for_process_pid()のタイムアウトを「未起動」という確定断定に
+    # フォールバックしていたのが虚偽表示の根本原因だった(pgrep -f はパターン照合方式のため
+    # cmd_086/093同様の照合不一致で「見つからない」＝「本当に停止」とは限らない)。
+    # watcher_status_display()で稼働中/停止中/unknown(判定不能)の三値表示に変更する。
+    _watcher_display=$(watcher_status_display "scripts/watcher_supervisor.sh" 10)
+    _deadman_display=$(watcher_status_display "scripts/deadman_watcher.sh" 30)
     _watcher_check_time=$(date "+%Y-%m-%d %H:%M:%S")
     if [ -f "$SCRIPT_DIR/dashboard.md" ]; then
         _dashboard_tmp=$(mktemp)
-        awk -v spid="${_watcher_pid:-未起動}" -v dpid="${_deadman_pid:-未起動}" -v ts="$_watcher_check_time" '
+        awk -v sdisp="$_watcher_display" -v ddisp="$_deadman_display" -v ts="$_watcher_check_time" '
             BEGIN { in_block=0; inserted=0 }
             /^<!-- WATCHER_STATUS_START -->$/ { in_block=1; next }
             /^<!-- WATCHER_STATUS_END -->$/ { in_block=0; next }
@@ -967,8 +968,8 @@ NINJA_EOF
                     print ""
                     print "<!-- WATCHER_STATUS_START -->"
                     print "## 🛡️ Watcher稼働状態"
-                    print "- watcher_supervisor.sh PID: " spid
-                    print "- deadman_watcher.sh PID: " dpid
+                    print "- watcher_supervisor.sh: " sdisp
+                    print "- deadman_watcher.sh: " ddisp
                     print "- 最終確認時刻: " ts
                     print "<!-- WATCHER_STATUS_END -->"
                     inserted=1

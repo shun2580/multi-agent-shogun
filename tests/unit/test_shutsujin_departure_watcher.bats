@@ -95,3 +95,65 @@ run_start_supervisor_case() {
     [ "$status" -eq 1 ]
     [ -z "$output" ]
 }
+
+# cmd_116 S-2: WATCHER_STATUS虚偽表示の根本原因は、wait_for_process_pid()の
+# タイムアウトを呼び出し側が無条件で「未起動」という確定断定にフォールバック
+# させていたこと(pgrep -f のパターン照合不一致は「見つからない」≠「本当に停止」)。
+# watcher_status_display()は稼働中/停止中/unknown(判定不能)の三値を返す。
+# 受け入れ条件: 「稼働中」ケースはモックではなく実プロセスに対する実pgrepで検証する
+# (表示ロジック単体テストでは不可、という指示書要件に対応)。
+
+@test "watcher_status_display 実機: 実際に起動中のダミープロセスに対して稼働中(PID=...)を返す" {
+    local marker="test_dummy_watcher_process_cmd116_$$"
+    ( exec -a "$marker" sleep 20 ) &
+    local dummy_pid=$!
+    # execで名前が付け替わるまでの猶予
+    for _ in 1 2 3 4 5; do
+        pgrep -f "$marker" >/dev/null 2>&1 && break
+        sleep 0.2
+    done
+
+    # marker文字列をbash -cのスクリプト本文へ直接埋め込むと、その呼び出し自身の
+    # argv(/proc/PID/cmdline)にmarkerが含まれてしまいpgrep -fが自己一致して
+    # しまう(ダミープロセスを検出しなくても常に「稼働中」になる誤検証)。
+    # `env VAR=value cmd`もVAR=valueがそのenvプロセス自身のargvに現れるため
+    # 同じ穴に落ちる(実際に踏んで発見・修正した)。exportしたシェル変数は
+    # execve()時にenvp経由で継承されargvには現れないため、これを使う。
+    export MARKER="$marker"
+    run timeout 5 bash -c '
+        source "'"$LIFECYCLE_SCRIPT"'" >/dev/null 2>&1
+        watcher_status_display "$MARKER" 3
+    '
+    unset MARKER
+
+    kill "$dummy_pid" 2>/dev/null || true
+    wait "$dummy_pid" 2>/dev/null || true
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == "稼働中(PID="* ]]
+}
+
+@test "watcher_status_display 実機: 存在しないプロセス名では停止中を返す(実pgrep・モックなし)" {
+    local marker="test_dummy_watcher_process_never_exists_cmd116_$$"
+
+    # 上記と同じ自己一致回避のためexportしたシェル変数(argvに現れない)経由で渡す。
+    export MARKER="$marker"
+    run timeout 5 bash -c '
+        source "'"$LIFECYCLE_SCRIPT"'" >/dev/null 2>&1
+        watcher_status_display "$MARKER" 1
+    '
+    unset MARKER
+
+    [ "$status" -eq 1 ]
+    [ "$output" = "停止中" ]
+}
+
+@test "watcher_status_display: pgrep自体が異常終了(rc>=2)した場合はunknownを返し停止中と断定しない" {
+    run timeout 5 bash -c '
+        source "'"$LIFECYCLE_SCRIPT"'" >/dev/null 2>&1
+        pgrep() { return 2; }
+        watcher_status_display "scripts/deadman_watcher.sh" 2
+    '
+    [ "$status" -eq 2 ]
+    [ "$output" = "unknown" ]
+}

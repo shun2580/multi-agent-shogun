@@ -51,3 +51,43 @@ wait_for_process_pid() {
     done
     return 1
 }
+
+# cmd_116 S-2: WATCHER_STATUS虚偽表示の恒久修正。
+#
+# 根本原因: wait_for_process_pid()のタイムアウト(=pgrepで見つからない)を
+# 呼び出し側(shutsujin_departure.sh)が無条件で「未起動」という確定断定文字列に
+# フォールバックしていた(`${_pid:-未起動}`)。pgrep -f はパターン照合方式のため
+# cmd_086/093で二度実例のあるペイン文字列照合不一致等により「見つからない」が
+# 「実際に停止している」を意味するとは限らない。にもかかわらず確定値「未起動」を
+# 表示すると、本当のサイレント死が起きた際に「またいつもの誤検知か」と無視される
+# 狼少年化を招く(Part1本来の目的を損なう)。
+#
+# 対策: pgrep自体が異常終了(no such option/regex構文エラー等、rc>=2)した場合は
+# 「判定不能」として`unknown`を返す。pgrepが正常動作(rc 0/1)した上でタイムアウト
+# まで一度も見つからなければ、そのときに限り「停止中」と断定する。
+watcher_status_display() {
+    local pattern="$1"
+    local timeout_sec="${2:-10}"
+    local waited=0
+    local pid=""
+    local pgrep_out=""
+    local pgrep_rc=0
+
+    while [ "$waited" -lt "$timeout_sec" ]; do
+        pgrep_out="$(pgrep -f "$pattern" 2>/dev/null)"
+        pgrep_rc=$?
+        pid="$(printf '%s\n' "$pgrep_out" | head -1)"
+        if [ -n "$pid" ]; then
+            echo "稼働中(PID=${pid})"
+            return 0
+        fi
+        if [ "$pgrep_rc" -ge 2 ]; then
+            echo "unknown"
+            return 2
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    echo "停止中"
+    return 1
+}
