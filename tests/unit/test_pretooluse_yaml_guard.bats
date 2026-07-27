@@ -11,17 +11,29 @@ setup() {
     mkdir -p "$TEST_TMP/queue/tasks" "$TEST_TMP/queue/reports" "$TEST_TMP/logs"
     SETTINGS_ON="$TEST_TMP/settings_on.yaml"
     SETTINGS_OFF="$TEST_TMP/settings_off.yaml"
+    SETTINGS_OBSERVE="$TEST_TMP/settings_observe.yaml"
+    SETTINGS_UNKNOWN="$TEST_TMP/settings_unknown.yaml"
     LOG_FILE="$TEST_TMP/logs/yaml_guard.log"
     NTFY_LOG="$TEST_TMP/ntfy.log"
     NTFY_STUB="$TEST_TMP/ntfy_stub.sh"
 
+    # SETTINGS_ON: 旧bool値(true)。後方互換でenforceへ読み替わる想定のfixture。
     cat > "$SETTINGS_ON" <<'EOF'
 features:
   yaml_guard_enabled: true
 EOF
+    # SETTINGS_OFF: 旧bool値(false)。後方互換でoffへ読み替わる想定のfixture。
     cat > "$SETTINGS_OFF" <<'EOF'
 features:
   yaml_guard_enabled: false
+EOF
+    cat > "$SETTINGS_OBSERVE" <<'EOF'
+features:
+  yaml_guard_enabled: observe
+EOF
+    cat > "$SETTINGS_UNKNOWN" <<'EOF'
+features:
+  yaml_guard_enabled: some_bogus_value
 EOF
     cat > "$NTFY_STUB" <<EOF
 #!/usr/bin/env bash
@@ -46,6 +58,18 @@ run_guard() {
         bash -c "printf '%s' '$payload' | bash '$GUARD_SCRIPT'"
 }
 
+run_guard_with_settings() {
+    local settings_file="$1"
+    local payload="$2"
+    run env \
+        YAML_GUARD_SETTINGS="$settings_file" \
+        YAML_GUARD_REPO_ROOT="$TEST_TMP" \
+        YAML_GUARD_LOG="$LOG_FILE" \
+        YAML_GUARD_PYTHON="$PROJECT_ROOT/.venv/bin/python3" \
+        YAML_GUARD_NTFY_SCRIPT="$NTFY_STUB" \
+        bash -c "printf '%s' '$payload' | bash '$GUARD_SCRIPT'"
+}
+
 # --- 早期リターン: feature flag無効 ---
 
 @test "feature flag disabled: exits 0 with no output even for target path + broken YAML" {
@@ -57,6 +81,92 @@ run_guard() {
         bash -c "printf '%s' '$payload' | bash '$GUARD_SCRIPT'"
     [ "$status" -eq 0 ]
     [ -z "$output" ]
+}
+
+# --- flagの3値化(off|observe|enforce, cmd_120) ---
+
+@test "flag=observe: broken YAML is NOT denied (no deny output) but WOULD-DENY is logged" {
+    local payload='{"tool_name":"Write","tool_input":{"file_path":"'"$TEST_TMP"'/queue/tasks/ashigaru9.yaml","content":"task:\n  bad: [unclosed\n"}}'
+    run_guard_with_settings "$SETTINGS_OBSERVE" "$payload"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    run grep -c "WOULD-DENY" "$LOG_FILE"
+    [ "$output" -eq 1 ]
+    run grep "WOULD-DENY" "$LOG_FILE"
+    [[ "$output" == *"YAML parse failure"* ]]
+}
+
+@test "flag=observe: valid YAML allowed silently, no WOULD-DENY logged" {
+    local payload='{"tool_name":"Write","tool_input":{"file_path":"'"$TEST_TMP"'/queue/tasks/ashigaru9.yaml","content":"task:\n  status: idle\n"}}'
+    run_guard_with_settings "$SETTINGS_OBSERVE" "$payload"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    run grep -c "WOULD-DENY" "$LOG_FILE"
+    [ "$status" -ne 0 ]
+}
+
+# --- 機械集計ログ基盤(cmd_121 A-2): 1評価1行・grep -cで機械集計可能な形式 ---
+
+@test "machine-parseable log: every evaluated target-path call logs exactly 1 line with mode=/session=/file=/tool=" {
+    local payload='{"session_id":"test-session-abc","tool_name":"Write","tool_input":{"file_path":"'"$TEST_TMP"'/queue/tasks/ashigaru9.yaml","content":"task:\n  status: idle\n"}}'
+    run_guard_with_settings "$SETTINGS_OBSERVE" "$payload"
+    [ "$status" -eq 0 ]
+    run grep -c "^\[.*\] ALLOW mode=observe session=test-session-abc file=.*ashigaru9.yaml tool=Write$" "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "machine-parseable log: session_id missing from payload falls back to 'unknown' (no crash)" {
+    local payload='{"tool_name":"Write","tool_input":{"file_path":"'"$TEST_TMP"'/queue/tasks/ashigaru9.yaml","content":"task:\n  status: idle\n"}}'
+    run_guard_with_settings "$SETTINGS_OBSERVE" "$payload"
+    [ "$status" -eq 0 ]
+    run grep -c "session=unknown" "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "machine-parseable log: ALLOW/WOULD-DENY/FAIL-OPEN counts are independently grep -c countable" {
+    # 1件ALLOW
+    run_guard_with_settings "$SETTINGS_OBSERVE" '{"tool_name":"Write","tool_input":{"file_path":"'"$TEST_TMP"'/queue/tasks/ashigaru9.yaml","content":"task:\n  status: idle\n"}}'
+    # 1件WOULD-DENY
+    run_guard_with_settings "$SETTINGS_OBSERVE" '{"tool_name":"Write","tool_input":{"file_path":"'"$TEST_TMP"'/queue/tasks/ashigaru9.yaml","content":"task:\n  bad: [unclosed\n"}}'
+    # 1件FAIL-OPEN(python欠落)
+    run env \
+        YAML_GUARD_SETTINGS="$SETTINGS_OBSERVE" \
+        YAML_GUARD_REPO_ROOT="$TEST_TMP" \
+        YAML_GUARD_LOG="$LOG_FILE" \
+        YAML_GUARD_PYTHON="/nonexistent/python3" \
+        YAML_GUARD_NTFY_SCRIPT="$NTFY_STUB" \
+        bash -c "printf '%s' '{\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$TEST_TMP/queue/tasks/ashigaru9.yaml\",\"content\":\"a: 1\\n\"}}' | bash '$GUARD_SCRIPT'"
+
+    run grep -c "^\[.*\] ALLOW " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+    run grep -c "^\[.*\] WOULD-DENY " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+    run grep -c "^\[.*\] FAIL-OPEN " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+    # 評価総数(enforce移行判定の分母) = ALLOW + WOULD-DENY (+DENY) 件数
+    run grep -cE "^\[.*\] (ALLOW|WOULD-DENY|DENY) " "$LOG_FILE"
+    [ "$output" -eq 2 ]
+}
+
+@test "flag=unknown value: fail-safe falls back to off, broken YAML allowed silently" {
+    local payload='{"tool_name":"Write","tool_input":{"file_path":"'"$TEST_TMP"'/queue/tasks/ashigaru9.yaml","content":": broken : ["}}'
+    run_guard_with_settings "$SETTINGS_UNKNOWN" "$payload"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    [ ! -s "$LOG_FILE" ]
+}
+
+@test "flag=enforce (new explicit value): broken YAML denied same as legacy true" {
+    mkdir -p "$TEST_TMP/queue/tasks2"
+    local SETTINGS_ENFORCE="$TEST_TMP/settings_enforce.yaml"
+    cat > "$SETTINGS_ENFORCE" <<'EOF'
+features:
+  yaml_guard_enabled: enforce
+EOF
+    local payload='{"tool_name":"Write","tool_input":{"file_path":"'"$TEST_TMP"'/queue/tasks/ashigaru9.yaml","content":"task:\n  bad: [unclosed\n"}}'
+    run_guard_with_settings "$SETTINGS_ENFORCE" "$payload"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
 }
 
 # --- 早期リターン: 非対象パス ---
@@ -140,6 +250,78 @@ run_guard() {
     run_guard "$payload"
     [ "$status" -eq 0 ]
     [[ "$output" == *'"permissionDecision": "deny"'* ]]
+}
+
+# --- grep空白許容(cmd_120 Q2-6是正: 整形JSON対応) ---
+
+@test "formatted JSON (space after colon): valid YAML still allowed silently" {
+    local payload='{
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "'"$TEST_TMP"'/queue/tasks/ashigaru9.yaml",
+    "content": "task:\n  status: idle\n"
+  }
+}'
+    run_guard "$payload"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "formatted JSON (space after colon): broken YAML still denied (regression for fail-open bug)" {
+    local payload='{
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "'"$TEST_TMP"'/queue/tasks/ashigaru9.yaml",
+    "content": "task:\n  bad: [unclosed\n"
+  }
+}'
+    run_guard "$payload"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+}
+
+@test "unformatted JSON (no space after colon): still works as before (no regression)" {
+    local payload='{"tool_name":"Write","tool_input":{"file_path":"'"$TEST_TMP"'/queue/tasks/ashigaru9.yaml","content":"task:\n  bad: [unclosed\n"}}'
+    run_guard "$payload"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+}
+
+# --- safe_load_all全面化(cmd_120 Q2-1: マルチドキュメントYAML誤検知の是正) ---
+
+@test "multi-document YAML (---separated), both docs valid: allowed silently" {
+    local payload='{"tool_name":"Write","tool_input":{"file_path":"'"$TEST_TMP"'/queue/reports/ashigaru9_report.yaml","content":"report:\n  status: done\n---\nreport:\n  status: done\n"}}'
+    run_guard "$payload"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "multi-document YAML (---separated), second doc broken: denied" {
+    local payload='{"tool_name":"Write","tool_input":{"file_path":"'"$TEST_TMP"'/queue/reports/ashigaru9_report.yaml","content":"report:\n  status: done\n---\nreport:\n  bad: [unclosed\n"}}'
+    run_guard "$payload"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+}
+
+# --- ANSI混入の回帰テスト(cmd_120 Q5裁定: queue/reports/ashigaru2_report.yaml
+#     151行目・subtask_052c2事故の恒久資産化) ---
+
+@test "ANSI escape sequence (\\x1b) in write content: denied via ReaderError (YAMLError subclass)" {
+    printf 'task:\n  status: idle\n  note: original\n' > "$TEST_TMP/queue/reports/ashigaru9_report.yaml"
+    # new_stringにJSONエスケープ形式(\u001b)でESCを含める。cmd_052c2/
+    # ashigaru2_report.yaml:151相当の生端末出力貼り付け事故を模した回帰ケース。
+    # 実際のClaude Code CLIはtool_input中の制御文字をJSON仕様に沿った
+    # エスケープ形式でフックへ渡す(生バイト直書きはJSON仕様違反でjson.load
+    # 自体がJSONDecodeErrorになりfail-open経路に落ちてしまい、本テストの
+    # 意図と異なる検証になる)。json.load()が実ESC文字へ復元した後、
+    # simulated file content内でyaml Readerがそれを検知しReaderError
+    # (YAMLErrorのサブクラス)を送出する経路を検証する。
+    local payload
+    payload="$(printf '{"tool_name":"Edit","tool_input":{"file_path":"%s/queue/reports/ashigaru9_report.yaml","old_string":"note: original","new_string":"note: bad\\u001b[31mcolor\\u001b[0m","replace_all":false}}' "$TEST_TMP")"
+    run_guard "$payload"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+    [[ "$output" == *"YAML parse failure"* ]]
 }
 
 # --- fail-open経路 ---
