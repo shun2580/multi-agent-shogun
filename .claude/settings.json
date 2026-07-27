@@ -31,6 +31,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/pretooluse_yaml_guard.sh",
+            "timeout": 5
+          }
+        ]
       }
     ]
   },

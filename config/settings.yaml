@@ -1,0 +1,72 @@
+features:
+  fastlane_enabled: true  # cmd_086 Part C: 些事fast-lane暫定運用。誤判定1件で家老がfalseへ
+  deadman_enabled: true   # cmd_092: 停滞警報v1。falseで完全無効化
+  scope_check_advisory: true  # cmd_097: advisory記録のみ。強制化は別途enforce等で拡張
+  yaml_guard_enabled: true  # cmd_113 Part2: PreToolUse YAML書込前ガード。falseで完全無効化
+deadman:                  # cmd_092: 停滞警報(デッドマンスイッチ)v1のパラメータ
+  stall_threshold_min: 20
+auto_heal:
+  silent_heal_enabled: true
+  escalation_window_minutes: 10
+  escalation_threshold_count: 3
+  cooldown_after_escalation_minutes: 30
+redo_escalation:
+  threshold_count: 2
+  cooldown_after_escalation_minutes: 30
+stuck_escalation:
+  threshold_count: 2
+  window_minutes: 60
+  cooldown_after_escalation_minutes: 30
+dashboard_staleness:
+  hours: 24
+  check_interval_minutes: 30
+  cooldown_after_escalation_minutes: 360
+assignment_grace:
+  after_nudge_seconds: 30
+cli:
+  agents:
+    karo:
+      type: claude
+      model: claude-sonnet-5  # 2026-07-03: switch_cli.sh による切替
+      effort: high  # cmd_109: Opus5 effort暗黙継承事故予防のため明示
+    ashigaru1:
+      type: claude
+      model: claude-sonnet-5  # 2026-07-03: switch_cli.sh による切替
+      effort: high  # cmd_109: Opus5 effort暗黙継承事故予防のため明示
+    ashigaru2:
+      type: claude
+      model: claude-sonnet-5  # 2026-07-03: switch_cli.sh による切替
+      effort: high  # cmd_109: Opus5 effort暗黙継承事故予防のため明示
+    ashigaru3:
+      type: claude
+      model: claude-haiku-4-5-20251001  # 2026-07-08 殿裁可(cmd_070): opencode v1.17.15のUD2 panic(cmd_069実機確認)・OpenRouter:free不安定を同時に断つためopencodeから恒久切替
+    ashigaru4:
+      type: claude
+      model: claude-haiku-4-5-20251001  # 2026-07-08 殿嗜好(cmd_071): 布陣の能力順整理(1,2=Sonnet/3-6=Haiku/7=Ollama)のため足軽7とOllama枠を入替
+    ashigaru5:
+      model: claude-haiku-4-5-20251001
+      type: claude
+    ashigaru6:
+      type: claude
+      model: claude-haiku-4-5-20251001  # 2026-06-15: switch_cli.sh による切替
+    ashigaru7:
+      type: claude
+      model: claude-haiku-4-5-20251001  # 2026-07-08 殿裁可(cmd_075): opencode v1.17.15がOllama応答を捌けずタイムアウト(本日2度目のopencode破綻、cmd_069に続く)のため全Claude化。Ollama/opencode一式は休眠温存・削除禁止。opencode修正版が出たら本行をtype:opencode/model:ollama/qwen3.5:9bへ戻すだけで再開可
+    gunshi:
+      type: claude
+      model: claude-sonnet-5  # 2026-07-03: switch_cli.sh による切替
+      effort: high  # cmd_109: Opus5 effort暗黙継承事故予防のため明示
+    shogun:
+      model: claude-opus-5
+      type: claude
+      effort: high  # cmd_109: Opus5 effort暗黙継承事故予防のため明示
+  default: claude
+language: ja
+ntfy_topic: shogun_notify_w2j7x9k3
+logging:
+  level: info
+  path: /mnt/d/projects/multi-agent-shogun/logs/
+shell: bash
+skill:
+  local_path: /mnt/d/projects/multi-agent-shogun/skills/
+  save_path: ~/.claude/skills/
