@@ -2,13 +2,21 @@
 # lib/agent_status.sh — エージェント稼働状態検出の共有ライブラリ
 #
 # 提供関数:
-#   agent_is_busy_check <pane_target>   → 0=busy, 1=idle, 2=pane不在
-#   get_pane_state_label <pane_target>  → "稼働中" / "待機中" / "不在"
+#   agent_is_busy_check <pane_target>   → 0=busy, 1=idle, 2=観測失敗(unknown)
+#   get_pane_state_label <pane_target>  → "稼働中" / "待機中" / "不明"
 #
 # 使用例:
 #   source lib/agent_status.sh
 #   agent_is_busy_check "multiagent:agents.0"
 #   state=$(get_pane_state_label "multiagent:agents.3")
+#
+# rc=2 (unknown) の意味論（cmd_123 Part A / Fable裁定20260728 Q8）:
+#   busy=観測に成功しbusyだった／idle=観測に成功しidleだった／
+#   unknown=観測自体に失敗した（pane不在・capture-pane失敗等）。
+#   「観測できなかった」ことと「観測してidleだった」ことを同一視しない
+#   （族「観測失敗と否定的観測の同一視」を作らない）。
+#   rc=2時、原因種別を AGENT_STATUS_UNKNOWN_REASON に設定する。
+AGENT_STATUS_UNKNOWN_REASON=""
 
 # agent_is_busy_check <pane_target> [cli_type]
 # tmux paneの末尾5行からCLI固有のidle/busyパターンを検出する。
@@ -35,12 +43,15 @@ agent_is_busy_check() {
     local cli_type="${2:-}"
     local pane_tail
 
+    AGENT_STATUS_UNKNOWN_REASON=""
+
     # Pane existence check — independent of capture-pane result.
     # capture-pane on a TUI app (e.g. Claude Code) often returns only trailing
     # blank lines when pane height > visible content, making pane_tail empty
     # even when the pane exists and is healthy. Use display-message instead.
     if ! tmux display-message -t "$pane_target" -p '#{pane_id}' &>/dev/null; then
-        return 2  # pane truly absent
+        AGENT_STATUS_UNKNOWN_REASON="pane_absent: tmux display-message failed for $pane_target"
+        return 2  # 観測失敗(unknown) — pane truly absent / tmux query failed
     fi
 
     # capture-pane -p outputs the full pane height including trailing blank lines.
@@ -51,8 +62,9 @@ agent_is_busy_check() {
         cli_type=$(timeout 2 tmux show-options -v -p -t "$pane_target" @agent_cli 2>/dev/null || true)
     fi
 
-    local full_capture
+    local full_capture capture_rc
     full_capture=$(timeout 2 tmux capture-pane -t "$pane_target" -p 2>/dev/null)
+    capture_rc=$?
     # Only check the bottom 5 lines by default. Old busy markers linger in
     # scroll-back and cause false-busy if we scan too many lines.
     pane_tail=$(echo "$full_capture" | tail -5)
@@ -77,7 +89,19 @@ agent_is_busy_check() {
         return 1
     fi
 
-    # Pane exists but capture is empty → treat as idle, not absent
+    # capture-pane itself failed (non-zero exit — e.g. timeout killed it, tmux
+    # transient error). This is an OBSERVATION FAILURE, not "pane is blank" —
+    # do not collapse it into idle (that is exactly the 族「観測失敗と否定的
+    # 観測の同一視」the cmd_123 Fable裁定 warns against). Report unknown so the
+    # caller can apply the correct fail-safe direction for its own action.
+    if [[ "$capture_rc" -ne 0 ]]; then
+        AGENT_STATUS_UNKNOWN_REASON="capture_pane_failed: tmux capture-pane exited ${capture_rc} for $pane_target"
+        return 2
+    fi
+
+    # capture-pane succeeded but returned nothing — pane exists and the query
+    # itself worked, the content is genuinely blank. This is a real (negative)
+    # observation, not a failure, so idle remains correct here.
     if [[ -z "$pane_tail" ]]; then
         return 1
     fi

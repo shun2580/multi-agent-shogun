@@ -658,7 +658,7 @@ send_cli_command() {
     if [[ "$cmd" == "/clear" ]]; then
         pane_snapshot=$(timeout 2 tmux capture-pane -t "$PANE_TARGET" -p 2>/dev/null || true)
     fi
-    if [[ "$cmd" == "/clear" ]] && ! [[ "$effective_cli" == "opencode" && -z "${pane_snapshot//[[:space:]]/}" ]] && agent_is_busy; then
+    if [[ "$cmd" == "/clear" ]] && ! [[ "$effective_cli" == "opencode" && -z "${pane_snapshot//[[:space:]]/}" ]] && agent_is_busy_for_clear; then
         echo "[$(date)] [SKIP] Agent is busy — /clear deferred to next cycle (agent=$AGENT_ID)" >&2
         return 0
     fi
@@ -918,16 +918,25 @@ agent_has_self_watch() {
     return $found
 }
 
-# ─── Agent busy detection ───
+# ─── Agent busy detection (three-valued) ───
 # Check if the agent's CLI is currently processing (Working/thinking/etc).
 # Sending nudge during Working causes text to queue but Enter to be lost.
-# Returns 0 (true) if agent is busy, 1 if idle.
-# Implementation: delegates to lib/agent_status.sh (shared library).
-agent_is_busy() {
+# Returns 0=busy(観測成功), 1=idle(観測成功), 2=unknown(観測失敗)。
+# Implementation: delegates to lib/agent_status.sh (shared library) for the
+# non-claude (pane-based) path.
+#
+# cmd_123 Part A / Fable裁定20260728 Q8: 「観測できなかった」(unknown) を
+# 「観測してidleだった」と同一視しない。呼び出し側は自身の動作の破壊性に
+# 応じて正しいfail-safeの向きを選べ — agent_is_busy() / agent_is_busy_for_clear()
+# を参照。
+agent_is_busy_tri() {
+    AGENT_STATUS_UNKNOWN_REASON=""
+
     # /clear cooldown: treat agent as busy for 30s after /clear was sent.
     # Claude Code's /clear takes 10-30s (CLAUDE.md reload + context init).
     # Without this, nudges sent during /clear processing queue up at the prompt
     # and cause race conditions (inbox1 arrives before /clear completes).
+    # This is a known state (not an observation failure), so busy, not unknown.
     local now_busy
     now_busy=$(date +%s)
     if [ "${LAST_CLEAR_TS:-0}" -gt 0 ] && [ "$((now_busy - LAST_CLEAR_TS))" -lt 30 ]; then
@@ -937,12 +946,43 @@ agent_is_busy() {
     local effective_cli
     effective_cli=$(get_effective_cli_type)
     if [[ "$effective_cli" == "claude" ]]; then
-        # フラグファイル方式: フラグなし=busy(return 0)、あり=idle(return 1)
-        [ ! -f "${IDLE_FLAG_DIR:-/tmp}/shogun_idle_${AGENT_ID}" ]
-    else
-        # 従来のpane解析（Codex等フォールバック）
-        agent_is_busy_check "$PANE_TARGET" "$effective_cli"
+        # フラグファイル方式: ファイル存在チェックのみで判定が確定する
+        # (I/O例外以外に観測失敗の余地がない)。フラグなし=busy、あり=idle。
+        if [ -f "${IDLE_FLAG_DIR:-/tmp}/shogun_idle_${AGENT_ID}" ]; then
+            return 1  # idle
+        fi
+        return 0  # busy
     fi
+
+    # 従来のpane解析（Codex等フォールバック）。rc=0/1/2をそのまま透過する。
+    agent_is_busy_check "$PANE_TARGET" "$effective_cli"
+    local rc=$?
+    if [ "$rc" -eq 2 ]; then
+        echo "[$(date)] [UNKNOWN] Busy observation failed for $AGENT_ID: ${AGENT_STATUS_UNKNOWN_REASON:-<no reason recorded>}" >&2
+    fi
+    return "$rc"
+}
+
+# ─── Non-destructive fail-safe direction (nudge / delivery actions) ───
+# unknown → treated as NOT busy (proceed with delivery). Wrong-guess loss is
+# minor: one extra short nudge into a working agent's input; the inbox
+# read-flag makes reprocessing idempotent (see T-NUDGE-IDEMPOTENT).
+# This preserves the existing agent_is_busy() contract used throughout this
+# file (0=true/busy, non-zero=false/not-busy in `if agent_is_busy; then`).
+agent_is_busy() {
+    agent_is_busy_tri
+    local rc=$?
+    [ "$rc" -eq 0 ]
+}
+
+# ─── Destructive fail-safe direction (/clear, forced-reset-class actions) ───
+# unknown → treated as busy (block/defer). Wrong-guess loss is severe: /clear
+# (or Escape/Ctrl-C forced interrupt) destroys an in-progress agent's context.
+# Only a KNOWN idle observation (rc=1) is allowed to proceed.
+agent_is_busy_for_clear() {
+    agent_is_busy_tri
+    local rc=$?
+    [ "$rc" -ne 1 ]
 }
 
 # ─── Pane focus detection (human safety) ───
@@ -1142,8 +1182,10 @@ send_wakeup_with_escape() {
         return 0
     fi
 
-    # Phase 2 still skips if agent is busy — Escape during Working would interrupt
-    if agent_is_busy; then
+    # Phase 2 still skips if agent is busy — Escape during Working would interrupt.
+    # Escape/Ctrl-C is a forced-interrupt-class action (強制リセット類), so unknown
+    # observation must fail toward NOT sending it (agent_is_busy_for_clear direction).
+    if agent_is_busy_for_clear; then
         echo "[$(date)] [SKIP] Agent $AGENT_ID is busy (Working), deferring Phase 2 nudge" >&2
         return 0
     fi
@@ -1235,7 +1277,7 @@ for s in data.get('specials', []):
                 clear_seen=1
                 # Busy guard: skip /clear if agent is currently processing.
                 # Sending /clear during active work destroys in-progress context.
-                if agent_is_busy && [[ "$AGENT_ID" != "shogun" ]]; then
+                if agent_is_busy_for_clear && [[ "$AGENT_ID" != "shogun" ]]; then
                     echo "[$(date)] [SKIP] Agent $AGENT_ID is busy — /clear (clear_command) deferred to next cycle" >&2
                     continue
                 fi
@@ -1408,7 +1450,15 @@ for s in data.get('specials', []):
                     echo "[$(date)] ESCALATION Phase 3: Agent $AGENT_ID unresponsive for ${age}s. Sending /clear." >&2
                     # cmd_087 Part B: Phase3発火時の状態計装(しきい値・判定条件は無変更)
                     local p3_busy p3_pane_cmd p3_age p3_content p3_cmd_id p3_task_id p3_ids
-                    if agent_is_busy; then p3_busy="true"; else p3_busy="false"; fi
+                    # cmd_123 Part A: log the raw tri-state (not the collapsed boolean) so
+                    # "unknown" observation failures at the moment /clear fires are visible
+                    # in the metric used to track today's 17-fire/5696s baseline.
+                    agent_is_busy_tri
+                    case $? in
+                        0) p3_busy="true" ;;
+                        1) p3_busy="false" ;;
+                        2) p3_busy="unknown" ;;
+                    esac
                     p3_pane_cmd=$(timeout 2 tmux display-message -t "$PANE_TARGET" -p '#{pane_current_command}' 2>/dev/null || echo "")
                     p3_age="$age"
                     p3_content=$(echo "$info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(json.load(sys.stdin).get('latest_content',''))" 2>/dev/null)
