@@ -26,6 +26,36 @@ NTFY_SCRIPT="${YAML_GUARD_NTFY_SCRIPT:-$SCRIPT_DIR/scripts/ntfy.sh}"
 LOG_FILE="${YAML_GUARD_LOG:-$SCRIPT_DIR/logs/yaml_guard.log}"
 REPO_ROOT="${YAML_GUARD_REPO_ROOT:-$SCRIPT_DIR}"
 
+# ─── 反復DENY警報 (cmd_134 工程2) ───
+# 同一ファイル($FILE_PATH)への実DENYが直近10分以内に3件以上発生した場合、
+# deny再試行ループ(deadmanの不活動検知では捕捉できない)の可能性として
+# ntfyで警報する。判定対象は実DENY行のみ(WOULD-DENY/FAIL-OPEN/ALLOWは
+# 対象外)。実DENYはenforceモードでしか発生しないため、本関数はobserve
+# 期間中は実質不活性(呼び出されない)。再警報は同一ファイルにつき10分間
+# 抑制する(スパム防止。状態はマーカーファイル1つのみ・常駐プロセスなし)。
+check_repeated_deny_alert() {
+    local file_path="$1"
+    local now_epoch window_start count ts ts_epoch
+    now_epoch=$(date +%s)
+    window_start=$((now_epoch - 600))
+    count=0
+    while IFS= read -r ts; do
+        ts_epoch=$(date -d "$ts" +%s 2>/dev/null) || continue
+        [ "$ts_epoch" -ge "$window_start" ] && count=$((count + 1))
+    done < <(grep -F -- " DENY " "$LOG_FILE" 2>/dev/null | grep -F -- "file=$file_path tool=" | sed -E 's/^\[([^]]+)\].*/\1/')
+
+    if [ "$count" -ge 3 ]; then
+        local marker="${LOG_FILE}.repeated_deny_alert.$(printf '%s' "$file_path" | tr -c 'A-Za-z0-9' '_')"
+        local last_alert=0
+        [ -f "$marker" ] && last_alert="$(cat "$marker" 2>/dev/null || echo 0)"
+        case "$last_alert" in ''|*[!0-9]*) last_alert=0 ;; esac
+        if [ $((now_epoch - last_alert)) -ge 600 ]; then
+            echo "$now_epoch" > "$marker" 2>/dev/null || true
+            (bash "$NTFY_SCRIPT" "🔁 pretooluse_yaml_guard.sh: 同一ファイルへの実DENYが直近10分で${count}件 file=$file_path — deny再試行ループの可能性" >/dev/null 2>&1 &) || true
+        fi
+    fi
+}
+
 INPUT="$(cat)"
 
 # ─── 早期リターン1: feature flag (grep-based, python起動なし) ───
@@ -192,6 +222,7 @@ if [ -n "$OUTPUT" ]; then
         exit 0
     fi
     echo "[$(date -Iseconds)] DENY mode=$MODE session=$SESSION_ID file=$FILE_PATH tool=$TOOL_NAME reason=$OUTPUT" >> "$LOG_FILE"
+    check_repeated_deny_alert "$FILE_PATH"
     printf '%s\n' "$OUTPUT"
     exit 0
 fi

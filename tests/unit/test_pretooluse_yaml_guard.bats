@@ -324,6 +324,91 @@ EOF
     [[ "$output" == *"YAML parse failure"* ]]
 }
 
+# --- 反復DENY警報 (cmd_134 工程2): 同一ファイルへの実DENYが直近10分以内に
+#     3件以上でntfy警報。判定対象は実DENY行のみ(WOULD-DENY/FAIL-OPEN/ALLOWは
+#     対象外)。 ---
+
+@test "repeated DENY: same file 3 times within 10 minutes fires ntfy alert" {
+    local target="$TEST_TMP/queue/tasks/ashigaru9.yaml"
+    local ts1 ts2
+    ts1="$(date -d '-2 minutes' -Iseconds)"
+    ts2="$(date -d '-5 minutes' -Iseconds)"
+    echo "[$ts1] DENY mode=enforce session=fake1 file=$target tool=Write reason={}" >> "$LOG_FILE"
+    echo "[$ts2] DENY mode=enforce session=fake2 file=$target tool=Write reason={}" >> "$LOG_FILE"
+
+    local payload='{"tool_name":"Write","tool_input":{"file_path":"'"$target"'","content":"task:\n  bad: [unclosed\n"}}'
+    run_guard "$payload"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+
+    run cat "$NTFY_LOG"
+    [[ "$output" == *"同一ファイルへの実DENYが直近10分で"* ]]
+}
+
+@test "repeated DENY: 3 DENYs across different files does NOT fire alert" {
+    local ts1 ts2
+    ts1="$(date -d '-2 minutes' -Iseconds)"
+    ts2="$(date -d '-3 minutes' -Iseconds)"
+    echo "[$ts1] DENY mode=enforce session=fake1 file=$TEST_TMP/queue/tasks/other1.yaml tool=Write reason={}" >> "$LOG_FILE"
+    echo "[$ts2] DENY mode=enforce session=fake2 file=$TEST_TMP/queue/tasks/other2.yaml tool=Write reason={}" >> "$LOG_FILE"
+
+    local payload='{"tool_name":"Write","tool_input":{"file_path":"'"$TEST_TMP"'/queue/tasks/ashigaru9.yaml","content":"task:\n  bad: [unclosed\n"}}'
+    run_guard "$payload"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+
+    run cat "$NTFY_LOG" 2>/dev/null
+    [[ "$output" != *"同一ファイルへの実DENYが直近10分で"* ]]
+}
+
+@test "repeated DENY: same file but 3 events spread beyond 10 minutes does NOT fire alert" {
+    local target="$TEST_TMP/queue/tasks/ashigaru9.yaml"
+    local ts1 ts2
+    ts1="$(date -d '-15 minutes' -Iseconds)"
+    ts2="$(date -d '-20 minutes' -Iseconds)"
+    echo "[$ts1] DENY mode=enforce session=fake1 file=$target tool=Write reason={}" >> "$LOG_FILE"
+    echo "[$ts2] DENY mode=enforce session=fake2 file=$target tool=Write reason={}" >> "$LOG_FILE"
+
+    local payload='{"tool_name":"Write","tool_input":{"file_path":"'"$target"'","content":"task:\n  bad: [unclosed\n"}}'
+    run_guard "$payload"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+
+    run cat "$NTFY_LOG" 2>/dev/null
+    [[ "$output" != *"同一ファイルへの実DENYが直近10分で"* ]]
+}
+
+@test "repeated DENY: same file only 2 events total does NOT fire alert" {
+    local target="$TEST_TMP/queue/tasks/ashigaru9.yaml"
+    local ts1
+    ts1="$(date -d '-2 minutes' -Iseconds)"
+    echo "[$ts1] DENY mode=enforce session=fake1 file=$target tool=Write reason={}" >> "$LOG_FILE"
+
+    local payload='{"tool_name":"Write","tool_input":{"file_path":"'"$target"'","content":"task:\n  bad: [unclosed\n"}}'
+    run_guard "$payload"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+
+    run cat "$NTFY_LOG" 2>/dev/null
+    [[ "$output" != *"同一ファイルへの実DENYが直近10分で"* ]]
+}
+
+@test "repeated DENY: observe mode with 3+ WOULD-DENY for same file does NOT fire alert (regression: inactive during observe)" {
+    local target="$TEST_TMP/queue/tasks/ashigaru9.yaml"
+    local payload='{"tool_name":"Write","tool_input":{"file_path":"'"$target"'","content":"task:\n  bad: [unclosed\n"}}'
+    run_guard_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run_guard_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run_guard_with_settings "$SETTINGS_OBSERVE" "$payload"
+
+    run grep -c "WOULD-DENY" "$LOG_FILE"
+    [ "$output" -eq 3 ]
+    run grep -c " DENY " "$LOG_FILE"
+    [ "$status" -ne 0 ]
+
+    run cat "$NTFY_LOG" 2>/dev/null
+    [[ "$output" != *"同一ファイルへの実DENYが直近10分で"* ]]
+}
+
 # --- fail-open経路 ---
 
 @test "internal error (python binary missing): fails open (allow) and fires ntfy warning" {
