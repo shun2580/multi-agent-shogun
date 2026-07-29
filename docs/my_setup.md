@@ -92,11 +92,14 @@ Sonnet     Sonnet     gpt-oss       Ollama     Haiku      Haiku      Haiku
 | 将軍（Shogun） | Claude Code | claude-opus-5 | 戦略決定・家老へのcmd下達 |
 | 家老（Karo） | Claude Code | claude-sonnet-5 | タスク分解・足軽への割当・品質判定 |
 | 軍師（Gunshi） | Claude Code | claude-sonnet-5 | 品質チェック・ダッシュボード更新 |
-| 足軽1/2（Ashigaru1/2） | Claude Code | claude-sonnet-5 | 重量実行タスク（常時稼働） |
-| 足軽3（Ashigaru3） | OpenCode + OpenRouter | openai/gpt-oss-120b:free | 汎用業務・コード生成・調査（無料枠・複数プロバイダ安定） |
-| 足軽4（Ashigaru4） | OpenCode | ollama/qwen3.5:9b | ローカル実行（GPU推論・Claude枠ゼロ） |
+| 足軽1-4（Ashigaru1-4） | Claude Code | claude-sonnet-5 | 重量実行タスク（常時稼働） |
 | 足軽5（Ashigaru5） | Claude Code | claude-haiku-4-5-20251001 | 高速軽量タスク（常時稼働） |
 | 足軽6/7（Ashigaru6/7） | Claude Code | claude-haiku-4-5-20251001 | 高速軽量タスク（Haiku枠） |
+
+> 🔴cmd_133是正: 足軽3/4の行はOpenCode+OpenRouter/Ollama時代のまま放置され、
+> フリート全Claude化（cmd_133でSonnet帯4席化）後も表が実態を追従していなかった。
+> 「表示と実態の乖離」族（cmd_116 S-2のWATCHER_STATUS虚偽表示、cmd_128の
+> dashboard時刻列と同族）として記録する。
 
 ---
 
