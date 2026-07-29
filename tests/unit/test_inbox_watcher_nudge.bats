@@ -513,3 +513,122 @@ PY
     [ "$status" -eq 0 ]
     echo "$output" | grep -q "OK"
 }
+
+# ═══════════════════════════════════════════════════════════════
+# cmd_126 Part 2: idleフラグ不在時のpane解析三値経路への縦続
+# Fable裁定20260729 Q11: フラグ存在=idle確定(従来どおり)。フラグ不在=
+# 「判定未了」であり、既存のpane解析三値経路(claude型では従来デッドコード
+# だった)へ縦続する。不在→機械的にunknownへ読み替えるのではなく、
+# 不在→本物の観測(pane解析)を追加する設計であることを固定する。
+#   T-TRI-015: フラグ有→idle(既存動作の非破壊確認)
+#   T-TRI-016〜018: フラグ無+pane解析busy/idle/unknown→それぞれ透過
+#   T-TRI-019〜020: unknown時、非破壊/破壊的の既定動作(Q8分岐の回帰確認)
+#   T-BDET-*: [BUSY-DETERMINATION]計装ログの形式・grep -c集計可能性
+# ═══════════════════════════════════════════════════════════════
+
+@test "T-TRI-015: claude type, flag PRESENT → idle (existing behavior unchanged)" {
+    run bash -c '
+        MOCK_PANE_CLI="claude"
+        source "'"$TEST_HARNESS"'"
+        CLI_TYPE="claude"
+        touch "$IDLE_FLAG_DIR/shogun_idle_test_agent"
+        agent_is_busy_tri
+    '
+    [ "$status" -eq 1 ]
+    echo "$output" | grep -q "\[BUSY-DETERMINATION\] agent=test_agent path=flag verdict=idle"
+}
+
+@test "T-TRI-016: claude type, flag ABSENT + pane analysis busy → busy (cascade, not two-valued busy-by-default)" {
+    run bash -c '
+        MOCK_PANE_CLI="claude"
+        MOCK_CAPTURE_PANE="Thinking (esc to interrupt)"
+        source "'"$TEST_HARNESS"'"
+        CLI_TYPE="claude"
+        rm -f "$IDLE_FLAG_DIR/shogun_idle_test_agent"
+        agent_is_busy_tri
+    '
+    [ "$status" -eq 0 ]
+    echo "$output" | grep -q "\[BUSY-DETERMINATION\] agent=test_agent path=pane verdict=busy"
+}
+
+@test "T-TRI-017: claude type, flag ABSENT + pane analysis idle → idle (cascade recovers false-busy)" {
+    run bash -c '
+        MOCK_PANE_CLI="claude"
+        MOCK_CAPTURE_PANE="some old output
+❯"
+        source "'"$TEST_HARNESS"'"
+        CLI_TYPE="claude"
+        rm -f "$IDLE_FLAG_DIR/shogun_idle_test_agent"
+        agent_is_busy_tri
+    '
+    [ "$status" -eq 1 ]
+    echo "$output" | grep -q "\[BUSY-DETERMINATION\] agent=test_agent path=pane verdict=idle"
+}
+
+@test "T-TRI-018: claude type, flag ABSENT + pane analysis fails → unknown, reason logged" {
+    run bash -c '
+        MOCK_PANE_CLI="claude"
+        MOCK_CAPTURE_PANE_RC=1
+        source "'"$TEST_HARNESS"'"
+        CLI_TYPE="claude"
+        rm -f "$IDLE_FLAG_DIR/shogun_idle_test_agent"
+        agent_is_busy_tri
+    '
+    [ "$status" -eq 2 ]
+    echo "$output" | grep -qi "capture_pane_failed"
+    echo "$output" | grep -q "\[BUSY-DETERMINATION\] agent=test_agent path=pane verdict=unknown reason="
+    echo "$output" | grep -qi "\[BUSY-DETERMINATION\].*capture_pane_failed"
+}
+
+@test "T-TRI-019: claude type, flag ABSENT + pane unknown × nudge-direction → not busy (deliver anyway, Q8 regression)" {
+    run bash -c '
+        MOCK_PANE_CLI="claude"
+        MOCK_CAPTURE_PANE_RC=1
+        source "'"$TEST_HARNESS"'"
+        CLI_TYPE="claude"
+        rm -f "$IDLE_FLAG_DIR/shogun_idle_test_agent"
+        agent_is_busy
+    '
+    [ "$status" -eq 1 ]  # 1 = not busy → nudge proceeds despite unknown observation
+}
+
+@test "T-TRI-020: claude type, flag ABSENT + pane unknown × clear-direction → busy (block /clear, Q8 regression)" {
+    run bash -c '
+        MOCK_PANE_CLI="claude"
+        MOCK_CAPTURE_PANE_RC=1
+        source "'"$TEST_HARNESS"'"
+        CLI_TYPE="claude"
+        rm -f "$IDLE_FLAG_DIR/shogun_idle_test_agent"
+        agent_is_busy_for_clear
+    '
+    [ "$status" -eq 0 ]  # 0 = busy → /clear blocked despite unknown observation
+}
+
+@test "T-BDET-001: [BUSY-DETERMINATION] total count is grep -c parseable across mixed verdicts" {
+    run bash -c '
+        MOCK_PANE_CLI="claude"
+        MOCK_CAPTURE_PANE="Thinking (esc to interrupt)"
+        source "'"$TEST_HARNESS"'"
+        CLI_TYPE="claude"
+        rm -f "$IDLE_FLAG_DIR/shogun_idle_test_agent"
+        agent_is_busy_tri  # path=pane verdict=busy
+        touch "$IDLE_FLAG_DIR/shogun_idle_test_agent"
+        agent_is_busy_tri  # path=flag verdict=idle
+    '
+    [ "$status" -eq 1 ]
+    total=$(echo "$output" | grep -c "\[BUSY-DETERMINATION\]" || true)
+    [ "$total" -eq 2 ]
+    unknown=$(echo "$output" | grep -c "verdict=unknown" || true)
+    [ "$unknown" -eq 0 ]
+}
+
+@test "T-BDET-002: /clear cooldown path is also instrumented as path=cooldown verdict=busy" {
+    run bash -c '
+        source "'"$TEST_HARNESS"'"
+        CLI_TYPE="claude"
+        LAST_CLEAR_TS=$(date +%s)
+        agent_is_busy_tri
+    '
+    [ "$status" -eq 0 ]
+    echo "$output" | grep -q "\[BUSY-DETERMINATION\] agent=test_agent path=cooldown verdict=busy"
+}

@@ -967,12 +967,18 @@ agent_has_self_watch() {
 # Sending nudge during Working causes text to queue but Enter to be lost.
 # Returns 0=busy(観測成功), 1=idle(観測成功), 2=unknown(観測失敗)。
 # Implementation: delegates to lib/agent_status.sh (shared library) for the
-# non-claude (pane-based) path.
+# pane-based path.
 #
 # cmd_123 Part A / Fable裁定20260728 Q8: 「観測できなかった」(unknown) を
 # 「観測してidleだった」と同一視しない。呼び出し側は自身の動作の破壊性に
 # 応じて正しいfail-safeの向きを選べ — agent_is_busy() / agent_is_busy_for_clear()
 # を参照。
+#
+# cmd_126 Part 2 / Fable裁定20260729 Q11: idleフラグの「不在」は
+# 「busyの観測」ではなく「判定未了」である（Stop hook未発火・フラグ
+# ディレクトリ喪失・エージェント未起動を畳み込み得る＝観測失敗側を含む）。
+# フラグ不在から即busy確定する二値潰しをやめ、既存のpane解析三値経路へ
+# 縦続する（不在→unknown読替ではなく、不在→本物の観測を追加する）。
 agent_is_busy_tri() {
     AGENT_STATUS_UNKNOWN_REASON=""
 
@@ -984,25 +990,36 @@ agent_is_busy_tri() {
     local now_busy
     now_busy=$(date +%s)
     if [ "${LAST_CLEAR_TS:-0}" -gt 0 ] && [ "$((now_busy - LAST_CLEAR_TS))" -lt 30 ]; then
+        echo "[$(date)] [BUSY-DETERMINATION] agent=$AGENT_ID path=cooldown verdict=busy" >&2
         return 0  # busy — /clear still processing
     fi
 
     local effective_cli
     effective_cli=$(get_effective_cli_type)
     if [[ "$effective_cli" == "claude" ]]; then
-        # フラグファイル方式: ファイル存在チェックのみで判定が確定する
-        # (I/O例外以外に観測失敗の余地がない)。フラグなし=busy、あり=idle。
+        # フラグ存在 = idle確定（陽性証拠として信頼。従来どおり）。
         if [ -f "${IDLE_FLAG_DIR:-/tmp}/shogun_idle_${AGENT_ID}" ]; then
+            echo "[$(date)] [BUSY-DETERMINATION] agent=$AGENT_ID path=flag verdict=idle" >&2
             return 1  # idle
         fi
-        return 0  # busy
+        # フラグ不在 = 判定未了 → pane解析へ縦続（下記の共通処理へ）。
     fi
 
-    # 従来のpane解析（Codex等フォールバック）。rc=0/1/2をそのまま透過する。
+    # pane解析。claude型はフラグ不在時の第二観測として、非claude型
+    # (Codex/OpenCode等)は元来の唯一の判定経路として使う。rc=0/1/2を
+    # そのまま透過する。
     agent_is_busy_check "$PANE_TARGET" "$effective_cli"
     local rc=$?
+    local verdict="unknown"
+    case "$rc" in
+        0) verdict="busy" ;;
+        1) verdict="idle" ;;
+    esac
     if [ "$rc" -eq 2 ]; then
         echo "[$(date)] [UNKNOWN] Busy observation failed for $AGENT_ID: ${AGENT_STATUS_UNKNOWN_REASON:-<no reason recorded>}" >&2
+        echo "[$(date)] [BUSY-DETERMINATION] agent=$AGENT_ID path=pane verdict=unknown reason=${AGENT_STATUS_UNKNOWN_REASON:-<no reason recorded>}" >&2
+    else
+        echo "[$(date)] [BUSY-DETERMINATION] agent=$AGENT_ID path=pane verdict=$verdict" >&2
     fi
     return "$rc"
 }
@@ -1410,6 +1427,15 @@ for s in data.get('specials', []):
             # Stale busy safety net: if agent has been "busy" for >5 minutes with
             # unread messages, force-create idle flag. This recovers from false-busy
             # deadlock where stop_hook failed to create the flag.
+            #
+            # cmd_126 Part 2 / Fable裁定20260729 Q12: この発火(WARNING行、
+            # grep -c 'stale busy recovery')は絶対回数ではなく
+            #   stale busy recovery発火回数 ÷ [BUSY-DETERMINATION]総数(grep -c)
+            # の比率(配達機会あたりの発火率)で読むこと。かつ解釈順序を固定する
+            # — Q11是正(フラグ不在→pane解析への縦続)が実トラフィックに乗るまでは、
+            # 発火率が下がらなくても「別の穴」ではなく「修正が当該経路に未到達」
+            # と読め。Q8-(4)の読み筋(激減しなければ別の穴)はQ11是正の反映後に
+            # 初めて適用する。それまでの計測はベースライン収集と位置づける。
             local stale_busy_limit=300  # 5 minutes
             if [ "${FIRST_UNREAD_SEEN:-0}" -gt 0 ] && [ "$((now - FIRST_UNREAD_SEEN))" -ge "$stale_busy_limit" ]; then
                 echo "[$(date)] WARNING: $AGENT_ID busy for $((now - FIRST_UNREAD_SEEN))s with $normal_count unread — forcing idle flag (stale busy recovery)" >&2
