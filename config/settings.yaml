@@ -44,10 +44,14 @@ cli:
       effort: high  # cmd_109: Opus5 effort暗黙継承事故予防のため明示
     ashigaru3:
       type: claude
-      model: claude-haiku-4-5-20251001  # 2026-07-08 殿裁可(cmd_070): opencode v1.17.15のUD2 panic(cmd_069実機確認)・OpenRouter:free不安定を同時に断つためopencodeから恒久切替
+      # 2026-07-08 殿裁可(cmd_070): opencode v1.17.15のUD2 panic(cmd_069実機確認)・OpenRouter:free不安定を同時に断つためopencodeから恒久切替
+      model: claude-sonnet-5  # 2026-07-29 cmd_133: Sonnet帯4席化(殿裁可・Fable経由)、次回出陣時反映
+      effort: high  # cmd_109: Opus5 effort暗黙継承事故予防のため明示
     ashigaru4:
       type: claude
-      model: claude-haiku-4-5-20251001  # 2026-07-08 殿嗜好(cmd_071): 布陣の能力順整理(1,2=Sonnet/3-6=Haiku/7=Ollama)のため足軽7とOllama枠を入替
+      # 2026-07-08 殿嗜好(cmd_071): 布陣の能力順整理(1,2=Sonnet/3-6=Haiku/7=Ollama)のため足軽7とOllama枠を入替
+      model: claude-sonnet-5  # 2026-07-29 cmd_133: Sonnet帯4席化(殿裁可・Fable経由)、次回出陣時反映
+      effort: high  # cmd_109: Opus5 effort暗黙継承事故予防のため明示
     ashigaru5:
       model: claude-haiku-4-5-20251001
       type: claude
