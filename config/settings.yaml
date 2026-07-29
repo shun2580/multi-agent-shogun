@@ -2,12 +2,17 @@ features:
   fastlane_enabled: true  # cmd_086 Part C: 些事fast-lane暫定運用。誤判定1件で家老がfalseへ
   deadman_enabled: true   # cmd_092: 停滞警報v1。falseで完全無効化
   scope_check_advisory: true  # cmd_097: advisory記録のみ。強制化は別途enforce等で拡張
-  yaml_guard_enabled: observe  # cmd_120: S-1〜Part1-B完了・欠陥1-3修正完了により3値化(off|observe|enforce)。
+  yaml_guard_enabled: enforce  # cmd_135(2026-07-29 16:30): 殿明示承認(「enforceはすすめてかまわぬ」)を得てobserve→enforceへ移行。
+    # cmd_132の家老集計でFable裁定Q6の4条件(評価141件・出陣2回・偽would-deny0件・fail-open0件)を
+    # 全て充足と確認済み。cmd_134工程1(破損YAML修復)・工程2(反復deny警報、commit 615b62a)完了後に実施。
+    # ─ 沿革 ─
+    # cmd_120: S-1〜Part1-B完了・欠陥1-3修正完了により3値化(off|observe|enforce)。
     # cmd_116緊急是正(2026-07-27 21:10)でfalse(=off)に戻されていたが、cmd_117欠陥1(safe_load_all化)・
     # 欠陥2(ntfy漏出抑止, commit 7c60a7d)・欠陥3(ANSI修復)がすべてQC PASS済みのためobserveへ投入。
     # enforceへの移行はcmd_121 A-1改定の4条件(暦日条件は廃止): (1)対象評価20件以上
     # (2)稼働セッション2回以上に跨る (3)偽would-denyゼロ (4)fail-open発生ゼロまたは全件原因説明済み
     # ——を全て満たしたときのみ候補となり、判定・移行自体は将軍が別途行う。
+    # 巻き戻し: 自己修正失敗が出た場合、殿または将軍の判断でobserveへ戻してよい(事後報告可)。
 deadman:                  # cmd_092: 停滞警報(デッドマンスイッチ)v1のパラメータ
   stall_threshold_min: 20
 auto_heal:
