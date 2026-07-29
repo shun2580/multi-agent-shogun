@@ -13,6 +13,14 @@ features:
     # (2)稼働セッション2回以上に跨る (3)偽would-denyゼロ (4)fail-open発生ゼロまたは全件原因説明済み
     # ——を全て満たしたときのみ候補となり、判定・移行自体は将軍が別途行う。
     # 巻き戻し: 自己修正失敗が出た場合、殿または将軍の判断でobserveへ戻してよい(事後報告可)。
+  reporting_mode: exception  # cmd_136(2026-07-29制定・次回出陣から適用): 報告の例外ベース化。
+    # exception(既定)=正常完了はdashboard記録のみ、ntfyは失敗・ブロック・caveat付き完了・
+    # 殿裁定要・警報類のみ。verbose=旧運用(逐次ntfy)へ即時切り戻し。
+    # 対象は将軍配下で完結する自律実行cmdのみ(go-harvester等レビュー依頼/Fable裁定案件/
+    # 緊急実害進行中の事象は本flagに関わらず常時ntfy。詳細: instructions/shogun.md
+    # 「省力化3点セット」節・instructions/karo.md「省力化3点セット運用」節)。
+    # 既定exceptionはcmd_136本文の明示指示であり、cmd_116 S-3の「新規flagは安全側default」
+    # 原則の対象外(exception自体が既に殿裁可済みの規律のため)。
 deadman:                  # cmd_092: 停滞警報(デッドマンスイッチ)v1のパラメータ
   stall_threshold_min: 20
 auto_heal:

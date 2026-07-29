@@ -843,6 +843,67 @@ Note: This replaces the need for inbox_write to shogun. ntfy goes directly to Lo
 **通知本文の最低要件**: cmd ID・種別（完了/要対応/blocked）・1行要約 を含めること。
 **過剰通知禁止**: subtask の逐次 QC PASS 等は通知しない（cmd レベルの終端・判断事象のみ）。
 
+### 省力化3点セット運用（cmd_136 2026-07-29制定・次回出陣から適用）
+
+`instructions/shogun.md`「省力化3点セット」節で制定された3点の実務手順を定める。
+**適用対象は将軍配下で完結する自律実行cmdのみ**——shogun.md記載の適用線引き
+（go-harvester等レビュー依頼／Fable裁定案件／緊急・実害進行中の事象）は
+本節の全ルールに優先し、当該cmdは`reporting_mode`の値に関わらず常に従来どおり
+（`verbose`相当）でntfy送信する。
+
+#### (1) 報告の例外ベース化 — reporting_mode分岐
+
+`config/settings.yaml` の `features.reporting_mode` を毎cmd完了時に確認する:
+
+| reporting_mode | 挙動 |
+|---|---|
+| `exception`（既定） | ntfy送信は失敗・ブロック・caveat付き完了・殿裁定要・警報類のみ。正常完了はdashboard.md更新のみで完結（上記「### ntfy完了通知の必須ルール」の逐次送信を正常系については停止）。 |
+| `verbose` | 従来どおり全cmd完了でntfy送信（既存ルールそのまま）。 |
+
+判定手順（cmd完了時）:
+1. 対象cmdが適用線引き(a)(b)(c)のいずれかに該当するか確認 → 該当なら常時ntfy送信
+2. 非該当の場合、`grep 'reporting_mode:' config/settings.yaml` でモード確認
+3. `exception`かつ正常完了（失敗・ブロック・caveat・裁定要・警報のいずれでもない）
+   → dashboard.md更新のみ、ntfy送信を省略
+4. 上記以外（`exception`かつ異常系、または`verbose`）→ 既存の通知ルールどおり送信
+
+#### (2) 承認のバッチ化 — commit承認の集約
+
+通常cmdの完了に伴うcommit承認は、殿への都度提示を求めず、セッション末
+（陣仕舞い時、または殿の明示要求時）に**差分一括レビュー**として提示する。
+提示形式: `git log --oneline <セッション開始commit>..HEAD` + 主要diffの要約。
+
+**🔴例外（緩和しない）**: 設計承認（CoDD Wave境界）は本バッチ化の対象外。
+従来どおり各Wave境界で殿の承認を都度得ること。
+
+#### (3) 完了定義の機械化 — cmd Completion Check（Step 11.7）への追記
+
+Step 11.7「cmd Completion Check」の判定に以下を追加する:
+
+- 完了しようとするsubtaskに機械検証手段（`test_command`・bats・lint等の合否装置）が
+  存在する場合、その実行結果が**合格**であることを`done`判定の必須条件とする
+  （軍師QC PASSに加えて必須。どちらか一方ではなく両方）。
+- 合否装置が存在しないtaskは従来どおり軍師QC PASSのみで`done`と判定する。
+- 「機械検証があるのに実行/合格を確認していない」状態を`done`と呼ぶことを禁ずる。
+
+#### 介入記録（殿の介入が実際に発生した事象の記録）
+
+殿の介入（ntfyへの応答・dashboard 🚨要対応への裁定・commitバッチレビューでの
+差し戻し等）が実際に発生した場合、`logs/daily/YYYY-MM-DD.md`（Step 11.7.6で
+家老が既に作成・追記しているファイル）に以下形式で追記する（新規常駐機構は
+作らない）:
+
+```
+## 📋 殿介入記録
+- HH:MM [種別] cmd_XXX: 概要1行
+```
+
+**種別タグ**: `failure`（失敗） / `block`（ブロック） / `caveat`（caveat付き完了） /
+`judgment`（殿裁定要） / `alert`（警報） / `scope_exception`（適用線引き対象外による
+例外ntfy）
+
+用途: 後日の緩和・引締め判断のデータ。介入頻度が高い種別は線引きの見直し候補となる。
+
 ### 陣仕舞い（cmd_114型安全停止）の「停止準備完了」ntfy要件（cmd_116 S-3 2026-07-27制定）
 
 陣仕舞い（殿の御下命で全エージェントを安全な区切りまで進めて停止させるcmd。
