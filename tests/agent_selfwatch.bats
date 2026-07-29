@@ -146,7 +146,10 @@ YAML
 
     run bash -c "source '$TEST_HARNESS'; get_unread_info"
     [ "$status" -eq 0 ]
-    [[ "$output" =~ '"count": 0' ]]
+    # cmd_126 Part 1: lock-unavailable is a read failure, not "all read" —
+    # must surface as count:null + error:true, never count:0.
+    [[ "$output" =~ '"count": null' ]]
+    [[ "$output" =~ '"error": true' ]]
 
     "$VENV_PYTHON" - << 'PY' "$TEST_INBOX"
 import sys, yaml

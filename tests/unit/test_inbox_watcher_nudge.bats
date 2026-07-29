@@ -360,6 +360,131 @@ PY
     [ "$(grep -cE 'send-keys.*queue/inbox/' "$MOCK_LOG")" -ge 1 ]
 }
 
+# ═══════════════════════════════════════════════════════════════
+# cmd_126 Part 1: fast_info の unread=0 潰しをfail-loud化
+# Fable裁定20260729 Q11/Q14・将軍実地確認: get_unread_count_fast() /
+# get_unread_info() の読取・パース失敗(YAML破損・ファイル不在)が
+# count:0(=全既読)に潰れていた欠陥の是正を固定する。
+#   (a) 正常JSON        → 警報発火しない・count は実際の未読数
+#   (b) 破損YAML        → 警報発火する・count は null(0として扱われない)
+#   (c) ファイル不在     → 警報発火する・count は null(0として扱われない)
+# ═══════════════════════════════════════════════════════════════
+
+@test "T-FASTINFO-NORMAL-001: get_unread_count_fast on normal JSON — no warning, real count" {
+    run bash -c '
+        source "'"$TEST_HARNESS"'"
+        cat > "$INBOX" << "YAML"
+messages:
+- id: msg_read
+  read: true
+  content: already read
+- id: msg_unread
+  read: false
+  content: still unread
+YAML
+        get_unread_count_fast
+    '
+    [ "$status" -eq 0 ]
+    echo "$output" | grep -q '"count": 1'
+    echo "$output" | grep -q '"error": false'
+    ! echo "$output" | grep -q "\[ERROR\]"
+}
+
+@test "T-FASTINFO-NORMAL-002: get_unread_info on normal JSON — no warning, real count" {
+    run bash -c '
+        source "'"$TEST_HARNESS"'"
+        cat > "$INBOX" << "YAML"
+messages:
+- id: msg_read
+  read: true
+  content: already read
+- id: msg_unread
+  read: false
+  content: still unread
+YAML
+        get_unread_info
+    '
+    [ "$status" -eq 0 ]
+    echo "$output" | grep -q '"count": 1'
+    echo "$output" | grep -q '"error": false'
+    ! echo "$output" | grep -q "\[ERROR\]"
+}
+
+@test "T-FASTINFO-CORRUPT-001: get_unread_count_fast on corrupted YAML — warning fires, count is NOT 0" {
+    run bash -c '
+        source "'"$TEST_HARNESS"'"
+        printf "messages:\n  - id: [unterminated\n" > "$INBOX"
+        get_unread_count_fast
+    '
+    [ "$status" -eq 0 ]
+    echo "$output" | grep -qi "\[ERROR\].*unread_count_fast.*read/parse failed"
+    echo "$output" | grep -q '"count": null'
+    echo "$output" | grep -q '"error": true'
+    ! echo "$output" | grep -q '"count": 0'
+}
+
+@test "T-FASTINFO-CORRUPT-002: get_unread_info on corrupted YAML — warning fires, count is NOT 0" {
+    run bash -c '
+        source "'"$TEST_HARNESS"'"
+        printf "messages:\n  - id: [unterminated\n" > "$INBOX"
+        get_unread_info
+    '
+    [ "$status" -eq 0 ]
+    echo "$output" | grep -qi "\[ERROR\].*unread_info.*read/parse failed"
+    echo "$output" | grep -q '"count": null'
+    echo "$output" | grep -q '"error": true'
+    ! echo "$output" | grep -q '"count": 0'
+}
+
+@test "T-FASTINFO-MISSING-001: get_unread_count_fast on missing inbox file — warning fires, count is NOT 0" {
+    run bash -c '
+        source "'"$TEST_HARNESS"'"
+        rm -f "$INBOX"
+        get_unread_count_fast
+    '
+    [ "$status" -eq 0 ]
+    echo "$output" | grep -qi "\[ERROR\].*unread_count_fast.*read/parse failed"
+    echo "$output" | grep -q '"count": null'
+    echo "$output" | grep -q '"error": true'
+    ! echo "$output" | grep -q '"count": 0'
+}
+
+@test "T-FASTINFO-MISSING-002: get_unread_info on missing inbox file — warning fires, count is NOT 0" {
+    run bash -c '
+        source "'"$TEST_HARNESS"'"
+        rm -f "$INBOX"
+        get_unread_info
+    '
+    [ "$status" -eq 0 ]
+    echo "$output" | grep -qi "\[ERROR\].*unread_info.*read/parse failed"
+    echo "$output" | grep -q '"count": null'
+    echo "$output" | grep -q '"error": true'
+    ! echo "$output" | grep -q '"count": 0'
+}
+
+# ── process_unread() 呼び出し側: fail-loud シグナルを正しく扱うこと ──
+# get_unread_info が error:true を返した場合、process_unread は
+# escalation reset(FIRST_UNREAD_SEEN=0)を行わず、既読確定として
+# idle flag を触らないこと(安全側フォールバック)。
+
+@test "T-FASTINFO-PROCESS-001: process_unread does not perform escalation-reset when get_unread_info fails" {
+    # setup() pre-creates the idle flag for other tests; remove it here so we
+    # can verify the failed cycle does NOT recreate it (no false "all read").
+    rm -f "$TEST_TMPDIR/shogun_idle_test_agent"
+    run bash -c '
+        source "'"$TEST_HARNESS"'"
+        AGENT_ID="test_agent"
+        rm -f "$INBOX"
+        FIRST_UNREAD_SEEN=1234567890
+        process_unread event
+        echo "FIRST_UNREAD_SEEN_AFTER=$FIRST_UNREAD_SEEN"
+    '
+    [ "$status" -eq 0 ]
+    echo "$output" | grep -qi "\[ERROR\].*get_unread_info failed.*skipping this cycle"
+    echo "$output" | grep -q "FIRST_UNREAD_SEEN_AFTER=1234567890"
+    [ ! -f "$TEST_TMPDIR/shogun_idle_test_agent" ]
+}
+
 @test "T-NUDGE-IDEMPOTENT-002: re-marking already-read messages via send_wakeup is a no-op (no state flip)" {
     run bash -c '
         source "'"$TEST_HARNESS"'"

@@ -533,10 +533,16 @@ no_idle_full_read() {
 }
 
 # summary-first: unread_count fast-path before full read
+# cmd_126 Part 1: read/parse failure must NOT be collapsed into "count: 0"
+# (0 is indistinguishable from "all read" and drives escalation-reset /
+# idle-flag logic downstream). On failure we emit count:null + error:true
+# and log a diagnostic to stderr; the caller (process_unread) must treat
+# this as "unknown" and fall back to the full read, never as unread=0.
 get_unread_count_fast() {
     INBOX_PATH="$INBOX" "$SCRIPT_DIR/.venv/bin/python3" - << 'PY'
 import json
 import os
+import sys
 import yaml
 
 inbox = os.environ.get("INBOX_PATH", "")
@@ -552,9 +558,18 @@ try:
         "latest_content": latest_content,
         "latest_cmd_id": latest.get("cmd_id") or "",
         "latest_task_id": latest.get("task_id") or "",
+        "error": False,
     }))
-except Exception:
-    print(json.dumps({"count": 0, "latest_content": "", "latest_cmd_id": "", "latest_task_id": ""}))
+except Exception as e:
+    print(f"[ERROR] [unread_count_fast] read/parse failed for {inbox!r}: {type(e).__name__}: {e}", file=sys.stderr)
+    print(json.dumps({
+        "count": None,
+        "latest_content": "",
+        "latest_cmd_id": "",
+        "latest_task_id": "",
+        "error": True,
+        "error_reason": type(e).__name__,
+    }))
 PY
 }
 
@@ -564,14 +579,19 @@ PY
 get_unread_info() {
     (
         # acquire_inbox_lock also takes flock when available.
+        # cmd_126 Part 1: lock-acquire failure is a read failure, not "all read".
+        # count:null + error:true signals this to process_unread(), which must
+        # not perform escalation-reset or idle-flag work on this result.
         if ! acquire_inbox_lock; then
-            echo '{"count": 0, "specials": []}'
+            echo "[$(date)] [ERROR] get_unread_info: failed to acquire inbox lock for ${AGENT_ID:-unknown} — NOT treating as unread=0" >&2
+            echo '{"count": null, "specials": [], "error": true, "error_reason": "lock_failed"}'
             exit 0
         fi
         trap release_inbox_lock EXIT
         INBOX_PATH="$INBOX" "$SCRIPT_DIR/.venv/bin/python3" - << 'PY'
 import json
 import os
+import sys
 import yaml
 
 inbox = os.environ.get("INBOX_PATH", "")
@@ -612,12 +632,36 @@ try:
         "latest_content": latest_content,
         "latest_cmd_id": latest.get("cmd_id") or "",
         "latest_task_id": latest.get("task_id") or "",
+        "error": False,
     }
     print(json.dumps(payload))
-except Exception:
-    print(json.dumps({"count": 0, "specials": []}))
+except Exception as e:
+    print(f"[ERROR] [unread_info] read/parse failed for {inbox!r}: {type(e).__name__}: {e}", file=sys.stderr)
+    print(json.dumps({
+        "count": None,
+        "specials": [],
+        "error": True,
+        "error_reason": type(e).__name__,
+    }))
 PY
-    ) 200>"$LOCKFILE" 2>/dev/null
+    ) 200>"$LOCKFILE"
+}
+
+# cmd_126 Part 1: shared error-signal check for get_unread_count_fast /
+# get_unread_info JSON payloads. Prints "0" only when the payload parses
+# AND explicitly says error:false. Any parse failure or missing/true error
+# field prints "1" (fail-safe: unknown is treated as a failure, never as
+# "no error").
+json_is_error() {
+    echo "$1" | "$SCRIPT_DIR/.venv/bin/python3" -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print(1)
+else:
+    print(1 if d.get('error') else 0)
+" 2>/dev/null
 }
 
 # ─── Send CLI command via pty direct write ───
@@ -1217,10 +1261,28 @@ process_unread() {
     # unread_count fast-path lets us skip expensive full reads when idle.
     local fast_info
     fast_info=$(get_unread_count_fast)
+    local fast_err
+    fast_err=$(json_is_error "$fast_info")
     local fast_count
-    fast_count=$(echo "$fast_info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(json.load(sys.stdin).get('count',0))" 2>/dev/null)
+    fast_count=$(echo "$fast_info" | "$SCRIPT_DIR/.venv/bin/python3" -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    d = {}
+c = d.get('count')
+print(c if c is not None else '')
+" 2>/dev/null)
 
-    if no_idle_full_read "$trigger" && [ "$fast_count" -eq 0 ] 2>/dev/null; then
+    # cmd_126 Part 1: fail-loud — a read/parse failure must never be treated
+    # as unread=0. On failure, fast_count is empty (never "0"), so the
+    # no_idle_full_read short-circuit below naturally falls through to the
+    # full read (get_unread_info) instead of assuming "all read".
+    if [ "$fast_err" != "0" ]; then
+        echo "[$(date)] [ERROR] $AGENT_ID: get_unread_count_fast failed to read/parse inbox — NOT assuming unread=0, falling back to full read" >&2
+    fi
+
+    if [ "$fast_err" = "0" ] && no_idle_full_read "$trigger" && [ "$fast_count" -eq 0 ] 2>/dev/null; then
         # no_idle_full_read guard: unread=0 and timeout path → no full inbox read
         if [ "$FIRST_UNREAD_SEEN" -ne 0 ]; then
             echo "[$(date)] All messages read for $AGENT_ID — escalation reset (fast-path)" >&2
@@ -1249,6 +1311,15 @@ process_unread() {
 
     local info
     info=$(get_unread_info)
+    local info_err
+    info_err=$(json_is_error "$info")
+    if [ "$info_err" != "0" ]; then
+        # cmd_126 Part 1: fail-loud — do not perform escalation-reset or
+        # idle-flag work on a failed read. Safe default: skip this cycle
+        # (no destructive action either way) and retry on the next poll.
+        echo "[$(date)] [ERROR] $AGENT_ID: get_unread_info failed to read/parse inbox — skipping this cycle (no escalation reset, unread NOT assumed 0)" >&2
+        return 0
+    fi
 
     local read_bytes=0
     if [ -f "$INBOX" ]; then
@@ -1307,6 +1378,12 @@ for s in data.get('specials', []):
             echo "[$(date)] [AUTO-RECOVERY] queued task_assigned for $AGENT_ID ($recovery_id)" >&2
         fi
         info=$(get_unread_info)
+        local info_err2
+        info_err2=$(json_is_error "$info")
+        if [ "$info_err2" != "0" ]; then
+            echo "[$(date)] [ERROR] $AGENT_ID: get_unread_info failed after /clear dispatch — skipping remainder of cycle (no escalation reset)" >&2
+            return 0
+        fi
     fi
 
     # Send wake-up nudge for normal messages (with escalation)
