@@ -100,6 +100,11 @@ Sonnet     Sonnet     gpt-oss       Ollama     Haiku      Haiku      Haiku
 > フリート全Claude化（cmd_133でSonnet帯4席化）後も表が実態を追従していなかった。
 > 「表示と実態の乖離」族（cmd_116 S-2のWATCHER_STATUS虚偽表示、cmd_128の
 > dashboard時刻列と同族）として記録する。
+>
+> 注: 上表の足軽1-4行（Sonnet帯4席化）は**次回出陣（`shutsujin_departure.sh`実行）後に
+> 有効**となる設定である。本ページ更新時点（config/settings.yaml反映はsubtask_133a
+> commit `ea82190` 済み）では、足軽3/4の実プロセスはまだ`claude-haiku-4-5-20251001`で
+> 稼働中（軍師QC時点で確認）。次回出陣まではこの1行は意図的な前倒し記載である。
 
 ---
 
