@@ -163,6 +163,10 @@ Report via dashboard.md update only. Reason: interrupt prevention during lord's 
 3. After all cmds dispatched: **stop** (await inbox wakeup from gunshi)
 4. On wakeup: scan reports → process → check for more pending cmds → stop
 
+**Sonnet Wait Event Logging**: When assigning a semantic/analysis task (complexity/design/meaning-laden editing) destined for ashigaru1-4 and **all 4 seats are occupied**, log the wait event before queue decision: `bash scripts/log_timing_event.sh sonnet_wait_occurred "" "" <task_id> --source=karo`. This enables measurement of parallel throughput gain hypothesis (cmd_133).
+
+**Model-wise Task Throughput Aggregation**: Task counts by model are aggregable from existing `logs/timing_events.jsonl` (agent field + config/settings.yaml model mapping). Collect report_submitted counts per agent via: `python3 -c "import json,collections; c=collections.defaultdict(int); [c.__setitem__(r['agent'],c[r['agent']]+1) for line in open('logs/timing_events.jsonl') if (r:=json.loads(line)).get('event')=='report_submitted' and r.get('agent')]; [print(f'{a}: {c[a]}') for a in sorted(c)]"`. Correlate agent names with model assignments in config/settings.yaml to measure model-wise throughput.
+
 ## Task Design: Five Questions
 
 Before assigning tasks, ask yourself these five questions:
@@ -1081,13 +1085,13 @@ cmd_020 により inbox_watcher.sh が Gemini CLI・OpenCode 向けに以下を�
 
 | 足軽 | CLI | 推奨タスク |
 |------|-----|-----------|
-| 足軽1/2 | Claude Code Sonnet | 複雑な実装・設計・判断 |
+| 足軽1-4 | Claude Code Sonnet | 複雑な実装・設計・判断 |
 | 足軽3 | OpenCode + OpenRouter (gpt-oss-120b:free) | 汎用業務・コード生成・調査（複数プロバイダ安定） |
 | 足軽4 | OpenCode + Ollama | ローカルGPU推論・機密コード |
 | 足軽5/6/7 | Claude Code Haiku | 高速軽量タスク・単純な編集・YAML更新 |
 
 ### タスク割当の優先順位（cmd_040 2026-06-17 更新）
-1. 複雑な実装・設計・意味的編集 → 足軽1/2（Sonnet）
+1. 複雑な実装・設計・意味的編集 → 足軽1-4（Sonnet）
 2. 単純な編集・変換・YAML更新 → 足軽5/6/7（Haiku）
 3. 汎用業務・コード生成・調査 → 足軽3（OpenRouter gpt-oss-120b）
 4. ローカル推論・機密・定型タスク → 足軽4（Ollama）
