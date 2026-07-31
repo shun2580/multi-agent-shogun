@@ -13,7 +13,7 @@ features:
     # (2)稼働セッション2回以上に跨る (3)偽would-denyゼロ (4)fail-open発生ゼロまたは全件原因説明済み
     # ——を全て満たしたときのみ候補となり、判定・移行自体は将軍が別途行う。
     # 巻き戻し: 自己修正失敗が出た場合、殿または将軍の判断でobserveへ戻してよい(事後報告可)。
-  stall_detection_enabled: false  # cmd_140: 新規flag既定off(cmd_118_c標準化ルール遵守)
+  stall_detection_enabled: true  # cmd_143(2026-07-31): 殿明示裁可により有効化。observe段設置せず(誤発火実害はnudge1通のみ、暴走上限3回+ntfyで顕在化担保)
   reporting_mode: exception  # cmd_136(2026-07-29制定・次回出陣から適用): 報告の例外ベース化。
     # exception(既定)=正常完了はdashboard記録のみ、ntfyは失敗・ブロック・caveat付き完了・
     # 殿裁定要・警報類のみ。verbose=旧運用(逐次ntfy)へ即時切り戻し。
