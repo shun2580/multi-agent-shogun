@@ -25,6 +25,7 @@ PYTHON_BIN="${YAML_GUARD_PYTHON:-$SCRIPT_DIR/.venv/bin/python3}"
 NTFY_SCRIPT="${YAML_GUARD_NTFY_SCRIPT:-$SCRIPT_DIR/scripts/ntfy.sh}"
 LOG_FILE="${YAML_GUARD_LOG:-$SCRIPT_DIR/logs/yaml_guard.log}"
 REPO_ROOT="${YAML_GUARD_REPO_ROOT:-$SCRIPT_DIR}"
+TIMING_EVENTS_LOG="${YAML_GUARD_TIMING_LOG:-$SCRIPT_DIR/logs/timing_events.jsonl}"
 
 # ─── 反復DENY警報 (cmd_134 工程2) ───
 # 同一ファイル($FILE_PATH)への実DENYが直近10分以内に3件以上発生した場合、
@@ -54,6 +55,37 @@ check_repeated_deny_alert() {
             (bash "$NTFY_SCRIPT" "🔁 pretooluse_yaml_guard.sh: 同一ファイルへの実DENYが直近10分で${count}件 file=$file_path — deny再試行ループの可能性" >/dev/null 2>&1 &) || true
         fi
     fi
+}
+
+# ─── DENY自己修正計測 emitter (cmd_139・受動収集) ───
+# 実DENY発生時のみ、logs/timing_events.jsonl へ
+# event=yaml_guard_deny_self_correction を1行追記する(計測専用・判定ロジック
+# には一切関与しない)。呼び出し元はcheck_repeated_deny_alertと同一の実DENY
+# 分岐のみ(WOULD-DENY/FAIL-OPEN/ALLOWでは呼ばない)。書込失敗が判定結果や
+# hookの終了コードへ波及しないよう、内部で発生するエラーはすべて握り潰す
+# (fail-safe)。取得できないreasonはnull相当のまま記録する(推測で埋めない)。
+emit_deny_self_correction_event() {
+    local file_path="$1" tool_name="$2" session_id="$3" output_json="$4"
+    mkdir -p "$(dirname "$TIMING_EVENTS_LOG")" 2>/dev/null || true
+    "$PYTHON_BIN" -c "
+import json, sys
+
+ts, event, file_path, tool_name, session_id, output_json = sys.argv[1:7]
+try:
+    reason = json.loads(output_json).get('hookSpecificOutput', {}).get('permissionDecisionReason')
+except Exception:
+    reason = None
+record = {
+    'ts': ts,
+    'event': event,
+    'file_path': file_path,
+    'tool': tool_name,
+    'session_id': session_id,
+    'reason': reason,
+}
+print(json.dumps(record, ensure_ascii=False))
+" "$(date -Iseconds)" "yaml_guard_deny_self_correction" "$file_path" "$tool_name" "$session_id" "$output_json" \
+        >> "$TIMING_EVENTS_LOG" 2>/dev/null || true
 }
 
 INPUT="$(cat)"
@@ -223,6 +255,7 @@ if [ -n "$OUTPUT" ]; then
     fi
     echo "[$(date -Iseconds)] DENY mode=$MODE session=$SESSION_ID file=$FILE_PATH tool=$TOOL_NAME reason=$OUTPUT" >> "$LOG_FILE"
     check_repeated_deny_alert "$FILE_PATH"
+    emit_deny_self_correction_event "$FILE_PATH" "$TOOL_NAME" "$SESSION_ID" "$OUTPUT"
     printf '%s\n' "$OUTPUT"
     exit 0
 fi

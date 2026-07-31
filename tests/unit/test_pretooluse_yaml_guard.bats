@@ -14,6 +14,7 @@ setup() {
     SETTINGS_OBSERVE="$TEST_TMP/settings_observe.yaml"
     SETTINGS_UNKNOWN="$TEST_TMP/settings_unknown.yaml"
     LOG_FILE="$TEST_TMP/logs/yaml_guard.log"
+    TIMING_LOG="$TEST_TMP/logs/timing_events.jsonl"
     NTFY_LOG="$TEST_TMP/ntfy.log"
     NTFY_STUB="$TEST_TMP/ntfy_stub.sh"
 
@@ -49,10 +50,12 @@ teardown() {
 run_guard() {
     local payload="$1"
     local python_bin="${2:-$PROJECT_ROOT/.venv/bin/python3}"
+    local timing_log="${3:-$TIMING_LOG}"
     run env \
         YAML_GUARD_SETTINGS="$SETTINGS_ON" \
         YAML_GUARD_REPO_ROOT="$TEST_TMP" \
         YAML_GUARD_LOG="$LOG_FILE" \
+        YAML_GUARD_TIMING_LOG="$timing_log" \
         YAML_GUARD_PYTHON="$python_bin" \
         YAML_GUARD_NTFY_SCRIPT="$NTFY_STUB" \
         bash -c "printf '%s' '$payload' | bash '$GUARD_SCRIPT'"
@@ -61,10 +64,12 @@ run_guard() {
 run_guard_with_settings() {
     local settings_file="$1"
     local payload="$2"
+    local timing_log="${3:-$TIMING_LOG}"
     run env \
         YAML_GUARD_SETTINGS="$settings_file" \
         YAML_GUARD_REPO_ROOT="$TEST_TMP" \
         YAML_GUARD_LOG="$LOG_FILE" \
+        YAML_GUARD_TIMING_LOG="$timing_log" \
         YAML_GUARD_PYTHON="$PROJECT_ROOT/.venv/bin/python3" \
         YAML_GUARD_NTFY_SCRIPT="$NTFY_STUB" \
         bash -c "printf '%s' '$payload' | bash '$GUARD_SCRIPT'"
@@ -407,6 +412,56 @@ EOF
 
     run cat "$NTFY_LOG" 2>/dev/null
     [[ "$output" != *"同一ファイルへの実DENYが直近10分で"* ]]
+}
+
+# --- DENY自己修正計測 emitter (cmd_139): 実DENY発生時のみ
+#     logs/timing_events.jsonl へ event=yaml_guard_deny_self_correction を
+#     1行追記する(受動収集・判定ロジックには一切関与しない)。 ---
+
+@test "DENY自己修正計測: real DENY appends yaml_guard_deny_self_correction event to timing_events.jsonl" {
+    local payload='{"session_id":"test-session-emitter","tool_name":"Write","tool_input":{"file_path":"'"$TEST_TMP"'/queue/tasks/ashigaru9.yaml","content":"task:\n  bad: [unclosed\n"}}'
+    run_guard "$payload"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+
+    run grep -c '"event": "yaml_guard_deny_self_correction"' "$TIMING_LOG"
+    [ "$output" -eq 1 ]
+
+    run grep '"event": "yaml_guard_deny_self_correction"' "$TIMING_LOG"
+    [[ "$output" == *'"session_id": "test-session-emitter"'* ]]
+    [[ "$output" == *"ashigaru9.yaml"* ]]
+    [[ "$output" == *'"tool": "Write"'* ]]
+    [[ "$output" == *"YAML parse failure"* ]]
+
+    # 追記された行がvalid JSONであること
+    run "$PROJECT_ROOT/.venv/bin/python3" -c "import json; json.loads(open('$TIMING_LOG').read().strip().splitlines()[-1])"
+    [ "$status" -eq 0 ]
+}
+
+@test "DENY自己修正計測: WOULD-DENY (observe mode) does NOT append event" {
+    local payload='{"tool_name":"Write","tool_input":{"file_path":"'"$TEST_TMP"'/queue/tasks/ashigaru9.yaml","content":"task:\n  bad: [unclosed\n"}}'
+    run_guard_with_settings "$SETTINGS_OBSERVE" "$payload"
+    [ "$status" -eq 0 ]
+
+    [ ! -s "$TIMING_LOG" ]
+}
+
+@test "DENY自己修正計測: ALLOW (valid YAML) does NOT append event" {
+    local payload='{"tool_name":"Write","tool_input":{"file_path":"'"$TEST_TMP"'/queue/tasks/ashigaru9.yaml","content":"task:\n  status: idle\n"}}'
+    run_guard "$payload"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+
+    [ ! -s "$TIMING_LOG" ]
+}
+
+@test "DENY自己修正計測: timing log write failure does not affect DENY decision or exit code" {
+    : > "$TEST_TMP/blocked_timing_target"
+    local broken_timing_log="$TEST_TMP/blocked_timing_target/timing_events.jsonl"
+    local payload='{"tool_name":"Write","tool_input":{"file_path":"'"$TEST_TMP"'/queue/tasks/ashigaru9.yaml","content":"task:\n  bad: [unclosed\n"}}'
+    run_guard "$payload" "$PROJECT_ROOT/.venv/bin/python3" "$broken_timing_log"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
 }
 
 # --- fail-open経路 ---
