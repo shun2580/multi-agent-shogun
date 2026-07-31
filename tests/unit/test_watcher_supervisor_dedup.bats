@@ -91,3 +91,41 @@ run_start_watcher_case() {
     [ ! -s "$SPAWN_LOG" ]
     assert_no_inbox_watcher_process_leak
 }
+
+# cmd_140: start_stall_watcher_if_missing() の冪等性テスト。
+# start_deadman_watcher_if_missing()と全く同型の「pgrepで存在確認→不在時
+# のみnohup起動」の非破壊パターンであることを検証する。
+run_start_stall_watcher_case() {
+    local fake_proclist="$1"
+
+    run timeout 5 env \
+        SPAWN_LOG="$SPAWN_LOG" \
+        FAKE_PROCLIST="$fake_proclist" \
+        bash -c '
+            source "'"$SUPERVISOR_SCRIPT"'" >/dev/null 2>&1
+
+            nohup() { echo "SPAWNED $*" >> "$SPAWN_LOG"; }
+            pgrep() {
+                local pattern="${!#}"
+                printf "%s\n" "$FAKE_PROCLIST" | grep -Eq -- "$pattern"
+            }
+
+            start_stall_watcher_if_missing
+            wait
+        '
+}
+
+@test "case D: stall_watcherが既に稼働中ならnohupは呼ばれない(冪等性)" {
+    run_start_stall_watcher_case "scripts/stall_watcher.sh"
+    [ "$status" -eq 0 ]
+    [ ! -s "$SPAWN_LOG" ]
+    assert_no_inbox_watcher_process_leak
+}
+
+@test "case E: stall_watcherが未稼働ならnohup経由で起動が試みられる" {
+    run_start_stall_watcher_case ""
+    [ "$status" -eq 0 ]
+    run timeout 5 cat "$SPAWN_LOG"
+    [[ "$output" == *"SPAWNED bash scripts/stall_watcher.sh"* ]]
+    assert_no_inbox_watcher_process_leak
+}

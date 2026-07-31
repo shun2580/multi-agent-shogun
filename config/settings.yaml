@@ -13,6 +13,7 @@ features:
     # (2)稼働セッション2回以上に跨る (3)偽would-denyゼロ (4)fail-open発生ゼロまたは全件原因説明済み
     # ——を全て満たしたときのみ候補となり、判定・移行自体は将軍が別途行う。
     # 巻き戻し: 自己修正失敗が出た場合、殿または将軍の判断でobserveへ戻してよい(事後報告可)。
+  stall_detection_enabled: false  # cmd_140: 新規flag既定off(cmd_118_c標準化ルール遵守)
   reporting_mode: exception  # cmd_136(2026-07-29制定・次回出陣から適用): 報告の例外ベース化。
     # exception(既定)=正常完了はdashboard記録のみ、ntfyは失敗・ブロック・caveat付き完了・
     # 殿裁定要・警報類のみ。verbose=旧運用(逐次ntfy)へ即時切り戻し。
@@ -23,6 +24,12 @@ features:
     # 原則の対象外(exception自体が既に殿裁可済みの規律のため)。
 deadman:                  # cmd_092: 停滞警報(デッドマンスイッチ)v1のパラメータ
   stall_threshold_min: 20
+stall_detection:          # cmd_140: pane出力静止検知・自動復旧watcherのパラメータ
+  stall_threshold_min: 10
+  karo_escalation_wait_min: 10
+  ntfy_escalation_wait_min: 10
+  nudge_limit_per_task: 3
+  tick_sec: 60
 auto_heal:
   silent_heal_enabled: true
   escalation_window_minutes: 10
