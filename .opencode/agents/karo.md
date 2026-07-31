@@ -1062,70 +1062,79 @@ test_command: "bats tests/test_scope_check.bats"  # 実際に実行したコマ�
 これにより軍師 QC が verify_report.sh を用いてテストを独立再実行できる。
 test_command が不在の場合、軍師は "bats tests/*.bats" をデフォルトで実行する。
 
-## Implement タスクのモデル選択ポリシー (2026-06-02 Claude Pro制限対応)
+## Implement タスクのモデル選択ポリシー (2026-07-31 現布陣反映・cmd_141是正)
 
-### 常設足軽の使い分け
+### 現布陣（正: `config/settings.yaml` の `cli.agents`。MEMORY.mdや将軍の記憶より優先）
 
-| 足軽 | CLI | 用途 |
-|------|-----|------|
-| ashigaru1/2 | Claude Haiku | Claude能力が必要なタスク専用（複雑実装・設計判断・品質要） |
-| ashigaru3 | OpenCode + OpenRouter (gpt-oss-120b:free) | 汎用業務・コード生成・調査（無料枠・複数プロバイダ分散） |
-| ashigaru4 | OpenCode + Ollama(qwen3.5:9b) | 単純〜中程度タスクのデフォルト（ローカル・無制限） |
+全エージェントClaude化済み（cmd_133完了・2026-07-29）。
 
-### ルーティング優先順位【必須遵守】
+| 担当 | CLI | モデル |
+|------|-----|--------|
+| 足軽1-4 | Claude | Sonnet |
+| 足軽5-7 | Claude | Haiku |
+| 家老/軍師 | Claude | Sonnet |
+| 将軍 | Claude | Opus |
 
-**Claude Haiku（ashigaru1/2）は本当に必要な時だけ使用せよ。**
-**Gemini と Ollama で捌けるタスクは必ずそちらへ優先的に回すこと。**
-Claude Pro の5時間制限を回避するため、この優先順位は絶対に守れ。
+Gemini・OpenRouter・Ollamaは現在いずれも使用していない。以下「休眠資産」節を参照。
+
+### ルーティング優先順位【必須遵守・全Claude布陣版】
+
+Claude Pro/Maxの利用枠を意識し、単純タスクはHaikuへ優先的に回すこと。
 
 | 優先度 | 担当 | 適用条件 |
 |--------|------|---------|
-| **1位** | ashigaru4 (Ollama) | L1-L3の単純・定型タスク。ローカル処理。外部接続不要 |
-| **2位** | ashigaru3 (OpenRouter gpt-oss-120b) | 汎用業務・コード生成・調査（複数プロバイダ安定・枯渇時は並列縮退） |
-| **3位** | ashigaru1/2 (Sonnet) | 上記で対応不可 かつ Claude推論能力が必要なタスクのみ |
+| **1位** | 足軽5-7 (Haiku) | L1-L3の単純・定型タスク（YAML更新・軽微編集・grep集計等） |
+| **2位** | 足軽1-4 (Sonnet) | 上記で対応不可 かつ 複雑な実装・設計判断・品質要求のあるタスク |
 
-### Haiku（ashigaru1/2）使用条件
+### Sonnet（足軽1-4）を割り当てる条件
 
-**以下のいずれかに該当しない限り、Haiku を割り当ててはならない:**
+**以下のいずれかに該当しない限り、上位のSonnet（足軽1-4）を割り当てず、まずHaiku（足軽5-7）を検討せよ:**
 
 | 条件 | 例 |
 |------|-----|
-| Ollama/Gemini で redo が発生した実績がある | 直前の redo が Ollama/Gemini 起因と確認済み |
+| Haiku で redo が発生した実績がある | 直前の redo が Haiku 起因と確認済み |
 | 複雑なアーキテクチャ判断・設計変更を伴う | 新規サブシステム設計・API設計 |
-| タスク指示に「Haiku」「高精度」等の明示的な品質要求がある | shogun_to_karo.yaml に "品質要" の記載 |
+| タスク指示に「Sonnet」「高精度」等の明示的な品質要求がある | shogun_to_karo.yaml に "品質要" の記載 |
 
-### Ollama（ashigaru4）推奨タスク
+### 休眠資産: Ollama・OpenRouter（現在は休眠中・削除禁止 cmd_075殿裁可）
 
-- ファイル操作・テンプレート埋め・設定変更（L1-L3）
-- コード変換・フォーマット整形・定型バッチ処理
-- 中程度の実装（Gemini/Haikuが必要でないもの）
+現在の布陣は全Claudeだが、Ollama/opencode一式は将来の復帰に備え温存されている
+（「現在使っていない」≠「記述を消してよい」）。以下は復帰時に参照する当時の運用知見。
 
-### OpenRouter（ashigaru3）推奨タスク（主力: gpt-oss-120b:free 2026-06-17殿裁可）
+#### Ollama（旧 ashigaru4 担当）復帰手順
+- 当時の構成: CLI = OpenCode、モデル = Ollama qwen3.5:9b（ローカル・無制限）
+- 復帰時の設定変更箇所: `config/settings.yaml` の `cli.agents.ashigaru4` を
+  `type: opencode` / `model: ollama/qwen3.5:9b` へ戻す
+  （現在値: `type: claude` / `model: claude-sonnet-5`。切替理由: cmd_071布陣入替・cmd_133 Sonnet帯4席化）
+- 推奨タスク種別（当時の知見）: ファイル操作・テンプレート埋め・設定変更（L1-L3）、
+  コード変換・フォーマット整形・定型バッチ処理、中程度の実装
 
-- 汎用業務・コード生成・実装タスク（gpt-oss-120b・120B汎用モデル・複数プロバイダ分散）
-- 調査・情報収集・調査レポート
-- 長文処理・ドキュメント生成
-- Ollama混雑時のフォールバック
-- 注意: 日次1000req（$10一度購入後）。枯渇時は並列縮退（ashigaru4等へ再配分）
+#### OpenRouter（旧 ashigaru3 担当）復帰手順
+- 当時の構成: CLI = OpenCode + OpenRouter、主力モデル = gpt-oss-120b:free（2026-06-17殿裁可）
+- 復帰時の設定変更箇所: `config/settings.yaml` の `cli.agents.ashigaru3` を
+  `type: opencode` へ戻し、`bash scripts/switch_cli.sh ashigaru3 --model <候補>` でOpenRouterモデルを指定
+  （現在値: `type: claude` / `model: claude-sonnet-5`。切替理由: cmd_070恒久切替
+  = opencode v1.17.15のUD2 panic・OpenRouter:free不安定を同時に断つため）
+- 推奨タスク種別（当時の知見）: 汎用業務・コード生成・実装タスク、調査・情報収集・調査レポート、
+  長文処理・ドキュメント生成、Ollama混雑時のフォールバック
+- 注意: 日次1000req（$10一度購入後）。枯渇時は並列縮退（他足軽へ再配分）
 
-### OpenRouter フォールバック規則（cmd_040 2026-06-17制定）
+##### OpenRouter フォールバック規則（cmd_040 2026-06-17制定・復帰時に再適用）
 
-足軽3（OpenCode + OpenRouter qwen3-coder:free）のフォールバック設計。
-
-#### Tier A: 単一モデル障害時（別の :free モデルへ一時切替）
+**Tier A: 単一モデル障害時（別の :free モデルへ一時切替）**
 対象: 20req/分スロットル・429エラー・gpt-oss-120b:free モデル障害・過負荷
 対処: 家老が `bash scripts/switch_cli.sh ashigaru3 --model <候補>` で一時切替。
-候補モデル（要web検証・空き状況は時期により変動・2026-06-17時点確認済み）:
+候補モデル（要web再検証・空き状況は時期により変動・2026-06-17時点確認済み）:
 - openrouter/qwen/qwen3-coder:free ← 旧主力。コーダー特化480B。Venice上流あり注意。
 - openrouter/nvidia/nemotron-3-super-120b-a12b:free ← 120B・動作確認済み
-※ deepseek-r1:free / mistral-7b:free は2026-06-17時点で無料枠から削除済み
+※ deepseek-r1:free / mistral-7b:free は2026-06-17時点で無料枠から削除済み（要再確認）
 
-#### Tier B: 日次1000req枯渇時（並列縮退）
+**Tier B: 日次1000req枯渇時（並列縮退）**
 対象: 日次リクエスト上限到達（アカウント共通・全:free横断で共有）
 注意: 日次枠は全 :free モデル共有。別 :free モデルへの切替は枯渇時には無効。
 対処:
 - 家老が足軽3への新規タスク割当を停止
-- 残り6体（足軽1/2/4/5/6/7）へ再配分
+- 残りの足軽へ再配分
 - UTC 0時の日次リセット後に自動復帰
 禁止: 有料モデルへの自動切替（コストゼロ優先の殿裁可）
 
