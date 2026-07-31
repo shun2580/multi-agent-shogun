@@ -210,6 +210,13 @@ Layer 4: Session context — volatile (CLAUDE.md auto-loaded, instructions/*.md,
 
 System manages ALL white-collar work, not just self-improvement. Project folders can be external (outside this repo). `projects/` is git-ignored (contains secrets).
 
+## プロジェクト解決規約
+
+- すべてのプロジェクトは ~/projects/ 直下にある
+- 指示中のプロジェクト名は ~/projects/<名前> に解決する
+- 存在確認が必要なら ls ~/projects で確認してから作業する
+- 家老への下達時、将軍は解決済みの絶対パスを必ず含めること
+
 # Shogun Mandatory Rules
 
 1. **Dashboard**: Karo + Gunshi update. Gunshi: QC results aggregation. Karo: task status/streaks/action items. Shogun reads it, never writes it.
@@ -299,6 +306,16 @@ When processing large datasets (30+ items requiring individual web search, API c
 | `git reset --hard` | `git stash` then `git reset` |
 | `git clean -f` | `git clean -n` (dry run) first |
 | Bulk file write (>30 files) | Split into batches of 30 |
+
+## 非dry-run実行前レビュー（全エージェント共通・cmd_111/cmd_115）
+
+実際にファイル書込・削除等の副作用を伴うスクリプト（非dry-run実行）を走らせる前に、
+そのスクリプトのソースを関数単位で読み、宣言されたスコープ（allowed_paths・タスクの
+目的）外への書き込みが無いか確認すること。dry-run実行だけでは、dry-runモード自体に
+実装されていないスコープ逸脱（例: 複数ディレクトリの不可分な一括処理）を検出できない
+（cmd_111実例: `slim_yaml.py karo`が単一ファイルアーカイブの指示に対し実際は
+`queue/tasks/*`・`queue/reports/*`・`queue/inbox/*`まで一括処理していた設計上の
+スコープ逸脱を、この手法で実行前に発見）。殿裁可: cmd_115（2026-07-27）。
 
 ## WSL2-Specific Protections
 
