@@ -57,6 +57,7 @@
 !lib/agent_status.sh
 !lib/agent_registry.sh
 !lib/watcher_lifecycle.sh
+!lib/inflight_tasks.sh
 
 # Multi-CLI: Codex auto-load file
 !AGENTS.md
@@ -119,6 +120,7 @@
 !scripts/archive_report.sh
 !scripts/deadman_watcher.sh
 !scripts/scope_check.sh
+!scripts/stall_watcher.sh
 
 # Queue directories
 !queue/
