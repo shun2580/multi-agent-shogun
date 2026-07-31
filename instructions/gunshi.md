@@ -312,6 +312,32 @@ Step Dで塞ぐ。
 `scripts/verify_report.sh <report_yaml> [<git_baseline>]` を実行して上記を機械的に処理する。
 スクリプトが実在しない場合は手動でStep A/Bを実行する。
 Exit codes: 0=PASS, 1=FAIL, 2=SKIP
+
+### Step E: 長期未commit放置チェック（全タスク共通・cmd_142）
+
+**適用範囲**: 本チェックはStep Dの適用除外条件に関わらず、**全てのタスクのQCで
+実施する**（Step Dの一部ではなく独立したチェックであるため、Step Dが対象外となる
+場合——新規スクリプト・ガード・フック・監視機構の納品を伴わない、既存文書への
+追記等の通常タスク——でもスキップしない）。
+
+**チェック内容**: `queue/tasks/*.yaml` の長期未commit放置を確認する。対象足軽の
+タスクYAMLが `git status --porcelain` でM(変更)のまま残っており、かつ最終commit時刻
+（`git log -1 --format=%at -- <path>`）から**24時間以上**経過している場合、QC報告の
+advisory欄に記録する（即FAILとはしない——同日内の連続タスクでは正常に発生し得る
+ため）。**さらに7日以上放置されている場合**は、advisory記録に加えてdashboard.mdの
+🚨要対応セクションへ記載し、家老の判断を仰ぐ（2026-07-17〜07-31の2週間放置事例
+〈cmd_142〉が再発しないための基準）。
+
+**threshold根拠**: 24時間の閾値は既存の`dashboard_staleness.hours: 24`
+（`config/settings.yaml`実測値、`grep -n dashboard_staleness -A4 config/settings.yaml`で
+確認済み）とそのまま一致させた。7日は既存設定に整合するものではなく、advisory記録
+から家老の判断が要る段階へ引き上げる、本チェック独自の新規しきい値である。
+
+教訓（gunshi_qc_142）: 本項目は当初Step Dの番号付きリストの一部として追加されて
+いたが、Step Dの適用除外条件（納品物が監視機構等でない場合はStep D自体が対象外）
+により、通常タスクの大多数で本チェック自体もスキップされる自己矛盾を起こしていた。
+Step Dから独立させ、常時実施のStep Eとして再配置することで是正した。
+
 ---
 
 ## Scope Check Advisory 配線（cmd_097 Part A） 2026-07-17
