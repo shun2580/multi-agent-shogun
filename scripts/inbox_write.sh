@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # inbox_write.sh — メールボックスへのメッセージ書き込み（排他ロック付き）
-# Usage: bash scripts/inbox_write.sh <target_agent> <content> <type> <from> [--cmd_id=X] [--task_id=Y] [--qc_result=pass|fail]
+# Usage: bash scripts/inbox_write.sh <target_agent> <content> <type> <from> [--cmd_id=X] [--task_id=Y] [--qc_result=pass|fail] [--urgent[=true]]
 # Example: bash scripts/inbox_write.sh karo "足軽5号、任務完了" report_received ashigaru5
 # Example (明示引数): bash scripts/inbox_write.sh karo "足軽5号、任務完了" report_received ashigaru5 --cmd_id=cmd_054 --task_id=subtask_054b2
 # Example (QC結果付き): bash scripts/inbox_write.sh karo "足軽5号QC完了" report_received gunshi --cmd_id=cmd_054 --task_id=subtask_054b2 --qc_result=pass
+# Example (緊急フラグ付き・cmd_146): bash scripts/inbox_write.sh karo "至急確認されたし" report_received gunshi --urgent
 
 set -e
 
@@ -19,7 +20,7 @@ LOCKFILE="${INBOX}.lock"
 
 # Validate arguments
 if [ -z "$TARGET" ] || [ -z "$CONTENT" ] || [ -z "$TYPE" ] || [ -z "$FROM" ]; then
-    echo "Usage: inbox_write.sh <target_agent> <content> <type> <from> [--cmd_id=X] [--task_id=Y] [--qc_result=pass|fail]" >&2
+    echo "Usage: inbox_write.sh <target_agent> <content> <type> <from> [--cmd_id=X] [--task_id=Y] [--qc_result=pass|fail] [--urgent[=true]]" >&2
     exit 1
 fi
 
@@ -28,14 +29,22 @@ _ARG_CMD_ID=""
 _ARG_TASK_ID=""
 _ARG_REDO_OF=""
 _ARG_QC_RESULT=""
+_ARG_URGENT="false"
 for arg in "$@"; do
     case "$arg" in
         --cmd_id=*) _ARG_CMD_ID="${arg#--cmd_id=}" ;;
         --task_id=*) _ARG_TASK_ID="${arg#--task_id=}" ;;
         --redo_of=*) _ARG_REDO_OF="${arg#--redo_of=}" ;;
         --qc_result=*) _ARG_QC_RESULT="${arg#--qc_result=}" ;;
+        --urgent=*) _ARG_URGENT="${arg#--urgent=}" ;;
+        --urgent) _ARG_URGENT="true" ;;
     esac
 done
+# Normalize to python-literal True/False (cmd_146: urgent_inbox_escalation reads
+# msg.get('urgent') truthily via yaml.safe_load, so the written value must be a
+# real YAML bool, not the string "true"/"false").
+_PY_URGENT="False"
+[ "$_ARG_URGENT" = "true" ] && _PY_URGENT="True"
 
 # Fix5 (cmd_072): resolve cmd_id/task_id BEFORE writing the message object,
 # so they can be embedded as fields on the message itself. Previously these
@@ -139,7 +148,8 @@ try:
         'content': '''$CONTENT''',
         'read': False,
         'cmd_id': $_PY_CMD_ID,
-        'task_id': $_PY_TASK_ID
+        'task_id': $_PY_TASK_ID,
+        'urgent': $_PY_URGENT
     }
     data['messages'].append(new_msg)
 
