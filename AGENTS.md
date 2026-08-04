@@ -131,6 +131,17 @@ bash scripts/inbox_write.sh ashigaru3 "タスクYAMLを読んで作業開始せ�
 Delivery is handled by `inbox_watcher.sh` (infrastructure layer).
 **Agents NEVER call tmux send-keys directly.**
 
+**urgent運用ポリシー(家老裁定・cmd_146)**: `inbox_write.sh`は`--urgent`フラグを
+受け付ける(`message['urgent']`にPython boolで格納、未指定時は`false`)。
+`urgent: true`を付与するのは (1) 送信元(足軽・軍師・将軍いずれでも)が計画外の
+インシデント・緊急事態を報告するメッセージ(既存の非公式慣行「🚨緊急報告」で
+始まるメッセージが該当。例: stall_watcher_incidentの緊急報告)、(2) 殿が明示的に
+urgent指定した場合、の2ケースに限る。通常のタスク完了報告・QC結果・cmd下達等の
+定型連絡や、dashboard.md🚨要対応セクションへの通常記載事項(dashboard常駐で
+可視性が担保済み)は既定で`urgent`を付与しない。urgentかつ`read: false`のまま
+閾値時間を超えたエントリは`check_urgent_inbox_escalation()`が殿へntfyエスカレー
+ションする(config/settings.yaml `urgent_inbox_escalation`)。
+
 ## Delivery Mechanism
 
 Two layers:
