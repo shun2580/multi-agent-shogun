@@ -1617,11 +1617,14 @@ process_unread_once() {
     process_unread "startup"
 }
 
-# ─── Startup & Main loop (skipped in testing mode) ───
+# ─── Startup: process any existing unread messages (skipped in testing mode) ───
 if [ "${__INBOX_WATCHER_TESTING__:-}" != "1" ]; then
+    process_unread_once
+fi
 
-# ─── Startup: process any existing unread messages ───
-process_unread_once
+# ─── Function definitions below are always loaded, even in testing mode ───
+# (cmd_146: check_dashboard_staleness/check_urgent_inbox_escalation need to be
+# unit-testable via bats; only the main loop itself stays gated — see below)
 
 # ─── Escalation threshold check (cmd_052d) ───
 # Counts this agent's auto_heal events in logs/auto_heal_events.jsonl within the
@@ -1895,10 +1898,22 @@ except Exception:
     raise SystemExit
 
 now = datetime.datetime.now()
-cooldown_start = now - datetime.timedelta(minutes=cooldown_min)
 
-# 直近cooldown内に通知済みのcreated_atを集める(単一情報源=timing_events.jsonl)
-notified_recently = set()
+# cmd_146①: created_at走査を🚨要対応セクション内(次の`## `見出しまで、またはEOF)に
+# 限定する。見出し検出は行頭`## `+「要対応」部分一致とし、絵文字の有無を吸収する。
+section_start_re = re.compile(r'^## .*要対応.*\n', re.MULTILINE)
+m_start = section_start_re.search(content)
+if m_start:
+    m_end = re.compile(r'^## ', re.MULTILINE).search(content, m_start.end())
+    scan_content = content[m_start.end():m_end.start() if m_end else len(content)]
+else:
+    scan_content = ''
+
+# cmd_146③: 再通知を段階的に頻度低下させる(初回360分→2回目720分→3回目以降1440分)。
+# 通知回数はlog_timing_event.shの--extra=へ`notify_count=N`として埋め込み、
+# 新規ストレージを増やさずtiming_events.jsonlのみで完結させる(judgment_model.md原則6)。
+# 直近の1件(最新ts)のみを見ればよい——古い記録は段階判定に不要。
+notify_history = {}
 try:
     with open(jsonl_path, encoding='utf-8') as f:
         for line in f:
@@ -1921,12 +1936,23 @@ try:
                 continue
             if ts.tzinfo is not None:
                 ts = ts.replace(tzinfo=None)
-            if ts >= cooldown_start:
-                notified_recently.add(tid)
+            extra = rec.get('extra') or ''
+            m_count = re.match(r'notify_count=(\d+)', extra)
+            count = int(m_count.group(1)) if m_count else 1
+            prev = notify_history.get(tid)
+            if prev is None or ts > prev[0]:
+                notify_history[tid] = (ts, count)
 except Exception:
     pass
 
-for m in re.finditer(r'<!-- created_at: (\S+) -->\s*\n(.+)', content):
+def stage_gap_min(prev_count):
+    if prev_count <= 1:
+        return cooldown_min
+    if prev_count == 2:
+        return 720.0
+    return 1440.0
+
+for m in re.finditer(r'<!-- created_at: (\S+) -->\s*\n(.+)', scan_content):
     created_at_raw, text = m.group(1), m.group(2)
     try:
         created_at = datetime.datetime.fromisoformat(created_at_raw)
@@ -1935,19 +1961,160 @@ for m in re.finditer(r'<!-- created_at: (\S+) -->\s*\n(.+)', content):
     age_hours = (now - created_at).total_seconds() / 3600
     if age_hours < stale_hours:
         continue
-    if created_at_raw in notified_recently:
-        continue
-    print(created_at_raw + '\t' + text.strip()[:50])
-" 2>/dev/null | while IFS=$'\t' read -r created_at_raw snippet; do
+    hist = notify_history.get(created_at_raw)
+    if hist is not None:
+        last_ts, prev_count = hist
+        elapsed_min = (now - last_ts).total_seconds() / 60
+        if elapsed_min < stage_gap_min(prev_count):
+            continue
+        next_count = prev_count + 1
+    else:
+        next_count = 1
+    print(f'{created_at_raw}\t{next_count}\t' + text.strip()[:50])
+" 2>/dev/null | while IFS=$'\t' read -r created_at_raw notify_count snippet; do
         [ -n "$created_at_raw" ] || continue
         bash "${SCRIPT_DIR}/scripts/ntfy.sh" "🚨 24時間放置: ${snippet}" >&2 || true
-        bash "${SCRIPT_DIR}/scripts/log_timing_event.sh" dashboard_stale_notified "" "$created_at_raw" karo --source=inbox_watcher.sh || true
+        bash "${SCRIPT_DIR}/scripts/log_timing_event.sh" dashboard_stale_notified "" "$created_at_raw" karo --source=inbox_watcher.sh --extra="notify_count=${notify_count}" || true
     done
 
     return 0
 }
 
-# ─── Main loop: event-driven via inotifywait ───
+# ─── Urgent inbox escalation watchdog (cmd_146②) ───
+# queue/inbox/*.yaml の各エントリに`urgent: true`かつ`read: false`のまま
+# 閾値時間を超えたものがあれば殿へntfyエスカレーションする。2026-08-01、
+# 軍師の緊急報告がkaroのinboxでread:falseのまま3日間放置された実損事案の
+# 再発防止(north_star cmd_146)。karo instanceのメインループからのみ呼ばれる
+# (check_dashboard_staleness()と同じ設計パターン)。
+_read_urgent_escalation_setting() {
+    local key="$1" default="$2"
+    "$SCRIPT_DIR/.venv/bin/python3" -c "
+import yaml
+try:
+    with open('${SCRIPT_DIR}/config/settings.yaml', encoding='utf-8') as f:
+        data = yaml.safe_load(f) or {}
+    v = (data.get('urgent_inbox_escalation') or {}).get('$key')
+    if v is None:
+        v = '$default'
+    print(v)
+except Exception:
+    print('$default')
+" 2>/dev/null
+}
+
+check_urgent_inbox_escalation() {
+    local marker="${SCRIPT_DIR}/logs/.urgent_inbox_escalation_last_check"
+    local interval_min
+    interval_min=$(_read_urgent_escalation_setting check_interval_minutes 5)
+    [ -n "$interval_min" ] || interval_min=5
+
+    mkdir -p "${SCRIPT_DIR}/logs" 2>/dev/null || true
+
+    if [ -f "$marker" ]; then
+        local last_check now_epoch elapsed_min
+        last_check=$(stat -c %Y "$marker" 2>/dev/null || echo 0)
+        now_epoch=$(date +%s)
+        elapsed_min=$(( (now_epoch - last_check) / 60 ))
+        if [ "$elapsed_min" -lt "$interval_min" ]; then
+            return 0
+        fi
+    fi
+    touch "$marker" 2>/dev/null || true
+
+    local threshold_min cooldown_min
+    threshold_min=$(_read_urgent_escalation_setting threshold_minutes 120)
+    cooldown_min=$(_read_urgent_escalation_setting cooldown_after_escalation_minutes 60)
+    [ -n "$threshold_min" ] || threshold_min=120
+    [ -n "$cooldown_min" ] || cooldown_min=60
+
+    local inbox_dir="${SCRIPT_DIR}/queue/inbox"
+    [ -d "$inbox_dir" ] || return 0
+
+    INBOX_DIR="$inbox_dir" \
+    URGENT_THRESHOLD_MIN="$threshold_min" \
+    URGENT_COOLDOWN_MIN="$cooldown_min" \
+    TIMING_JSONL="${SCRIPT_DIR}/logs/timing_events.jsonl" \
+    "$SCRIPT_DIR/.venv/bin/python3" -c "
+import datetime, glob, json, os
+import yaml
+
+inbox_dir = os.environ['INBOX_DIR']
+threshold_min = float(os.environ['URGENT_THRESHOLD_MIN'])
+cooldown_min = float(os.environ['URGENT_COOLDOWN_MIN'])
+jsonl_path = os.environ['TIMING_JSONL']
+
+now = datetime.datetime.now()
+cooldown_start = now - datetime.timedelta(minutes=cooldown_min)
+
+# 直近cooldown内にエスカレーション済みのmessage idを集める(単一情報源=timing_events.jsonl)
+escalated_recently = set()
+try:
+    with open(jsonl_path, encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except Exception:
+                continue
+            if rec.get('event') != 'urgent_inbox_escalated':
+                continue
+            mid = rec.get('task_id')
+            ts_raw = rec.get('ts')
+            if not mid or not ts_raw:
+                continue
+            try:
+                ts = datetime.datetime.fromisoformat(ts_raw)
+            except Exception:
+                continue
+            if ts.tzinfo is not None:
+                ts = ts.replace(tzinfo=None)
+            if ts >= cooldown_start:
+                escalated_recently.add(mid)
+except Exception:
+    pass
+
+for path in sorted(glob.glob(os.path.join(inbox_dir, '*.yaml'))):
+    agent = os.path.splitext(os.path.basename(path))[0]
+    try:
+        with open(path, encoding='utf-8') as f:
+            data = yaml.safe_load(f) or {}
+    except Exception:
+        continue
+    for msg in (data.get('messages') or []):
+        if not isinstance(msg, dict):
+            continue
+        if not msg.get('urgent'):
+            continue
+        if msg.get('read'):
+            continue
+        mid = msg.get('id')
+        ts_raw = msg.get('timestamp')
+        if not mid or not ts_raw:
+            continue
+        try:
+            ts = datetime.datetime.fromisoformat(ts_raw)
+        except Exception:
+            continue
+        age_min = (now - ts).total_seconds() / 60
+        if age_min < threshold_min:
+            continue
+        if mid in escalated_recently:
+            continue
+        snippet = str(msg.get('content') or '')[:50]
+        print(agent + '\t' + mid + '\t' + snippet)
+" 2>/dev/null | while IFS=$'\t' read -r agent msg_id snippet; do
+        [ -n "$msg_id" ] || continue
+        bash "${SCRIPT_DIR}/scripts/ntfy.sh" "🚨 緊急未読(${threshold_min}分超): [${agent}] ${snippet}" >&2 || true
+        bash "${SCRIPT_DIR}/scripts/log_timing_event.sh" urgent_inbox_escalated "" "$msg_id" "$agent" --source=inbox_watcher.sh || true
+    done
+
+    return 0
+}
+
+# ─── Main loop: event-driven via inotifywait (skipped in testing mode) ───
+if [ "${__INBOX_WATCHER_TESTING__:-}" != "1" ]; then
 # Timeout 30s: WSL2 /mnt/c/ can miss inotify events.
 # Shorter timeout = faster escalation retry for stuck agents.
 INOTIFY_TIMEOUT="${INOTIFY_TIMEOUT:-30}"
@@ -2001,6 +2168,7 @@ while true; do
         check_and_heal_dead_cli
         if [ "$AGENT_ID" = "karo" ]; then
             check_dashboard_staleness || true
+            check_urgent_inbox_escalation || true
         fi
         if [ "${ASW_PROCESS_TIMEOUT:-1}" = "1" ]; then
             process_unread "timeout"

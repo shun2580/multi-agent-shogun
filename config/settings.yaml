@@ -46,6 +46,22 @@ dashboard_staleness:
   hours: 24
   check_interval_minutes: 30
   cooldown_after_escalation_minutes: 360
+  # cmd_146③: 再通知は段階的に頻度を落とす(1回目=本cooldown 360分→
+  # 2回目=720分後→3回目以降=1440分間隔、inbox_watcher.sh check_dashboard_staleness()に実装)。
+  # 未対応のまま風化させない担保として、通知が止まっても🚨要対応セクションの項目自体は
+  # dashboard.mdから消えない(通知頻度低下と可視性維持は別軸)。
+urgent_inbox_escalation:  # cmd_146②: 緊急フラグ付き未読inboxエントリのエスカレーション
+  threshold_minutes: 120  # 根拠: 2026-08-01、軍師の緊急報告がkaroのinboxでread:falseのまま
+    # 3日間滞留した実損事案(north_star cmd_146)の再発防止。既存の
+    # stall_detection.karo_escalation_wait_min: 10分(watcher再起動待ち等、用途が異なる運用的
+    # 短時間閾値)より大幅に長く、dashboard_staleness.hours: 24時間(3日間放置を防げなかった
+    # 実例が示す通り緩すぎる)よりは大幅に短い、という2軸の中間値として2時間(120分)を採用。
+  check_interval_minutes: 5  # dashboard_staleness(30分間隔)より緊急度が高いため短く設定。
+    # 閾値120分に対し実行毎tick(30秒)より疎にすることでオーバーヘッドを抑えつつ、
+    # 検知遅延(最大5分)は閾値に対して無視できる程度に留める。
+  cooldown_after_escalation_minutes: 60  # 一度エスカレーションした同一エントリを機械的に
+    # 連続再送しない(③と同種の抑止だが緊急度が高いため単純cooldownとし、段階的頻度低下は
+    # 課さない=未読が続く限り60分毎に催促を継続する設計)。
 assignment_grace:
   after_nudge_seconds: 30
 cli:
