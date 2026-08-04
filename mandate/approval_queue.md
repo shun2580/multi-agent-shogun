@@ -43,7 +43,33 @@ ID | 日付 | 操作内容 | 理由 | doubt: 承認判断のために見るべ�
   実施(内容の権威づけ)前に殿レビューへ回すもの |
   doubt: (a) 原則12+1(原則13追加分)件それぞれの出典(decisions_journal.md該当Q番号/RULEエントリ)が
   実際に対応するか — `mandate/judgment_model.md`と`mandate/decisions_journal.md`を突合。
-  (b) `mandate/judgment_model.md`が160行以内か — `wc -l mandate/judgment_model.md`(現在137行)。
+  (b) `mandate/judgment_model.md`が160行以内か — `wc -l mandate/judgment_model.md`(現在149行)。
   (c) CoDD例外(Wave境界殿必須)の非緩和が`judgment_model.md`・本ファイル双方に明記されているか。
   承認後はjudgment_model.md冒頭の未承認バナー(本エントリID参照)を削除すること |
   状態: pending
+  備考: 2026-08-04 殿の明示許可により明日の裁定へ持ち越し(原文: 「AQ-001および未push分のキュー消化は明日の裁定に持ち越すことを明示的に許可する」)
+
+- ID: AQ-002 | 日付: 2026-08-05 | 操作内容: 未push commit群(62件、`git log origin/main..HEAD --oneline | wc -l`実測)のリモート(origin
+  https://github.com/shun2580/multi-agent-shogun.git)へのpush |
+  理由: 陣仕舞いに伴い、pushは「戻せない操作」としてapproval_queue経由の承認待ちとする(cmd_145 Part3の運用に従う) |
+  doubt: (a) 対象ブランチ: `main`(`git branch --show-current`実測)。
+  (b) commit範囲: 最古`3341e34`(feat(instrumentation): Phase3 fired-state logging and fast-lane eligibility)〜
+  最新`6e5588b`(chore(cmd_146): record gunshi_decompose_146 task state)。62件全件は
+  `git log origin/main..HEAD --oneline --reverse`で再現可能。本サブタスク(陣仕舞い)自身が作った
+  4件(`877a0ec`週次蒸留・`f344ccf`urgentフラグ+合成データガード・`879d283`urgent運用ポリシー・
+  `6e5588b`gunshi.yamlタスク状態)を含む。
+  (c) 公開されて困る内容の有無: `git log origin/main..HEAD -p`をAPI鍵/token/password/秘密鍵等の
+  パターンで実走査した結果、実際の秘匿値のヒットは無かった(「secrets」という語自体は
+  `projects/`がgit-ignoreされている旨の説明コメントとしてのみ出現)。ただし1件、要判断事項を発見した:
+  `config/settings.yaml`(このunpushed範囲で新規追加されたファイル、origin/mainには未存在)に
+  `ntfy_topic: shogun_notify_w2j7x9k3`が平文で記載されている。originリポジトリ
+  (`shun2580/multi-agent-shogun`)は`gh repo view`実測で**PUBLIC**であることを確認した。
+  ntfy.shはトピック名を知る者なら誰でも購読・投稿できる疑似秘匿値であるため、push後は
+  このトピック名が公開され、第三者による通知の窃視・偽メッセージ投稿(なりすまし)のリスクが
+  生じ得る。捏造で「問題なし」とせず、殿の判断(ローテーション後にpush/リポジトリ非公開化/
+  許容してそのままpush、等)を仰ぐ。
+  (d) 生成物(AGENTS.md/.github/copilot-instructions.md/agents/default/system.md)は
+  `bash scripts/build_instructions.sh`再実行後の`git status --porcelain`差分ゼロで
+  手書き元(CLAUDE.md等)との同期を確認済み(本サブタスクの陣仕舞いcommit時点) |
+  状態: pending
+  備考: 2026-08-04 殿の明示許可により明日の裁定へ持ち越し(原文: 「AQ-001および未push分のキュー消化は明日の裁定に持ち越すことを明示的に許可する」)
