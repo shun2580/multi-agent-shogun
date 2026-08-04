@@ -22,6 +22,12 @@ features:
     # 「省力化3点セット」節・instructions/karo.md「省力化3点セット運用」節)。
     # 既定exceptionはcmd_136本文の明示指示であり、cmd_116 S-3の「新規flagは安全側default」
     # 原則の対象外(exception自体が既に殿裁可済みの規律のため)。
+  reversibility_check_enabled: observe  # cmd_145 Part4是正(2026-08-04 23:15): 将軍実機検証で
+    # 本flag不在によりPart4が本番不活性(fail-safeでoff固定)だったことが判明したため新規追加。
+    # 値域: off|observe の2値(scripts/pretooluse_reversibility_check.sh 冒頭コメント参照)。
+    # off=完全無効化(python起動なし) / observe=三値判定をログにのみ記録・ブロックしない。
+    # 未知値・空値・本行自体の欠落は必ずoffへ倒すfail-safe設計(yaml_guard_enabledと同方針)。
+    # 切り戻し: 本行を `reversibility_check_enabled: off` の1行に書き換えるのみで即時無効化可。
 deadman:                  # cmd_092: 停滞警報(デッドマンスイッチ)v1のパラメータ
   stall_threshold_min: 20
 stall_detection:          # cmd_140: pane出力静止検知・自動復旧watcherのパラメータ

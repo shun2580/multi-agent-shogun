@@ -36,3 +36,9 @@
   (Fableがinbox経由で直接書き込んだ裁定)も必ず探索範囲に含めること(出典: cmd_145 Part2、Q18裁定
   原本が裁定書6本ではなく`queue/inbox/shogun.yaml` msg_20260729_fable_q18_enforceに存在していた
   実例。探索範囲を裁定書6本に限定した結果Q18裁定を一時的に見落とした)
+- 新規feature flagを伴う機構は、flagが`config/settings.yaml`に実在し、かつ本番経路
+  (`.claude/settings.json`経由の実PreToolUse呼出し等、試験用設定・試験用ログ差し替えでは
+  ない実配線)で実ログ・実挙動が出ることまで確認する。コードとテストの緑だけでは未達とする
+  (出典: cmd_145 Part4是正。`pretooluse_reversibility_check.sh`実装・隔離試験は緑だったが、
+  `reversibility_check_enabled`が`config/settings.yaml`に一度も追加されておらず本番では
+  fail-safeで常時off・実ログ0行のまま完了報告されていた実例。将軍の実機検証2026-08-04で発覚)

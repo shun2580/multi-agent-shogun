@@ -360,6 +360,28 @@ approval_queue.md経由のキュー消化対象外・殿必須のまま。本Ste
 （`mandate/judgment_model.md`・`mandate/approval_queue.md`にも非緩和項として
 明記、cmd_145殿裁定追加②）。
 
+### Step G: 新規feature flag機構の本番到達性確認（cmd_145 Part4是正・軍師自己レビュー提案）
+
+**トリガー条件**: 報告に新規スクリプト・新規機構の納品が含まれ、その機構が
+`config/settings.yaml`等のflagで有効/無効を切り替える設計の場合に適用する。
+
+**チェック内容**:
+(a) 当該flagが設定ファイルへ実在し、かつ「有効」側の値（off以外）になっているか実測する。
+(b) flagがoff/不在のまま完了報告されている場合、それが「殿裁定によるobserve段階見送り」等の
+明示的な裁定に基づくものか、それとも単なる未対応かを区別する。後者の場合は即QC FAILとする
+（または最低限、dashboard.mdの🚨要対応への起票をredo条件とする）。
+(c) 模擬実行（env var上書き等）による動作確認は「コードパスの正しさの証明」としては有効と
+認めるが、「本番稼働の証明」としては認めない旨を明記する。
+
+教訓（`gunshi_self_review_145_part4_miss`）: `pretooluse_reversibility_check.sh`
+（cmd_145 Part4）はコード自体は正常だったが、`reversibility_check_enabled`が
+`config/settings.yaml`に一度も追加されておらず、fail-safeにより本番では常時off・
+実ログ0行のまま完了報告されていた。軍師自身のQC（`gunshi_qc_145_part4`・
+`gunshi_qc_145_final`）は「報告の主張が正直であること」（fabrication検知）は
+正しく検証したが、「機構が実際に本番で動作すること」を確認するステップを
+持っていなかった。Step A-Fでは塞げないこの穴（検証済みコードが稼働プロセスへ
+未到達）を塞ぐためStep Gを新設する。
+
 ---
 
 ## Scope Check Advisory 配線（cmd_097 Part A） 2026-07-17
