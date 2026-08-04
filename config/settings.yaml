@@ -73,8 +73,10 @@ cli:
       model: claude-sonnet-5  # 2026-07-29 cmd_133: Sonnet帯4席化(殿裁可・Fable経由)、次回出陣時反映
       effort: high  # cmd_109: Opus5 effort暗黙継承事故予防のため明示
     ashigaru5:
-      model: claude-haiku-4-5-20251001
       type: claude
+      # 2026-08-04 cmd_145 Part1a 殿裁定: 足軽ロースターSonnet×5＋Haiku×2化(布陣の能力順整理・席1-5/6-7連続性維持のため足軽5を昇格)
+      model: claude-sonnet-5
+      effort: high  # cmd_109: Opus5 effort暗黙継承事故予防のため明示
     ashigaru6:
       type: claude
       model: claude-haiku-4-5-20251001  # 2026-06-15: switch_cli.sh による切替

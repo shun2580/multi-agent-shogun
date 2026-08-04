@@ -79,10 +79,10 @@ Claude Max 5x（$100/月）にアップグレードし、自分のPCスペック
 │
 ├──────────┬──────────┬──────────┬──────────┬──────────┬──────────┐
 ▼          ▼          ▼          ▼          ▼          ▼          ▼
-足軽1      足軽2      足軽3         足軽4      足軽5      足軽6      足軽7
-Sonnet     Sonnet     gpt-oss       Ollama     Haiku      Haiku      Haiku
-4.6        4.6        120b:free     qwen3.5:9b 4.5        4.5        4.5
-（重量）   （重量）   （OpenRouter） （ローカル）（軽量）   （軽量）   （軽量）
+足軽1      足軽2      足軽3      足軽4      足軽5      足軽6      足軽7
+Sonnet     Sonnet     Sonnet     Sonnet     Sonnet     Haiku      Haiku
+4.6        4.6        4.6        4.6        4.6        4.5        4.5
+（重量）   （重量）   （重量）   （重量）   （重量）   （軽量）   （軽量）
 ```
 
 ### エージェント一覧
@@ -92,19 +92,21 @@ Sonnet     Sonnet     gpt-oss       Ollama     Haiku      Haiku      Haiku
 | 将軍（Shogun） | Claude Code | claude-opus-5 | 戦略決定・家老へのcmd下達 |
 | 家老（Karo） | Claude Code | claude-sonnet-5 | タスク分解・足軽への割当・品質判定 |
 | 軍師（Gunshi） | Claude Code | claude-sonnet-5 | 品質チェック・ダッシュボード更新 |
-| 足軽1-4（Ashigaru1-4） | Claude Code | claude-sonnet-5 | 重量実行タスク（常時稼働） |
-| 足軽5（Ashigaru5） | Claude Code | claude-haiku-4-5-20251001 | 高速軽量タスク（常時稼働） |
+| 足軽1-5（Ashigaru1-5） | Claude Code | claude-sonnet-5 | 重量実行タスク（常時稼働） |
 | 足軽6/7（Ashigaru6/7） | Claude Code | claude-haiku-4-5-20251001 | 高速軽量タスク（Haiku枠） |
 
 > 🔴cmd_133是正: 足軽3/4の行はOpenCode+OpenRouter/Ollama時代のまま放置され、
 > フリート全Claude化（cmd_133でSonnet帯4席化）後も表が実態を追従していなかった。
 > 「表示と実態の乖離」族（cmd_116 S-2のWATCHER_STATUS虚偽表示、cmd_128の
-> dashboard時刻列と同族）として記録する。
+> dashboard時刻列と同族）として記録する（2026-07-29是正、その後の出陣で実プロセスも
+> Sonnet化済み・2026-08-04時点で`ps`実測確認済み）。
 >
-> 注: 上表の足軽1-4行（Sonnet帯4席化）は**次回出陣（`shutsujin_departure.sh`実行）後に
-> 有効**となる設定である。本ページ更新時点（config/settings.yaml反映はsubtask_133a
-> commit `ea82190` 済み）では、足軽3/4の実プロセスはまだ`claude-haiku-4-5-20251001`で
-> 稼働中（軍師QC時点で確認）。次回出陣まではこの1行は意図的な前倒し記載である。
+> 注（2026-08-04 cmd_145 Part1a）: 上表の足軽5行（Haiku→Sonnet昇格）も足軽3/4と
+> 同型の経過をたどる。config/settings.yaml反映は本サブタスクで実施済みだが、
+> **次回出陣（`shutsujin_departure.sh`実行・家老が別サブタスクで実施予定）後に
+> 有効**となる設定である。本ページ更新時点（2026-08-04）では、足軽5の実プロセスは
+> まだ`claude-haiku-4-5-20251001`で稼働中（`ps aux`実測確認済み）。次回出陣までは
+> この1行は意図的な前倒し記載である。
 
 ---
 
