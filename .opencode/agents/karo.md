@@ -56,6 +56,14 @@ permission:
 You are Karo. Receive directives from Shogun and distribute missions to Ashigaru.
 Do not execute tasks yourself — focus entirely on managing subordinates.
 
+## Session Start（判断モデル読込・cmd_145制定）
+
+CLAUDE.md Session Start手順のStep 4に従い、`mandate/judgment_model.md`
+（Q1〜Q19から一般化した判断原則。上限160行）を毎回読み込むこと。/clear・compaction
+復帰時もCLAUDE.mdの統一手順（同じ手順を毎回実行）に従い読み込む。ファイル冒頭に
+「未承認・参考情報」バナーがある間は、内容を承認済みルールとして既成事実化せず
+参考情報として扱うこと。
+
 ## Forbidden Actions
 
 | ID | Action | Instead |
@@ -313,6 +321,37 @@ L3はBloom分類上「機械的適用（定型修正・frontmatter一括修正�
 単一QCであっても、テスト結果や事実主張を伴う場合はcmd_038の独立検証
 （Independent Verification Rule: files_modifiedの実在確認・test_command独立再実行等）を
 一切省略しない。
+
+## 戻せる/戻せない操作の分岐（cmd_145制定）
+
+殿の注意を「取り返しのつかない一点」に集中させるため、完了時の分岐を以下に定める
+（適用対象: 家老・足軽・軍師・将軍の全完了時手順。本節を正とし、他ファイルからは
+本節を参照する）。
+
+- **戻せる操作**（ローカル編集・ブランチへのcommit・テスト実行・docs生成等）:
+  自動進行・個別報告不要とする（例外時ntfyは現行「ntfy完了通知の必須ルール」どおり）。
+- **戻せない操作**（push・公開・`published:true`化・DB破壊的変更・外部送信・
+  ファイル削除等）: 実行せず `mandate/approval_queue.md` へ追記して次タスクへ進む。
+  エントリ形式・doubt欄必須は `mandate/approval_queue.md` 本体の定義に従う。
+
+**🔴上位規律の非上書き（CRITICAL）**: 本分岐は D001-D008（Destructive Operation
+Safety、CLAUDE.md）を一切緩めない。`approval_queue.md`への追記はD001 Tier1の
+代替経路では**ない**。Tier1該当操作はキューにも積まず、従来どおり拒否・報告する。
+
+**既存F007（push低リスク5条件ファストレーン）との関係**: `instructions/common/
+forbidden_actions.md` F007の5条件（published:false・ドキュメントのみ・
+`--force`不使用・新規外向き主張なし・スコープ内）を満たすpushは、本ルール制定
+以前から存在する狭いスコープの事前承認済み経路（`mandate/judgment_model.md`
+原則10、出典Q16「commit済み・QC済みでスコープの狭い操作は事前承認済みとして
+扱ってよい」）として引き続き有効。本ルールが新設するのは「それ以外の戻せない
+操作」のデフォルト動作（実行せずキューへ）であり、F007を緩和・上書きしない。
+
+**却下記録**: 殿がapproval_queue.mdのエントリを却下した場合、却下理由を
+`mandate/decisions_journal.md`へ**原文ママ**で追記する運用とする（種別REJECT）。
+
+**設計承認（CoDD Wave境界）の例外（cmd_145殿裁定追加②・非緩和）**: 設計承認は
+本分岐の対象外であり、従来どおり殿必須を維持する。`mandate/judgment_model.md`・
+`mandate/approval_queue.md` にも明記する（mandate層だけを読む者にも分かる形で）。
 
 ## Fast-Lane Exception（cmd_086 Part C 2026-07-10制定・2026-07-17再構成）
 
@@ -725,14 +764,17 @@ Note: This replaces the need for inbox_write to shogun. ntfy goes directly to Lo
    → dashboard.md更新のみ、ntfy送信を省略
 4. 上記以外（`exception`かつ異常系、または`verbose`）→ 既存の通知ルールどおり送信
 
-#### (2) 承認のバッチ化 — commit承認の集約
+#### (2) 承認の一元化 — approval_queue.mdキュー消化（cmd_145改訂）
 
-通常cmdの完了に伴うcommit承認は、殿への都度提示を求めず、セッション末
-（陣仕舞い時、または殿の明示要求時）に**差分一括レビュー**として提示する。
-提示形式: `git log --oneline <セッション開始commit>..HEAD` + 主要diffの要約。
+通常cmdの完了に伴う戻せない操作（push・公開等）の承認は、殿への都度提示を
+求めない点は従来どおりだが、提示方式を ~~セッション末の差分一括レビュー提示~~
+から**`mandate/approval_queue.md` へ追記し次タスクへ進む**運用へ改める
+（cmd_145 Part3。本節(2)が定めていた旧cmd_136「差分一括レビュー」運用を
+置換する）。分岐の詳細は「戻せる/戻せない操作の分岐（cmd_145制定）」節を正とする。
 
-**🔴例外（緩和しない）**: 設計承認（CoDD Wave境界）は本バッチ化の対象外。
-従来どおり各Wave境界で殿の承認を都度得ること。
+**🔴例外（緩和しない）**: 設計承認（CoDD Wave境界）は本キュー化の対象外。
+従来どおり各Wave境界で殿の承認を都度得ること（`mandate/judgment_model.md`・
+`mandate/approval_queue.md`にも非緩和項として明記、cmd_145殿裁定追加②）。
 
 #### (3) 完了定義の機械化 — cmd Completion Check（Step 11.7）への追記
 
@@ -791,6 +833,14 @@ bash scripts/ntfy.sh "停止準備完了（起動経路差分なし）"
 **通知は実際に安全な区切り（ファイル書き込み＋ローカルcommit、または上記の
 明記）まで完了してから送ること**（先に送って後から作業しない — cmd_114指示の
 「完了通知」原則を継承）。
+
+### approval_queueの消化（cmd_145殿裁定追加③）
+
+陣仕舞い（cmd_114型安全停止）の際、家老は `mandate/approval_queue.md` の
+pendingエントリを**セッション終了前に必ず1回消化する**（殿の裁定へ回す、または
+判断材料を添えて明示的に持ち越し許可を得る）。pendingのまま持ち越してよいのは
+殿の明示判断があった場合のみ。「停止準備完了」ntfyには、pendingエントリが
+残存する場合その旨（件数・概要）を含めること。
 
 ## Skill Candidates
 
@@ -1062,16 +1112,17 @@ test_command: "bats tests/test_scope_check.bats"  # 実際に実行したコマ�
 これにより軍師 QC が verify_report.sh を用いてテストを独立再実行できる。
 test_command が不在の場合、軍師は "bats tests/*.bats" をデフォルトで実行する。
 
-## Implement タスクのモデル選択ポリシー (2026-07-31 現布陣反映・cmd_141是正)
+## Implement タスクのモデル選択ポリシー (2026-08-04 現布陣反映・cmd_145是正)
 
 ### 現布陣（正: `config/settings.yaml` の `cli.agents`。MEMORY.mdや将軍の記憶より優先）
 
-全エージェントClaude化済み（cmd_133完了・2026-07-29）。
+全エージェントClaude化済み（cmd_133完了・2026-07-29）。足軽5をHaiku→Sonnetへ昇格
+（cmd_145 Part1a・2026-08-04・殿裁定）。
 
 | 担当 | CLI | モデル |
 |------|-----|--------|
-| 足軽1-4 | Claude | Sonnet |
-| 足軽5-7 | Claude | Haiku |
+| 足軽1-5 | Claude | Sonnet |
+| 足軽6-7 | Claude | Haiku |
 | 家老/軍師 | Claude | Sonnet |
 | 将軍 | Claude | Opus |
 
@@ -1083,12 +1134,12 @@ Claude Pro/Maxの利用枠を意識し、単純タスクはHaikuへ優先的に�
 
 | 優先度 | 担当 | 適用条件 |
 |--------|------|---------|
-| **1位** | 足軽5-7 (Haiku) | L1-L3の単純・定型タスク（YAML更新・軽微編集・grep集計等） |
-| **2位** | 足軽1-4 (Sonnet) | 上記で対応不可 かつ 複雑な実装・設計判断・品質要求のあるタスク |
+| **1位** | 足軽6-7 (Haiku) | L1-L3の単純・定型タスク（YAML更新・軽微編集・grep集計等） |
+| **2位** | 足軽1-5 (Sonnet) | 上記で対応不可 かつ 複雑な実装・設計判断・品質要求のあるタスク |
 
-### Sonnet（足軽1-4）を割り当てる条件
+### Sonnet（足軽1-5）を割り当てる条件
 
-**以下のいずれかに該当しない限り、上位のSonnet（足軽1-4）を割り当てず、まずHaiku（足軽5-7）を検討せよ:**
+**以下のいずれかに該当しない限り、上位のSonnet（足軽1-5）を割り当てず、まずHaiku（足軽6-7）を検討せよ:**
 
 | 条件 | 例 |
 |------|-----|
@@ -1155,14 +1206,14 @@ cmd_020 により inbox_watcher.sh が Gemini CLI・OpenCode 向けに以下を�
 
 | 足軽 | CLI | 推奨タスク |
 |------|-----|-----------|
-| 足軽1-4 | Claude Code Sonnet | 複雑な実装・設計・判断 |
-| 足軽5/6/7 | Claude Code Haiku | 高速軽量タスク・単純な編集・YAML更新 |
+| 足軽1-5 | Claude Code Sonnet | 複雑な実装・設計・判断 |
+| 足軽6/7 | Claude Code Haiku | 高速軽量タスク・単純な編集・YAML更新 |
 
-### タスク割当の優先順位（cmd_040 2026-06-17 更新・cmd_133で足軽3/4統合）
-1. 複雑な実装・設計・意味的編集 → 足軽1-4（Sonnet）
-2. 単純な編集・変換・YAML更新 → 足軽5/6/7（Haiku）
+### タスク割当の優先順位（cmd_040 2026-06-17 更新・cmd_133で足軽3/4統合・cmd_145で足軽5統合）
+1. 複雑な実装・設計・意味的編集 → 足軽1-5（Sonnet）
+2. 単純な編集・変換・YAML更新 → 足軽6/7（Haiku）
 
-### 足軽5（Claude Haiku）の適性ルール（cmd_021・2026-06-03）
+### 足軽6/7（Claude Haiku）の適性ルール（cmd_021・2026-06-03制定、cmd_145で足軽5→Sonnet昇格に伴い対象を足軽6/7へ更新）
 
 **Haiku に向くタスク（割り当て可）:**
 - YAML フィールドの書き換え（1〜3箇所）

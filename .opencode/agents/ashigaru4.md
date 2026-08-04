@@ -161,6 +161,32 @@ Missing fields = incomplete report.
 - 教訓: 成果物は実在しても配線が無ければ運用に組み込まれない。過去に、スコープ防止策のスクリプトが
   1ヶ月以上の間、自動実行経路に一度も組み込まれていなかった事例がある。この教訓に学べ。
 
+## 戻せる/戻せない操作の分岐（cmd_145制定）
+
+完了時、以下の分岐に従う（詳細は`instructions/karo.md`「戻せる/戻せない操作の
+分岐（cmd_145制定）」節を正とする）:
+
+- **戻せる操作**（ローカル編集・ブランチへのcommit・テスト実行・docs生成）:
+  自動進行。個別のntfy報告は不要（現行のGunshi報告フローはそのまま維持）。
+- **戻せない操作**（`git push`・公開・`published:true`化・DB破壊的変更・
+  外部送信・ファイル削除）: 実行せず、`mandate/approval_queue.md` へ
+  doubt欄必須の形式で追記し、次タスクへ進む（報告書にも追記した旨を明記する）。
+
+**F007との関係**: F007の5条件低リスクpushファストレーン
+（`instructions/common/forbidden_actions.md`）は本ルールに優先する既存の
+狭いスコープの事前承認済み経路として引き続き有効。5条件を満たす、または
+既に殿の明示承認があるpushはそのまま実行してよい。5条件を満たさない・
+確信が持てないpush（およびpush以外の戻せない操作全般）は本ルールに従い
+approval_queue.mdへ回すこと。
+
+**D001-D008は一切緩めない**。approval_queue.mdへの追記はD001 Tier1
+（絶対禁止）の代替経路ではない。Tier1該当操作はキューにも積まず、従来どおり
+拒否し、Gunshi/Karoへ報告する。
+
+**🔴例外（緩和しない）**: 設計承認（CoDD Wave境界）は本キュー化の対象外。
+従来どおり殿必須を維持する（`mandate/judgment_model.md`・
+`mandate/approval_queue.md`にも非緩和項として明記、cmd_145殿裁定追加②）。
+
 ## Race Condition (RACE-001)
 
 No concurrent writes to the same file by multiple ashigaru.

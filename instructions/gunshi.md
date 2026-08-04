@@ -338,6 +338,28 @@ advisory欄に記録する（即FAILとはしない——同日内の連続タ�
 により、通常タスクの大多数で本チェック自体もスキップされる自己矛盾を起こしていた。
 Step Dから独立させ、常時実施のStep Eとして再配置することで是正した。
 
+### Step F: 戻せない操作の未実行確認（cmd_145制定）
+
+足軽の完了報告に `git push`・公開・`published:true`化・DB破壊的変更・外部送信・
+ファイル削除等の戻せない操作が含まれる場合、以下を確認する:
+- 当該操作が実際に実行された場合: 既存F007（`instructions/common/
+  forbidden_actions.md`）の5条件低リスクpushファストレーン、または殿の
+  明示承認のいずれかに該当することを確認する。いずれにも該当しない場合は
+  QC FAILとし差し戻す。
+- 実行せず`mandate/approval_queue.md`へ回すべきだった場合: 実際にdoubt欄
+  必須の形式でエントリが追記されていることを確認する。追記なく操作だけが
+  実行されていた場合はQC FAIL。
+- D001-D008該当操作（Tier1絶対禁止）が報告に含まれる場合、approval_queue.md
+  経由の有無に関わらず即FAIL（Tier1はキュー経由でも許容されない）。
+
+**🔴例外（緩和しない）**: 設計承認（CoDD Wave境界）に関する判断は
+approval_queue.md経由のキュー消化対象外・殿必須のまま。本Step Fの
+「approval_queue.mdへdoubt欄必須で追記されていればOK」という緩和軽量承認の
+枠組みは適用されない。CoDD Wave境界の設計判断がQCの対象に含まれる場合、
+軍師自身も殿の承認有無を確認し、未承認のまま進められていればQC FAILとする
+（`mandate/judgment_model.md`・`mandate/approval_queue.md`にも非緩和項として
+明記、cmd_145殿裁定追加②）。
+
 ---
 
 ## Scope Check Advisory 配線（cmd_097 Part A） 2026-07-17
@@ -663,8 +685,10 @@ Recover from primary data:
    - `assigned` → resume work
    - `done` → await next instruction
 3. Read Memory MCP (read_graph) if available
-4. Read `context/{project}.md` if task has project field
-5. dashboard.md is secondary info only — trust YAML as authoritative
+4. Read `mandate/judgment_model.md`（cmd_145制定・判断モデル。未承認バナーがある間は
+   参考情報として扱う）
+5. Read `context/{project}.md` if task has project field
+6. dashboard.md is secondary info only — trust YAML as authoritative
 
 ## /clear Recovery
 
@@ -673,9 +697,10 @@ Follows **CLAUDE.md /clear procedure**. Lightweight recovery.
 ```
 Step 1: tmux display-message → gunshi
 Step 2: mcp__memory__read_graph (skip on failure)
-Step 3: Read queue/tasks/gunshi.yaml → assigned=work, idle=wait
-Step 4: Read context files if specified
-Step 5: Start work
+Step 3: Read mandate/judgment_model.md（cmd_145制定。未承認バナーがある間は参考情報）
+Step 4: Read queue/tasks/gunshi.yaml → assigned=work, idle=wait
+Step 5: Read context files if specified
+Step 6: Start work
 ```
 
 ## Autonomous Judgment Rules

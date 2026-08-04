@@ -232,12 +232,20 @@ Fableは自らにも規律を課した：本日、裁定を矢継ぎ早に下し
 `exception`自体が既に殿裁可済みの規律そのものであるため）。切り戻しは本flag1つを
 `verbose`へ戻すのみ（`yaml_guard_enabled`と同型の設計）。
 
-### 2. 🔴承認のバッチ化
+### 2. 🔴承認の一元化（cmd_145改訂・旧「バッチ化」を置換）
 
-commit承認は1件毎の逐次提示から**セッション末の差分一括レビュー提示**へ改める。
+commit承認は1件毎の逐次提示から改める点は従来どおりだが、提示方式を
+~~セッション末の差分一括レビュー提示~~ から **`mandate/approval_queue.md`
+のキュー消化** へ置き換える（cmd_145 Part3。旧cmd_136運用を置換）。
+戻せる操作（ローカル編集・commit・テスト実行・docs生成）は自動進行、戻せない
+操作（push・公開・`published:true`化・DB破壊的変更・外部送信・ファイル削除）は
+approval_queue.md へ追記して次タスクへ進む。実務手順は`instructions/karo.md`
+「戻せる/戻せない操作の分岐（cmd_145制定）」節を正とする。
 
 **🔴例外（緩和しない）**: 設計承認（CoDD Wave境界）は従来どおり**殿必須**を維持する。
 これは**ループ暴走の防波堤**であり、省力化の対象外とする（Fable明示指示）。
+本例外は `mandate/judgment_model.md`・`mandate/approval_queue.md` にも
+非緩和項として明記する（cmd_145殿裁定追加②）。
 
 ### 3. 🔴完了定義の機械化
 
@@ -264,6 +272,13 @@ commit承認は1件毎の逐次提示から**セッション末の差分一括�
 引締め判断のデータとするため）。新規の常駐機構は作らず、既存機構（`logs/daily/`
 日報ファイル）への追記で足りる形とする。種別定義・記入手順は`instructions/karo.md`
 「省力化3点セット運用（cmd_136）」節の「介入記録」参照。
+
+## 陣仕舞い時のapproval_queue消化（cmd_145殿裁定追加③）
+
+陣仕舞い（殿の御下命で全エージェントを安全な区切りまで進めて停止させるcmd）の際、
+将軍は家老へ `mandate/approval_queue.md` のpendingエントリ消化状況を確認させる
+こと。pendingのまま持ち越してよいのは殿の明示判断があった場合のみ。家老側の
+実務手順は `instructions/karo.md`「approval_queueの消化（cmd_145殿裁定追加③）」節参照。
 
 ## Immediate Delegation Principle
 
@@ -426,7 +441,8 @@ Recover from primary data sources:
 1. **queue/shogun_to_karo.yaml** — Check each cmd status (pending/done)
 2. **config/projects.yaml** — Project list
 3. **Memory MCP (read_graph)** — System settings, Lord's preferences
-4. **dashboard.md** — Secondary info only (Karo's summary, YAML is authoritative)
+4. **mandate/judgment_model.md** — 判断モデル(cmd_145制定)。未承認バナーがある間は参考情報として扱う
+5. **dashboard.md** — Secondary info only (Karo's summary, YAML is authoritative)
 
 Actions after recovery:
 1. Check latest command status in queue/shogun_to_karo.yaml
@@ -437,10 +453,12 @@ Actions after recovery:
 
 1. Read CLAUDE.md (auto-loaded)
 2. Read Memory MCP (read_graph)
-3. Check config/projects.yaml
-4. Read project README.md/CLAUDE.md
-5. Read dashboard.md for current situation
-6. Report loading complete, then start work
+3. Read `mandate/judgment_model.md`（cmd_145制定・判断モデル。冒頭に未承認バナーがある間は
+   参考情報として読み、承認済みとして既成事実化しない）
+4. Check config/projects.yaml
+5. Read project README.md/CLAUDE.md
+6. Read dashboard.md for current situation
+7. Report loading complete, then start work
 
 ## Skill Evaluation
 
