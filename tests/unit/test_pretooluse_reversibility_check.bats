@@ -1,0 +1,244 @@
+#!/usr/bin/env bats
+# cmd_145 Part4: scripts/pretooluse_reversibility_check.sh のテスト
+# 「戻せない操作」三値判定(reversible/irreversible/unknown)をobserveモードで
+# ログ記録するだけの新規独立フックについて、判定ロジック・flag早期リターン・
+# 常時exit0(ブロックしない)であることをユニットテストレベルで検証する。
+
+setup() {
+    PROJECT_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
+    CHECK_SCRIPT="$PROJECT_ROOT/scripts/pretooluse_reversibility_check.sh"
+    TEST_TMP="$(mktemp -d)"
+    mkdir -p "$TEST_TMP/logs"
+    SETTINGS_OFF="$TEST_TMP/settings_off.yaml"
+    SETTINGS_OBSERVE="$TEST_TMP/settings_observe.yaml"
+    SETTINGS_UNKNOWN="$TEST_TMP/settings_unknown.yaml"
+    SETTINGS_MISSING="$TEST_TMP/settings_missing.yaml"
+    LOG_FILE="$TEST_TMP/logs/reversibility_check.log"
+
+    cat > "$SETTINGS_OFF" <<'EOF'
+features:
+  reversibility_check_enabled: off
+EOF
+    cat > "$SETTINGS_OBSERVE" <<'EOF'
+features:
+  reversibility_check_enabled: observe
+EOF
+    cat > "$SETTINGS_UNKNOWN" <<'EOF'
+features:
+  reversibility_check_enabled: some_bogus_value
+EOF
+    # SETTINGS_MISSING: featuresキー自体が無い(flag未設置状態を模す)
+    cat > "$SETTINGS_MISSING" <<'EOF'
+features:
+  other_flag: true
+EOF
+}
+
+teardown() {
+    rm -rf "$TEST_TMP"
+}
+
+run_check_with_settings() {
+    local settings_file="$1"
+    local payload="$2"
+    run env \
+        REVERSIBILITY_CHECK_SETTINGS="$settings_file" \
+        REVERSIBILITY_CHECK_LOG="$LOG_FILE" \
+        REVERSIBILITY_CHECK_PYTHON="$PROJECT_ROOT/.venv/bin/python3" \
+        bash -c "printf '%s' '$payload' | bash '$CHECK_SCRIPT'"
+}
+
+# --- 早期リターン: feature flag ---
+
+@test "feature flag off: exits 0 with no output, no log written" {
+    local payload='{"tool_name":"Bash","tool_input":{"command":"git push origin main"}}'
+    run_check_with_settings "$SETTINGS_OFF" "$payload"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    [ ! -s "$LOG_FILE" ]
+}
+
+@test "feature flag missing from settings (key absent): fail-safe falls back to off" {
+    local payload='{"tool_name":"Bash","tool_input":{"command":"git push origin main"}}'
+    run_check_with_settings "$SETTINGS_MISSING" "$payload"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    [ ! -s "$LOG_FILE" ]
+}
+
+@test "feature flag unknown value: fail-safe falls back to off" {
+    local payload='{"tool_name":"Bash","tool_input":{"command":"git push origin main"}}'
+    run_check_with_settings "$SETTINGS_UNKNOWN" "$payload"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    [ ! -s "$LOG_FILE" ]
+}
+
+@test "settings file itself missing: fail-safe falls back to off" {
+    local payload='{"tool_name":"Bash","tool_input":{"command":"git push origin main"}}'
+    run_check_with_settings "$TEST_TMP/does_not_exist.yaml" "$payload"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    [ ! -s "$LOG_FILE" ]
+}
+
+# --- observeモード: 常にexit0・stdout出力なし(ブロックしない) ---
+
+@test "flag=observe: irreversible pattern (git push) never blocks, produces no stdout" {
+    local payload='{"tool_name":"Bash","tool_input":{"command":"git push origin main"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+# --- 三値判定: irreversible ---
+
+@test "irreversible: git push logged as WOULD-BLOCK category=push" {
+    local payload='{"session_id":"s-push","tool_name":"Bash","tool_input":{"command":"git push origin main"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-BLOCK mode=observe session=s-push file=NA tool=Bash category=push " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "irreversible: rm command logged as WOULD-BLOCK category=file_delete" {
+    local payload='{"session_id":"s-rm","tool_name":"Bash","tool_input":{"command":"rm -f queue/reports/old.yaml"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-BLOCK mode=observe session=s-rm file=NA tool=Bash category=file_delete " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "irreversible: curl -X POST logged as WOULD-BLOCK category=external_send" {
+    local payload='{"session_id":"s-curl","tool_name":"Bash","tool_input":{"command":"curl -X POST https://example.com/webhook -d x=1"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-BLOCK mode=observe session=s-curl file=NA tool=Bash category=external_send " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "irreversible: DROP TABLE logged as WOULD-BLOCK category=db_destructive" {
+    local payload='{"session_id":"s-db","tool_name":"Bash","tool_input":{"command":"psql -c \"DROP TABLE users\""}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-BLOCK mode=observe session=s-db file=NA tool=Bash category=db_destructive " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "irreversible: Write with published: true logged as WOULD-BLOCK category=publish_flag with file path" {
+    local payload='{"session_id":"s-pub","tool_name":"Write","tool_input":{"file_path":"/tmp/article.md","content":"---\npublished: true\n---\n"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-BLOCK mode=observe session=s-pub file=/tmp/article.md tool=Write category=publish_flag " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+# --- 三値判定: reversible ---
+
+@test "reversible: local Edit (no publish flag) logged as WOULD-ALLOW category=local_edit" {
+    local payload='{"session_id":"s-edit","tool_name":"Edit","tool_input":{"file_path":"/tmp/notes.md","old_string":"a","new_string":"b","replace_all":false}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-ALLOW mode=observe session=s-edit file=/tmp/notes.md tool=Edit category=local_edit " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "reversible: git commit logged as WOULD-ALLOW category=local_or_test" {
+    local payload='{"session_id":"s-commit","tool_name":"Bash","tool_input":{"command":"git commit -m wip"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-ALLOW mode=observe session=s-commit file=NA tool=Bash category=local_or_test " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "reversible: pytest run logged as WOULD-ALLOW category=local_or_test" {
+    local payload='{"session_id":"s-test","tool_name":"Bash","tool_input":{"command":"pytest tests/"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-ALLOW mode=observe session=s-test file=NA tool=Bash category=local_or_test " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "reversible: Read tool logged as WOULD-ALLOW category=read_only" {
+    local payload='{"session_id":"s-read","tool_name":"Read","tool_input":{"file_path":"/tmp/notes.md"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-ALLOW mode=observe session=s-read file=NA tool=Read category=read_only " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+# --- 三値判定: unknown (判定不能をreversibleへ倒さないことの確認) ---
+
+@test "unknown: unrecognized tool (WebFetch) logged as WOULD-UNKNOWN, not WOULD-ALLOW" {
+    local payload='{"session_id":"s-fetch","tool_name":"WebFetch","tool_input":{"url":"https://example.com"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-UNKNOWN mode=observe session=s-fetch file=NA tool=WebFetch category=tool_unclassified " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+    run grep -c "WOULD-ALLOW.*s-fetch" "$LOG_FILE"
+    [ "$status" -ne 0 ]
+}
+
+@test "unknown: unrecognized Bash command logged as WOULD-UNKNOWN category=bash_unclassified" {
+    local payload='{"session_id":"s-mystery","tool_name":"Bash","tool_input":{"command":"some_custom_binary --do-thing"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-UNKNOWN mode=observe session=s-mystery file=NA tool=Bash category=bash_unclassified " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+# --- fail-open: python欠落時もunknownとして記録しexit0(クラッシュしない) ---
+
+@test "python binary missing: still exits 0 and logs WOULD-UNKNOWN category=hook_internal_error" {
+    local payload='{"tool_name":"Bash","tool_input":{"command":"git push origin main"}}'
+    run env \
+        REVERSIBILITY_CHECK_SETTINGS="$SETTINGS_OBSERVE" \
+        REVERSIBILITY_CHECK_LOG="$LOG_FILE" \
+        REVERSIBILITY_CHECK_PYTHON="/nonexistent/python3" \
+        bash -c "printf '%s' '$payload' | bash '$CHECK_SCRIPT'"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    run grep -c "WOULD-UNKNOWN.*category=hook_internal_error" "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+# --- 機械集計ログ基盤: 1評価1行・grep -cで機械集計可能な形式 ---
+
+@test "machine-parseable log: mixed verdicts are independently grep -c countable" {
+    run_check_with_settings "$SETTINGS_OBSERVE" '{"session_id":"a","tool_name":"Bash","tool_input":{"command":"git push"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" '{"session_id":"b","tool_name":"Edit","tool_input":{"file_path":"/tmp/x.md","old_string":"a","new_string":"b"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" '{"session_id":"c","tool_name":"WebFetch","tool_input":{"url":"https://example.com"}}'
+
+    run grep -c "^\[.*\] WOULD-BLOCK " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+    run grep -c "^\[.*\] WOULD-ALLOW " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+    run grep -c "^\[.*\] WOULD-UNKNOWN " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "machine-parseable log: session_id missing from payload falls back to 'unknown' (no crash)" {
+    local payload='{"tool_name":"Bash","tool_input":{"command":"git push origin main"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    [ "$status" -eq 0 ]
+    run grep -c "session=unknown" "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+# --- 既存フック非改変の確認 ---
+
+@test "existing pretooluse_yaml_guard.sh source is untouched by this task" {
+    run grep -c "pretooluse_reversibility_check" "$PROJECT_ROOT/scripts/pretooluse_yaml_guard.sh"
+    [ "$status" -ne 0 ]
+}
+
+@test "existing pretooluse_clear_idle.sh source is untouched by this task" {
+    run grep -c "pretooluse_reversibility_check" "$PROJECT_ROOT/scripts/pretooluse_clear_idle.sh"
+    [ "$status" -ne 0 ]
+}
+
+# --- cmd_091標準: 実配線の確認(実settings.jsonへの登録実在) ---
+
+@test "wiring: pretooluse_reversibility_check.sh is registered in .claude/settings.json PreToolUse array" {
+    run grep -n "pretooluse_reversibility_check.sh" "$PROJECT_ROOT/.claude/settings.json"
+    [ "$status" -eq 0 ]
+}
+
+@test "wiring: existing pretooluse_yaml_guard.sh entry is still present unchanged" {
+    run grep -n "pretooluse_yaml_guard.sh" "$PROJECT_ROOT/.claude/settings.json"
+    [ "$status" -eq 0 ]
+}
+
+@test "wiring: existing pretooluse_clear_idle.sh entry is still present unchanged" {
+    run grep -n "pretooluse_clear_idle.sh" "$PROJECT_ROOT/.claude/settings.json"
+    [ "$status" -eq 0 ]
+}

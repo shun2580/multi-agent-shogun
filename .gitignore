@@ -121,6 +121,7 @@
 !scripts/deadman_watcher.sh
 !scripts/scope_check.sh
 !scripts/stall_watcher.sh
+!scripts/pretooluse_reversibility_check.sh
 
 # Queue directories
 !queue/
