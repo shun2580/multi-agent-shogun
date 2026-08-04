@@ -83,6 +83,7 @@
 !config/ntfy_auth.env.sample
 !config/opencode-tui.json
 !config/opencode-permissions.yaml
+!config/cron_weekly_distill.sh
 
 # Templates
 !templates/
@@ -122,6 +123,7 @@
 !scripts/scope_check.sh
 !scripts/stall_watcher.sh
 !scripts/pretooluse_reversibility_check.sh
+!scripts/weekly_distill.sh
 
 # Queue directories
 !queue/
@@ -229,5 +231,13 @@ tests/specs/osato_lms_*
 # reports/ (empty placeholder only — content is intentionally local-only)
 !reports/
 !reports/.gitkeep
+
+# Mandate layer (kagemusha judgment model — cmd_145; command-layer agents read at Session Start)
+!mandate/
+!mandate/decisions_journal.md
+!mandate/judgment_model.md
+!mandate/verifiers.md
+!mandate/approval_queue.md
+!mandate/weekly_distill.md
 
 .claude/settings.local.json
