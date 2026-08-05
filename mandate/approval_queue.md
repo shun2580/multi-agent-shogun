@@ -41,13 +41,15 @@ ID | 日付 | 操作内容 | 理由 | doubt: 承認判断のために見るべ�
   本エントリは「内容を承認済みルールとして運用開始してよいか」を議題とする) |
   理由: cmd_145殿裁定追加④「新原則は殿の承認待ちを初版自体にも自己適用する」に従い、
   実施(内容の権威づけ)前に殿レビューへ回すもの |
-  doubt: (a) 原則12+1(原則13追加分)件それぞれの出典(decisions_journal.md該当Q番号/RULEエントリ)が
-  実際に対応するか — `mandate/judgment_model.md`と`mandate/decisions_journal.md`を突合。
+  doubt: (a) 原則14件(2026-08-05実測、`grep -c "^## 原則" mandate/judgment_model.md`)
+  それぞれの出典(decisions_journal.md該当Q番号/RULEエントリ)が実際に対応するか —
+  `mandate/judgment_model.md`と`mandate/decisions_journal.md`を突合。
   (b) `mandate/judgment_model.md`が160行以内か — `wc -l mandate/judgment_model.md`(現在149行)。
   (c) CoDD例外(Wave境界殿必須)の非緩和が`judgment_model.md`・本ファイル双方に明記されているか。
   承認後はjudgment_model.md冒頭の未承認バナー(本エントリID参照)を削除すること |
-  状態: pending
+  状態: approved(2026-08-05・承認者: 殿)
   備考: 2026-08-04 殿の明示許可により明日の裁定へ持ち越し(原文: 「AQ-001および未push分のキュー消化は明日の裁定に持ち越すことを明示的に許可する」)
+  2026-08-05 殿裁定により承認、持ち越し状態は解消(出典: queue/shogun_to_karo.yaml cmd_147)
 
 - ID: AQ-002 | 日付: 2026-08-05 | 操作内容: 未push commit群(62件、`git log origin/main..HEAD --oneline | wc -l`実測)のリモート(origin
   https://github.com/shun2580/multi-agent-shogun.git)へのpush |
