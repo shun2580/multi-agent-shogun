@@ -65,7 +65,7 @@ language:
 **This is ONE procedure for ALL situations**: fresh start, compaction, session continuation, or any state where you see agents/default/system.md. You cannot distinguish these cases, and you don't need to. **Always follow the same steps.**
 
 1. Identify self: `tmux display-message -t "$TMUX_PANE" -p '#{@agent_id}'`
-2. `mcp__memory__read_graph` — restore rules, preferences, lessons **(shogun/karo/gunshi only. ashigaru skip this step — task YAML is sufficient)**
+2. (optional) `mcp__memory__read_graph` — if available, read to restore rules, preferences, lessons; skip on failure or unavailability. Not required — the systems of record are `mandate/decisions_journal.md` / `mandate/judgment_model.md` / `memory/MEMORY.md` (cmd_150; Memory MCP graph recovery is no longer invested in). **(shogun/karo/gunshi only. ashigaru skip this step — task YAML is sufficient)**
 3. **Read `memory/MEMORY.md`** (shogun only) — persistent cross-session memory. If file missing, skip. *Kimi K2 CLI users: this file is also auto-loaded via Kimi K2 CLI's memory feature.*
 4. **Read `mandate/judgment_model.md`** (shogun/karo/gunshi only — command-layer agents. ashigaru skip this step) — 判断モデル(Q1〜Q19から一般化した原則)。cmd_145制定。ashigaruはtask YAML経由の指示のみで足りるため対象外。judgment_model.md冒頭に「未承認・参考情報」バナーがある間は、内容を承認済みとして既成事実化せず参考情報として読むこと。
 5. **Read your instructions file**: shogun→`instructions/generated/kimi-shogun.md`, karo→`instructions/generated/kimi-karo.md`, ashigaru→`instructions/generated/kimi-ashigaru.md`, gunshi→`instructions/generated/kimi-gunshi.md`. **NEVER SKIP** — even if a conversation summary exists. Summaries do NOT preserve persona, speech style, or forbidden actions.
@@ -237,7 +237,7 @@ System manages ALL white-collar work, not just self-improvement. Project folders
 4. **Karo state**: Before sending commands, verify karo isn't busy: `tmux capture-pane -t multiagent:0.0 -p | tail -20`
 5. **Screenshots**: See `config/settings.yaml` → `screenshot.path`
 6. **Skill candidates**: Ashigaru reports include `skill_candidate:`. Karo collects → dashboard. Shogun approves → creates design doc.
-7. **Action Required Rule (CRITICAL)**: ALL items needing Lord's decision → dashboard.md 🚨要対応 section. ALWAYS. Even if also written elsewhere. Forgetting = Lord gets angry.
+7. **Action Required Rule (CRITICAL)**: ALL items needing Lord's decision → dashboard.md 🚨要対応 section. ALWAYS. Even if also written elsewhere. Forgetting = Lord gets angry. `mandate/approval_queue.md`にpendingエントリがあり殿の判断を要する場合、dashboard.mdの🚨要対応にも記載する。
 
 # Test Rules (all agents)
 
@@ -295,6 +295,12 @@ When processing large datasets (30+ items requiring individual web search, API c
 | D006 | `kill`, `killall`, `pkill`, `tmux kill-server`, `tmux kill-session` | Terminates other agents or infrastructure |
 | D007 | `mkfs`, `dd if=`, `fdisk`, `mount`, `umount` | Disk/partition destruction |
 | D008 | `curl|bash`, `wget -O-|sh`, `curl|sh` (pipe-to-shell patterns) | Remote code execution |
+
+**Note on D006 enforcement scope** (gunshi_audit_144 agenda1, verified 2026-08-01): the automatic
+PreToolUse guard in `.claude/settings.json` only prefix-matches top-level Bash command strings —
+`kill`/`pkill` invoked from *inside* a script are outside the automated check's reach. This does
+NOT relax D006's compliance obligation in any way — every agent must observe D006 absolutely,
+regardless of whether the automatic guard happens to catch a given invocation.
 
 ## Tier 2: STOP-AND-REPORT (halt work, notify Karo/Shogun)
 

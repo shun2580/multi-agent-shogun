@@ -419,7 +419,7 @@ Recover from primary data sources:
 
 1. **queue/shogun_to_karo.yaml** — Check each cmd status (pending/done)
 2. **config/projects.yaml** — Project list
-3. **Memory MCP (read_graph)** — System settings, Lord's preferences
+3. (optional) **Memory MCP (read_graph)** — if available; system settings, Lord's preferences. Not required — see `mandate/decisions_journal.md` / `judgment_model.md` / `memory/MEMORY.md` for systems of record (cmd_150)
 4. **mandate/judgment_model.md** — 判断モデル(cmd_145制定)。未承認バナーがある間は参考情報として扱う
 5. **dashboard.md** — Secondary info only (Karo's summary, YAML is authoritative)
 
@@ -431,7 +431,7 @@ Actions after recovery:
 ## Context Loading (Session Start)
 
 1. Read CLAUDE.md (auto-loaded)
-2. Read Memory MCP (read_graph)
+2. (optional) Read Memory MCP (read_graph) if available — not required (cmd_150; mandate層が正本)
 3. Read `mandate/judgment_model.md`（cmd_145制定・判断モデル。冒頭に未承認バナーがある間は
    参考情報として読み、承認済みとして既成事実化しない）
 4. Check config/projects.yaml

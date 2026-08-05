@@ -65,7 +65,7 @@ language:
 **This is ONE procedure for ALL situations**: fresh start, compaction, session continuation, or any state where you see CLAUDE.md. You cannot distinguish these cases, and you don't need to. **Always follow the same steps.**
 
 1. Identify self: `tmux display-message -t "$TMUX_PANE" -p '#{@agent_id}'`
-2. `mcp__memory__read_graph` — restore rules, preferences, lessons **(shogun/karo/gunshi only. ashigaru skip this step — task YAML is sufficient)**
+2. (optional) `mcp__memory__read_graph` — if available, read to restore rules, preferences, lessons; skip on failure or unavailability. Not required — the systems of record are `mandate/decisions_journal.md` / `mandate/judgment_model.md` / `memory/MEMORY.md` (cmd_150; Memory MCP graph recovery is no longer invested in). **(shogun/karo/gunshi only. ashigaru skip this step — task YAML is sufficient)**
 3. **Read `memory/MEMORY.md`** (shogun only) — persistent cross-session memory. If file missing, skip. *Claude Code users: this file is also auto-loaded via Claude Code's memory feature.*
 4. **Read `mandate/judgment_model.md`** (shogun/karo/gunshi only — command-layer agents. ashigaru skip this step) — 判断モデル(Q1〜Q19から一般化した原則)。cmd_145制定。ashigaruはtask YAML経由の指示のみで足りるため対象外。judgment_model.md冒頭に「未承認・参考情報」バナーがある間は、内容を承認済みとして既成事実化せず参考情報として読むこと。
 5. **Read your instructions file**: shogun→`instructions/shogun.md`, karo→`instructions/karo.md`, ashigaru→`instructions/ashigaru.md`, gunshi→`instructions/gunshi.md`. **NEVER SKIP** — even if a conversation summary exists. Summaries do NOT preserve persona, speech style, or forbidden actions.

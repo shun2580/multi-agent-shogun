@@ -281,8 +281,9 @@ report が新規スクリプト・ガード・フック・監視機構の納品�
    加えて、本cmdが潰そうとする欠陥（意図）を先に読み、同一ファイル・同一機能内の
    **変更されなかった経路**に同種欠陥が残っていないかも確認する（diffに書かれた
    箇所だけを見て終わらない）。
-6. 同一cmd内に複数Partがある場合、各Partの成果物間に矛盾がないかを突合してから
-   PASSを出す。
+
+（複数Part間の成果物突合チェックは、Step Dの適用除外条件の影響を受けないよう
+Step Eへ移設した。下記Step E-2参照・cmd_150）
 
 教訓: cmd_123 Part A（busy判定の三値化）は、現行布陣10体の実経路（フラグ経路）
 には届いておらず、pane解析経路のみの改修に留まっていた。それでも軍師QCはPASSを
@@ -313,12 +314,14 @@ Step Dで塞ぐ。
 スクリプトが実在しない場合は手動でStep A/Bを実行する。
 Exit codes: 0=PASS, 1=FAIL, 2=SKIP
 
-### Step E: 長期未commit放置チェック（全タスク共通・cmd_142）
+### Step E: 全タスク共通チェック（Step Dの適用除外条件に関わらず実施・cmd_142/cmd_150）
 
-**適用範囲**: 本チェックはStep Dの適用除外条件に関わらず、**全てのタスクのQCで
-実施する**（Step Dの一部ではなく独立したチェックであるため、Step Dが対象外となる
-場合——新規スクリプト・ガード・フック・監視機構の納品を伴わない、既存文書への
-追記等の通常タスク——でもスキップしない）。
+**適用範囲**: 本チェック群（E-1・E-2）はStep Dの適用除外条件に関わらず、**全ての
+タスクのQCで実施する**（Step Dの一部ではなく独立したチェックであるため、Step Dが
+対象外となる場合——新規スクリプト・ガード・フック・監視機構の納品を伴わない、
+既存文書への追記等の通常タスク——でもスキップしない）。
+
+#### E-1. 長期未commit放置チェック（cmd_142）
 
 **チェック内容**: `queue/tasks/*.yaml` の長期未commit放置を確認する。対象足軽の
 タスクYAMLが `git status --porcelain` でM(変更)のまま残っており、かつ最終commit時刻
@@ -337,6 +340,20 @@ advisory欄に記録する（即FAILとはしない——同日内の連続タ�
 いたが、Step Dの適用除外条件（納品物が監視機構等でない場合はStep D自体が対象外）
 により、通常タスクの大多数で本チェック自体もスキップされる自己矛盾を起こしていた。
 Step Dから独立させ、常時実施のStep Eとして再配置することで是正した。
+
+#### E-2. 複数Part間の成果物突合チェック（cmd_150）
+
+**チェック内容**: 同一cmd内に複数Partがある場合、各Partの成果物間に矛盾がないかを
+突合してからPASSを出す。
+
+教訓（cmd_150）: 本項目は当初Step Dの番号付きリスト項目6として追加されていた
+（cmd_127・commit `b328c6b`・2026-07-29）が、Step Dの適用除外条件（納品物が監視機構等
+でない場合はStep D自体が対象外）に巻き込まれ、通常タスク（既存文書への追記等）の
+大多数で本チェック自体もスキップされる、E-1（項目7）と同型の自己矛盾を起こしていた。
+E-1の是正（cmd_142・2026-07-31）のわずか2日前に同じ番号付きリストへ追加されたため、
+その是正から漏れていた（出典: `mandate/decisions_journal.md` cmd_144議題6RULEエントリ）。
+E-1と同じ経路——Step Dの番号付きリストから独立させ、常時実施のStep Eの一部として
+再配置——することで是正した。
 
 ### Step F: 戻せない操作の未実行確認（cmd_145制定）
 
@@ -706,7 +723,7 @@ Recover from primary data:
 2. Read `queue/tasks/gunshi.yaml`
    - `assigned` → resume work
    - `done` → await next instruction
-3. Read Memory MCP (read_graph) if available
+3. Read Memory MCP (read_graph) if available — not required; mandate層(`judgment_model.md`等)/`memory/MEMORY.md`が正本(cmd_150)
 4. Read `mandate/judgment_model.md`（cmd_145制定・判断モデル。未承認バナーがある間は
    参考情報として扱う）
 5. Read `context/{project}.md` if task has project field
@@ -718,7 +735,7 @@ Follows **CLAUDE.md /clear procedure**. Lightweight recovery.
 
 ```
 Step 1: tmux display-message → gunshi
-Step 2: mcp__memory__read_graph (skip on failure)
+Step 2: mcp__memory__read_graph if available (skip on failure/unavailability — not required, cmd_150)
 Step 3: Read mandate/judgment_model.md（cmd_145制定。未承認バナーがある間は参考情報）
 Step 4: Read queue/tasks/gunshi.yaml → assigned=work, idle=wait
 Step 5: Read context files if specified

@@ -495,6 +495,13 @@ forbidden_actions.md` F007の5条件（published:false・ドキュメントの�
 本分岐の対象外であり、従来どおり殿必須を維持する。`mandate/judgment_model.md`・
 `mandate/approval_queue.md` にも明記する（mandate層だけを読む者にも分かる形で）。
 
+**新規feature flagの常用化判断（cmd_144議題5・cmd_147制定）**: 新規feature flagを
+「常用（恒久稼働・enforce化等）」へ切り替える判断は、本分岐の「戻せない操作」に
+準じ、`mandate/approval_queue.md`へ積んで殿が消化する運用へ統一する（出典:
+cmd_144議題5、cmd_147）。flag導入時のデフォルトoff（既存ルール）とは別の観点で
+あることに注意——本項が扱うのは「off/observeで導入済みのflagを、いつ・誰の判断で
+常用へ切り替えるか」である。
+
 ## Fast-Lane Exception（cmd_086 Part C 2026-07-10制定・2026-07-17再構成）
 
 **再構成に関する注記**: 本節は2026-07-11〜07-17の間に原因未特定のまま消失した
@@ -1454,7 +1461,7 @@ External PRs are reinforcements. Treat with respect.
 1. `queue/shogun_to_karo.yaml` — current cmd (check status: pending/done)
 2. `queue/tasks/ashigaru{N}.yaml` — all ashigaru assignments
 3. `queue/reports/ashigaru{N}_report.yaml` — unreflected reports?
-4. `Memory MCP (read_graph)` — system settings, lord's preferences
+4. (optional) `Memory MCP (read_graph)` — if available; system settings, lord's preferences. Not required — mandate層(`decisions_journal.md`/`judgment_model.md`)/`memory/MEMORY.md`が正本(cmd_150)
 5. `context/{project}.md` — project-specific knowledge (if exists)
 
 **dashboard.md is secondary** — may be stale after compaction. YAMLs are ground truth.
@@ -1470,7 +1477,7 @@ External PRs are reinforcements. Treat with respect.
 ## Context Loading Procedure
 
 1. CLAUDE.md (auto-loaded)
-2. Memory MCP (`read_graph`)
+2. (optional) Memory MCP (`read_graph`) — if available, not required (cmd_150)
 3. `config/projects.yaml` — project list
 4. `queue/shogun_to_karo.yaml` — current instructions
 5. If task has `project` field → read `context/{project}.md`
