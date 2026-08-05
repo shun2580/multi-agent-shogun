@@ -79,3 +79,34 @@ ID | 日付 | 操作内容 | 理由 | doubt: 承認判断のために見るべ�
   config/settings.yaml追跡除外・残存ゼロ確認後にpushする条件、出典: cmd_149)
   備考: 2026-08-04 殿の明示許可により明日の裁定へ持ち越し(原文: 「AQ-001および未push分のキュー消化は明日の裁定に持ち越すことを明示的に許可する」)
   2026-08-05 殿裁定(cmd_149)により条件つき承認、doubt(b)をpush直前に再実測のうえpush実行(出典: queue/shogun_to_karo.yaml cmd_149)
+
+- ID: AQ-003 | 日付: 2026-08-05 | 操作内容: 未push commit群(7件、起票直前に
+  `git fetch origin main`実行後`git log origin/main..HEAD --oneline | wc -l`で
+  再実測、2026-08-05)のリモート(origin https://github.com/shun2580/multi-agent-shogun.git)
+  へのpush |
+  理由: 本日cmd_150(フリーズ解除)〜cmd_153(reversibility分類器是正)の陣仕舞いに伴い、
+  pushは「戻せない操作」としてapproval_queue経由の承認待ちとする(cmd_145 Part3の運用に従う。
+  本則の「起票直前の再実測」則(cmd_149議題E)の初適用) |
+  doubt: (a) 対象ブランチ: `main`(`git branch --show-current`実測)。
+  (b) commit範囲(起票直前・`git fetch origin main`実行後に再実測): 7件。
+  最古`d48d152`(docs(cmd_150 subtask_150): codify ntfy rotation procedure + journal A/B/C
+  entries)〜最新`38d56db`(docs(cmd_153 subtask_153): record verification-method gap and
+  journal entry)。7件全件は`git log origin/main..HEAD --oneline --reverse`で再現可能。
+  内訳: cmd_150(3件)・cmd_151(1件)・cmd_152(1件)・cmd_153(3件、うち1件は本サブタスク
+  着手前の直近commit)。
+  (c) 秘匿値混入の実走査結果: `git log origin/main..HEAD -p`をAPI鍵/token/password/
+  秘密鍵等のパターンでgrep実走査した結果、実際の秘匿値のヒットは無かった(「token」の
+  ヒットはPart4分類器スクリプト内の`LOGTOKEN`という変数名のみ)。
+  🔴ntfyトピック名(新旧とも)の再混入も実走査で確認した: 対象文字列は非開示、結果は0件
+  (「ntfy」という語自体はローテーション手順の説明文・journal記帳としてのみ出現し、
+  実際のトピック値・`ntfy.sh/<topic>`形式のURLはいずれも0件)。
+  `config/settings.yaml`は`git ls-files --error-unmatch config/settings.yaml`が
+  失敗する(pathspec未一致)ことを実測確認し、引き続きgit追跡外であることを確認した。
+  (d) 公開リポジトリ(`shun2580/multi-agent-shogun`、AQ-002時点でPUBLIC確認済み・
+  本サブタスクでの再確認は未実施)への影響範囲: 本7件はいずれもmandate層の記帳・
+  journal追記・スクリプト是正であり、新規の秘匿設定ファイル追加は無い(AQ-002の
+  `config/settings.yaml`初回追加のような事象はこの範囲に含まれない) |
+  状態: pending
+  備考: 殿の判断待ち。持ち越しは本タスク(subtask_154)による起票そのものであり、
+  殿の明示判断はまだ得ていない(dashboard.md🚨要対応への記載は家老の担当範囲のため
+  本サブタスクでは実施しない)。
