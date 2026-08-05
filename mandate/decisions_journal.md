@@ -89,3 +89,9 @@
 2026-08-05 | RULE | cmd_149 Part A/B: ntfy新トピック名の伝達方法 | 「新ntfyトピック名の伝達は`~/ntfy_topic_new.txt`(git管理外・パーミッション600)経由とし、報告文・inbox・dashboard等git管理下のいかなる箇所にも値を書かない方式を採った。」 | 出典: `queue/shogun_to_karo.yaml` cmd_149 command【B】節、殿裁定2026-08-05。トピック名そのものはgit管理下のいかなるファイルにも書かない(本journalも例外ではない)。config/settings.yamlはgit追跡から除外済み(`git rm --cached`)、旧値は本rotation commit以降「死値」。
 
 2026-08-05 | RULE | cmd_149 Part E: 「承認材料の数字の陳腐化」族の認定 | 「approval_queueエントリを殿の消化に出す直前、doubt欄の数値・件数を再実測して更新する」 | 出典: `queue/shogun_to_karo.yaml` cmd_149 command【E】節、殿裁定2026-08-05。実例2件: AQ-001 doubt(a)の`mandate/judgment_model.md`行数が137行→実測149行のまま放置されかけた事例、AQ-002 doubt(b)のunpushed commit件数が62件→65件と複数回(cmd_149 subtask_149b時点ではさらにpush直前の再実測値へ)陳腐化した事例。是正は`mandate/verifiers.md`「既知の機械的ミス防止則」への1行追加で行った。
+
+2026-08-05 | CORRECT | cmd_149でのntfyトピックローテーション設計（⑤旧購読解除の欠落） | 「cmd_149 で将軍が設計した手順には⑤旧購読解除が欠けていた。旧トピック名はgit履歴に残ったままpushで公開されるゆえ、購読したままなら第三者が偽の通知を投げ込め、殿がそれを我が陣の報告と誤認し得る。購読解除して初めて死値となる。」 | 出典: `queue/shogun_to_karo.yaml` cmd_150 command【A】節（将軍記・自己申告）、殿の2026-08-05裁定。完全手順（①新名生成→②git外伝達→③購読替え→④到達確認→⑤旧購読解除→⑥push）は`mandate/verifiers.md`「ntfyトピックローテーション完全手順（cmd_150）」節へ1箇所に成文化した。
+
+2026-08-05 | RULE | 記憶・判断基準の正本一本化（Memory MCP→mandate層） | 「復旧に工数を投じない。正本は decisions_journal.md / judgment_model.md / MEMORY.md とする。」 | 出典: `queue/shogun_to_karo.yaml` cmd_150 command【B】節、殿の2026-08-05裁定。Memory MCPグラフの復旧作業には今後工数を投じない。Session Start手順（CLAUDE.md・instructions/shogun.md・karo.md・gunshi.md）からMemory MCP読込の必須指定を外し、「利用可能なら読む(任意・失敗時はスキップ)」へ弱めた（mandate層＝judgment_model.md等の読込指定は維持）。MCPサーバ設定自体（`.mcp.json`等）は`find . -maxdepth 2 -iname ".mcp.json"`実測でリポジトリ内に0件確認され、除去可否の判断自体が不要であった。
+
+2026-08-05 | RULE | cmd_138フィーチャーフリーズの解除 | 「cmd_138凍結の解除。監査議題6件の裁定・記帳完了をもって目的達成。」 | 出典: `queue/shogun_to_karo.yaml` cmd_150 command【C】節、殿の2026-08-05裁定。cmd_144で提起された監査議題6件の裁定・記帳（cmd_147・cmd_149・cmd_150にわたる）完了をもって、cmd_138フィーチャーフリーズの目的を達成したと認定する。凍結解除後の建造キュー（優先順・共通条件つき）の整備はdashboard.md側で家老が別途実施する（本journal記帳は範囲外）。
