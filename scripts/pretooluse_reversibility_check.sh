@@ -88,9 +88,18 @@ IRREVERSIBLE_BASH = [
         r"docker\s+push|vercel\s+[^\n]*--prod)\b")),
     ("db_destructive", re.compile(
         r"\b(DROP\s+TABLE|TRUNCATE\s+TABLE|DELETE\s+FROM)\b", re.IGNORECASE)),
+    # `[^\n]*`のまま(改行=別文の区切りとして正しく非マッチ)だが、bashの行継続
+    # (`\`直後の改行)は同一論理コマンドであるため`\\\n`のみ横断を許す(cmd_153。
+    # 素の改行での非マッチは「curl url\n-d yesterday」のような無関係な別文の
+    # 誤検知回避という元設計を維持しつつ、`curl url \` + 改行 + `-X POST`という
+    # 一体のcurl呼出しの見逃しだけを是正する)。
     ("external_send", re.compile(
-        r"\b(curl|wget)\b[^\n]*(-X\s*POST|--data|-d\s|--post-data)", re.IGNORECASE)),
-    ("file_delete", re.compile(r"(^|[;&|]\s*)rm\s")),
+        r"\b(curl|wget)\b(?:[^\n]|\\\n)*(-X\s*POST|--data|-d\s|--post-data)",
+        re.IGNORECASE)),
+    # `re.MULTILINE`追加+アンカー文字集合へ`(`・バッククォートを追加(cmd_153)。
+    # 元の`(^|[;&|]\s*)`は改行後(re.MULTILINE無し)やコマンド置換内の`rm`を
+    # 取り逃していた(将軍実機検証)。
+    ("file_delete", re.compile(r"(^|[;&|(`]\s*)rm\s", re.MULTILINE)),
 ]
 
 # 「戻せる操作(ローカル編集・ブランチコミット・テスト実行・docs生成)」
@@ -123,7 +132,11 @@ READONLY_VERBS = {
     "env", "printenv", "tree", "file", "stat", "du", "df", "pwd", "whoami",
     "less", "more", "diff", "sleep", "echo", "cd", "find",
 }
-_DANGER_CHARS_RE = re.compile(r"[><;|&]")
+# 改行(\n)とコマンド置換($(...)・バッククォート)も危険指標に含める(cmd_153)。
+# Bashでは改行は`;`と同じコマンド区切りであり、コマンド置換は元コマンドの
+# 文字列に含まれない別コマンドを実行し得るため、いずれも文字クラスだけの
+# 判定(元の`[><;|&]`)では見逃していた(将軍実機検証で発覚)。
+_DANGER_CHARS_RE = re.compile(r"[><;|&\n]|\$\(|`")
 _FIND_DANGEROUS_RE = re.compile(r"(?<!\S)-(?:delete|exec)\b")
 
 
