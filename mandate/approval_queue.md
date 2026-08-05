@@ -92,7 +92,7 @@ ID | 日付 | 操作内容 | 理由 | doubt: 承認判断のために見るべ�
   最古`d48d152`(docs(cmd_150 subtask_150): codify ntfy rotation procedure + journal A/B/C
   entries)〜最新`38d56db`(docs(cmd_153 subtask_153): record verification-method gap and
   journal entry)。7件全件は`git log origin/main..HEAD --oneline --reverse`で再現可能。
-  内訳: cmd_150(3件)・cmd_151(1件)・cmd_152(1件)・cmd_153(3件、うち1件は本サブタスク
+  内訳: cmd_150(2件)・cmd_151(1件)・cmd_152(1件)・cmd_153(3件、うち1件は本サブタスク
   着手前の直近commit)。
   (c) 秘匿値混入の実走査結果: `git log origin/main..HEAD -p`をAPI鍵/token/password/
   秘密鍵等のパターンでgrep実走査した結果、実際の秘匿値のヒットは無かった(「token」の
