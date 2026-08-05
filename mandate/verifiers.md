@@ -45,3 +45,6 @@
 - done判定時は、成果物ファイルが実際にcommitされていることを`git status --porcelain`等で
   確認する。commitし忘れたまま「完了」と判定しない(出典: cmd_146成果物が一部未commitのまま
   done判定されていた実例、cmd_147是正)
+- approval_queueエントリを殿の消化に出す直前、doubt欄の数値・件数を再実測して更新する
+  (出典: 殿の2026-08-05裁定・cmd_149。AQ-001 doubt(a)137→149行、AQ-002 doubt(b)
+  commit件数62→65件と複数回陳腐化した実例を族と認定)
