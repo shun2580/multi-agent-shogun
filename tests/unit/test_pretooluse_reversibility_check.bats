@@ -14,6 +14,7 @@ setup() {
     SETTINGS_UNKNOWN="$TEST_TMP/settings_unknown.yaml"
     SETTINGS_MISSING="$TEST_TMP/settings_missing.yaml"
     LOG_FILE="$TEST_TMP/logs/reversibility_check.log"
+    CLASSIFICATION_LOG="$TEST_TMP/logs/reversibility_classification_detail.jsonl"
 
     cat > "$SETTINGS_OFF" <<'EOF'
 features:
@@ -45,6 +46,7 @@ run_check_with_settings() {
         REVERSIBILITY_CHECK_SETTINGS="$settings_file" \
         REVERSIBILITY_CHECK_LOG="$LOG_FILE" \
         REVERSIBILITY_CHECK_PYTHON="$PROJECT_ROOT/.venv/bin/python3" \
+        REVERSIBILITY_CLASSIFICATION_LOG="$CLASSIFICATION_LOG" \
         bash -c "printf '%s' '$payload' | bash '$CHECK_SCRIPT'"
 }
 
@@ -174,6 +176,139 @@ run_check_with_settings() {
     run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
     run grep -c "^\[.*\] WOULD-UNKNOWN mode=observe session=s-mystery file=NA tool=Bash category=bash_unclassified " "$LOG_FILE"
     [ "$output" -eq 1 ]
+}
+
+# --- cmd_152: 読取専用コマンドのreversible分類 ---
+
+@test "cmd_152 readonly: simple grep on a file is logged as WOULD-ALLOW category=read_only_command" {
+    local payload='{"session_id":"s-ro1","tool_name":"Bash","tool_input":{"command":"grep pattern file.txt"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-ALLOW mode=observe session=s-ro1 file=NA tool=Bash category=read_only_command " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "cmd_152 readonly: simple cat on a file is logged as WOULD-ALLOW category=read_only_command" {
+    local payload='{"session_id":"s-ro2","tool_name":"Bash","tool_input":{"command":"cat file.txt"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-ALLOW mode=observe session=s-ro2 file=NA tool=Bash category=read_only_command " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "cmd_152 readonly: ls -la is logged as WOULD-ALLOW category=read_only_command" {
+    local payload='{"session_id":"s-ro3","tool_name":"Bash","tool_input":{"command":"ls -la"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-ALLOW mode=observe session=s-ro3 file=NA tool=Bash category=read_only_command " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "cmd_152 readonly: find without -delete/-exec is logged as WOULD-ALLOW category=read_only_command" {
+    local payload='{"session_id":"s-ro4","tool_name":"Bash","tool_input":{"command":"find . -name \"*.md\""}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-ALLOW mode=observe session=s-ro4 file=NA tool=Bash category=read_only_command " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "cmd_152 danger: grep with output redirect (grep x f > out) is NOT reversible, stays WOULD-UNKNOWN" {
+    local payload='{"session_id":"s-danger1","tool_name":"Bash","tool_input":{"command":"grep x f > out"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-UNKNOWN mode=observe session=s-danger1 file=NA tool=Bash category=bash_unclassified " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+    run grep -c "WOULD-ALLOW.*s-danger1" "$LOG_FILE"
+    [ "$status" -ne 0 ]
+}
+
+@test "cmd_152 danger: cat with output redirect (cat a > b) is NOT reversible, stays WOULD-UNKNOWN" {
+    local payload='{"session_id":"s-danger2","tool_name":"Bash","tool_input":{"command":"cat a > b"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-UNKNOWN mode=observe session=s-danger2 file=NA tool=Bash category=bash_unclassified " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+    run grep -c "WOULD-ALLOW.*s-danger2" "$LOG_FILE"
+    [ "$status" -ne 0 ]
+}
+
+@test "cmd_152 danger: sed -i in-place edit is NOT reversible, stays WOULD-UNKNOWN (sed excluded from whitelist entirely)" {
+    local payload='{"session_id":"s-danger3","tool_name":"Bash","tool_input":{"command":"sed -i s/a/b/ f"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-UNKNOWN mode=observe session=s-danger3 file=NA tool=Bash category=bash_unclassified " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+    run grep -c "WOULD-ALLOW.*s-danger3" "$LOG_FILE"
+    [ "$status" -ne 0 ]
+}
+
+@test "cmd_152 danger: ls piped into tee (ls | tee out) is NOT reversible, stays WOULD-UNKNOWN" {
+    local payload='{"session_id":"s-danger4","tool_name":"Bash","tool_input":{"command":"ls | tee out"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-UNKNOWN mode=observe session=s-danger4 file=NA tool=Bash category=bash_unclassified " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+    run grep -c "WOULD-ALLOW.*s-danger4" "$LOG_FILE"
+    [ "$status" -ne 0 ]
+}
+
+@test "cmd_152 danger: find piped into xargs rm is NOT reversible, stays WOULD-UNKNOWN" {
+    local payload='{"session_id":"s-danger5","tool_name":"Bash","tool_input":{"command":"find . | xargs rm"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-UNKNOWN mode=observe session=s-danger5 file=NA tool=Bash category=bash_unclassified " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+    run grep -c "WOULD-ALLOW.*s-danger5" "$LOG_FILE"
+    [ "$status" -ne 0 ]
+}
+
+@test "cmd_152 danger: find with -delete flag is NOT reversible, stays WOULD-UNKNOWN" {
+    local payload='{"session_id":"s-danger6","tool_name":"Bash","tool_input":{"command":"find . -name \"*.tmp\" -delete"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-UNKNOWN mode=observe session=s-danger6 file=NA tool=Bash category=bash_unclassified " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "cmd_152 danger: find with -exec flag is NOT reversible, stays WOULD-UNKNOWN" {
+    local payload='{"session_id":"s-danger7","tool_name":"Bash","tool_input":{"command":"find . -exec rm {} ;"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-UNKNOWN mode=observe session=s-danger7 file=NA tool=Bash category=bash_unclassified " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "cmd_152 danger: command chaining (grep foo f && echo done) is NOT reversible, stays WOULD-UNKNOWN" {
+    local payload='{"session_id":"s-danger8","tool_name":"Bash","tool_input":{"command":"grep foo f && echo done"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-UNKNOWN mode=observe session=s-danger8 file=NA tool=Bash category=bash_unclassified " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "cmd_152 detection mechanism: reversible read_only_command classification is recorded in classification detail log" {
+    local payload='{"session_id":"s-detect1","tool_name":"Bash","tool_input":{"command":"grep pattern file.txt"}}'
+    local detail_log="$TEST_TMP/logs/reversibility_classification_detail.jsonl"
+    run env \
+        REVERSIBILITY_CHECK_SETTINGS="$SETTINGS_OBSERVE" \
+        REVERSIBILITY_CHECK_LOG="$LOG_FILE" \
+        REVERSIBILITY_CHECK_PYTHON="$PROJECT_ROOT/.venv/bin/python3" \
+        REVERSIBILITY_CLASSIFICATION_LOG="$detail_log" \
+        bash -c "printf '%s' '$payload' | bash '$CHECK_SCRIPT'"
+    [ "$status" -eq 0 ]
+    [ -s "$detail_log" ]
+    run grep -c '"matched_verb": "grep"' "$detail_log"
+    [ "$output" -eq 1 ]
+    run grep -c '"session_id": "s-detect1"' "$detail_log"
+    [ "$output" -eq 1 ]
+}
+
+@test "cmd_152 detection mechanism: non-readonly reversible (git commit) is NOT recorded in classification detail log (scoped to new logic only)" {
+    local payload='{"session_id":"s-detect2","tool_name":"Bash","tool_input":{"command":"git commit -m wip"}}'
+    local detail_log="$TEST_TMP/logs/reversibility_classification_detail.jsonl"
+    run env \
+        REVERSIBILITY_CHECK_SETTINGS="$SETTINGS_OBSERVE" \
+        REVERSIBILITY_CHECK_LOG="$LOG_FILE" \
+        REVERSIBILITY_CHECK_PYTHON="$PROJECT_ROOT/.venv/bin/python3" \
+        REVERSIBILITY_CLASSIFICATION_LOG="$detail_log" \
+        bash -c "printf '%s' '$payload' | bash '$CHECK_SCRIPT'"
+    [ "$status" -eq 0 ]
+    [ ! -s "$detail_log" ]
+}
+
+@test "cmd_152: existing main log line format for a reversible verdict is unchanged (no new fields appended)" {
+    local payload='{"session_id":"s-format","tool_name":"Bash","tool_input":{"command":"cat file.txt"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -E "^\[.*\] WOULD-ALLOW mode=observe session=s-format file=NA tool=Bash category=read_only_command detail=cat file\.txt\$" "$LOG_FILE"
+    [ "$status" -eq 0 ]
 }
 
 # --- fail-open: python欠落時もunknownとして記録しexit0(クラッシュしない) ---

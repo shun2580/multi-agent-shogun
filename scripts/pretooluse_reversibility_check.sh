@@ -59,11 +59,13 @@ import re
 import sys
 
 
-def emit(verdict, category, tool_name, session_id, file_path, detail):
+def emit(verdict, category, tool_name, session_id, file_path, detail,
+         matched_verb="", rationale=""):
     detail_b64 = base64.b64encode(detail[:300].encode("utf-8", "replace")).decode("ascii")
+    rationale_b64 = base64.b64encode(rationale.encode("utf-8", "replace")).decode("ascii")
     print("\x1f".join([
         verdict, category, tool_name or "unknown", session_id or "unknown",
-        file_path or "NA", detail_b64,
+        file_path or "NA", detail_b64, matched_verb or "NA", rationale_b64,
     ]))
 
 
@@ -98,6 +100,52 @@ REVERSIBLE_BASH = [
     re.compile(r"\b(pytest|bats|go\s+test|npm\s+test|npm\s+run\s+test)\b"),
 ]
 
+# ─── 読取専用コマンドのreversible分類 (cmd_152) ───
+# コマンド名だけでは判定しない。以下の条件を"すべて"満たす場合のみreversible:
+#   1. 先頭verbが読取専用ホワイトリストに一致する
+#   2. リダイレクト(> >> <)・パイプ(|)・連結(; && ||)・tee・xargsが
+#      コマンド全体のどこにも現れない(複合コマンドは一律unknownへ倒す。
+#      パイプ/連結先の安全性を再帰検証するコストとリスクに見合わないため)
+#   3. findの場合は -delete / -exec を伴わない
+# 一つでも満たさなければNoneを返し、呼び出し側はunknownへ倒す
+# (judgment_model原則1・原則2: 判定材料不足時は安全側=unknown)。
+#
+# sed/awk/perl/ruby等の編集能力を持つコマンドはホワイトリストに含めない
+# (対象外・cmd_152指示)。in-placeフラグの有無だけを見る設計は、
+# 例えば `grep -i`(大小文字無視、無害)のような無関係な-iとの誤認や、
+# GNU awkの`-i inplace`のようにフラグ表記がツールごとに異なる網羅漏れの
+# リスクを抱える。読取専用verbホワイトリストからこれらを丸ごと除外する
+# ことで、フラグ単位の判定ロジックそのものを不要にし、誤分類の攻撃面を
+# 減らす(unknown率の低下幅が小さくなっても正しさを優先する、という
+# cmd_152の指示に沿う設計判断)。
+READONLY_VERBS = {
+    "grep", "cat", "tail", "head", "wc", "ls", "ps", "date", "which", "type",
+    "env", "printenv", "tree", "file", "stat", "du", "df", "pwd", "whoami",
+    "less", "more", "diff", "sleep", "echo", "cd", "find",
+}
+_DANGER_CHARS_RE = re.compile(r"[><;|&]")
+_FIND_DANGEROUS_RE = re.compile(r"(?<!\S)-(?:delete|exec)\b")
+
+
+def classify_readonly_bash(command):
+    stripped = command.strip()
+    if not stripped:
+        return None
+    if _DANGER_CHARS_RE.search(stripped):
+        return None
+    if "tee" in stripped or "xargs" in stripped:
+        return None
+    verb = stripped.split(None, 1)[0]
+    if verb not in READONLY_VERBS:
+        return None
+    if verb == "find" and _FIND_DANGEROUS_RE.search(stripped):
+        return None
+    return verb, (
+        f"verb={verb} matched read-only whitelist; "
+        "no redirect/pipe/chain/tee/xargs indicators found in command"
+    )
+
+
 if tool_name == "Bash":
     command = tool_input.get("command") or ""
     for category, pattern in IRREVERSIBLE_BASH:
@@ -108,6 +156,12 @@ if tool_name == "Bash":
         if pattern.search(command):
             emit("reversible", "local_or_test", tool_name, session_id, "NA", command)
             sys.exit(0)
+    readonly_match = classify_readonly_bash(command)
+    if readonly_match is not None:
+        matched_verb, rationale = readonly_match
+        emit("reversible", "read_only_command", tool_name, session_id, "NA", command,
+             matched_verb=matched_verb, rationale=rationale)
+        sys.exit(0)
     # 判定不能: 安易にreversibleへ倒さずunknownとする(busy三値化と同型の教訓)。
     emit("unknown", "bash_unclassified", tool_name, session_id, "NA", command)
     sys.exit(0)
@@ -140,8 +194,9 @@ if [ "$PY_EXIT" -ne 0 ] || [ -z "$OUTPUT" ]; then
     exit 0
 fi
 
-IFS=$'\x1f' read -r VERDICT CATEGORY TOOL_NAME SESSION_ID FILE_PATH DETAIL_B64 <<< "$OUTPUT"
+IFS=$'\x1f' read -r VERDICT CATEGORY TOOL_NAME SESSION_ID FILE_PATH DETAIL_B64 MATCHED_VERB RATIONALE_B64 <<< "$OUTPUT"
 DETAIL="$(printf '%s' "$DETAIL_B64" | base64 -d 2>/dev/null)"
+RATIONALE="$(printf '%s' "$RATIONALE_B64" | base64 -d 2>/dev/null)"
 
 case "$VERDICT" in
     irreversible) LOGTOKEN="WOULD-BLOCK" ;;
@@ -149,6 +204,36 @@ case "$VERDICT" in
     *) LOGTOKEN="WOULD-UNKNOWN" ;;
 esac
 
+# 既存ログ本体のフォーマットは変更しない(cmd_152: 既存ログの読者を壊さない)。
 echo "[$(date -Iseconds)] $LOGTOKEN mode=$MODE session=$SESSION_ID file=$FILE_PATH tool=$TOOL_NAME category=$CATEGORY detail=$DETAIL" >> "$LOG_FILE"
+
+# ─── 検知機構 (cmd_152・cmd_151のexclusion effectログを踏襲) ───
+# cmd_152で新設した読取専用verb判定パス(category=read_only_command)による
+# reversible分類のみを対象に、分類根拠(matched_verb・raw_command・rationale)を
+# 別ログへ事後追跡できる形で記録する。既存のgit/testパターン(local_or_test)は
+# cmd_145から不変でありこのcmdのリスク導入源ではないため対象外とする
+# (スコープを新規判定ロジックに絞ることで、既存経路への影響ゼロを保つ)。
+if [ "$VERDICT" = "reversible" ] && [ "$CATEGORY" = "read_only_command" ]; then
+    DETAIL_LOG="${REVERSIBILITY_CLASSIFICATION_LOG:-$SCRIPT_DIR/logs/reversibility_classification_detail.jsonl}"
+    mkdir -p "$(dirname "$DETAIL_LOG")" 2>/dev/null || true
+    PY_JSON="$(TS="$(date -Iseconds)" V_CATEGORY="$CATEGORY" V_TOOL="$TOOL_NAME" \
+        V_SESSION="$SESSION_ID" V_VERB="$MATCHED_VERB" V_DETAIL="$DETAIL" V_RATIONALE="$RATIONALE" \
+        timeout 4 "$PYTHON_BIN" -c '
+import json, os
+print(json.dumps({
+    "timestamp": os.environ.get("TS"),
+    "verdict": "reversible",
+    "category": os.environ.get("V_CATEGORY"),
+    "tool_name": os.environ.get("V_TOOL"),
+    "session_id": os.environ.get("V_SESSION"),
+    "matched_verb": os.environ.get("V_VERB"),
+    "raw_command": os.environ.get("V_DETAIL"),
+    "rationale": os.environ.get("V_RATIONALE"),
+}))
+' 2>/dev/null)"
+    if [ -n "$PY_JSON" ]; then
+        printf '%s\n' "$PY_JSON" >> "$DETAIL_LOG"
+    fi
+fi
 
 exit 0
