@@ -68,6 +68,31 @@ match_pattern() {
   fi
 }
 
+# cmd_151: 生成物パス除外リスト(gunshi_audit_144 agenda2の一次資料に基づく静的保持方式)。
+# 「instructions/{role}.md編集タスクはallowed_pathsに生成物パスも追記する」運用規約方式は
+# 徹底が難しい(gunshi_audit_144推奨は静的リスト方式)ため不採用。静的リストの弱点(新規
+# 生成物パス追加時に本リストの更新漏れが起きうる)は、下のexclusion effectログ(fail-loud
+# 検知機構)で除外の実効果を可視化することで補う。
+GENERATED_PATH_EXCLUSIONS=(
+  "instructions/generated/*"
+  ".opencode/agents/*.md"
+  "AGENTS.md"
+  "agents/default/system.md"
+  ".github/copilot-instructions.md"
+)
+
+# Returns 0 if the file matches a known generated-path exclusion pattern.
+is_generated_path_excluded() {
+  local file="$1"
+  local pattern
+  for pattern in "${GENERATED_PATH_EXCLUSIONS[@]}"; do
+    if match_pattern "$file" "$pattern"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   TASK_YAML="$1"
   GIT_BASELINE="${2:-HEAD}" # Default to HEAD if $2 is not provided
@@ -101,6 +126,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
   VIOLATION_DETECTED=0
   NON_ALLOWED_FILES=()
+  EXCLUDED_FILES=()
 
   # Iterate through changed files
   while IFS= read -r changed_file; do
@@ -117,10 +143,40 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     done
 
     if [ "$IS_ALLOWED" -eq 0 ]; then
+      if is_generated_path_excluded "$changed_file"; then
+        EXCLUDED_FILES+=("$changed_file")
+        continue
+      fi
       VIOLATION_DETECTED=1
       NON_ALLOWED_FILES+=("$changed_file")
     fi
   done <<< "$CHANGED_FILES"
+
+  # cmd_151 検知機構(殿必須条件・原則5 fail-loud): 除外が1件でも適用された実行は、
+  # 除外で判定が反転(逸脱→適合)したか否かに関わらず専用ログへ記録する。除外が
+  # 広すぎて真陽性まで消す事故を、後から気づけるようにするため。
+  if [ ${#EXCLUDED_FILES[@]} -gt 0 ]; then
+    mkdir -p logs
+    EXCLUSION_TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    if [ "$VIOLATION_DETECTED" -eq 1 ]; then
+      VERDICT_AFTER_EXCLUSION=1
+      FLIPPED_TO_PASS="false"
+    else
+      VERDICT_AFTER_EXCLUSION=0
+      FLIPPED_TO_PASS="true"
+    fi
+    EXCLUDED_JSON=$(printf '"%s", ' "${EXCLUDED_FILES[@]}")
+    EXCLUDED_JSON="[${EXCLUDED_JSON%, }]"
+    if [ ${#NON_ALLOWED_FILES[@]} -gt 0 ]; then
+      REMAINING_JSON=$(printf '"%s", ' "${NON_ALLOWED_FILES[@]}")
+      REMAINING_JSON="[${REMAINING_JSON%, }]"
+    else
+      REMAINING_JSON="[]"
+    fi
+    printf '{"timestamp":"%s","task_yaml":"%s","excluded_files":%s,"remaining_violating_files":%s,"verdict_before_exclusion":1,"verdict_after_exclusion":%s,"flipped_to_pass":%s}\n' \
+      "$EXCLUSION_TS" "$TASK_YAML" "$EXCLUDED_JSON" "$REMAINING_JSON" "$VERDICT_AFTER_EXCLUSION" "$FLIPPED_TO_PASS" \
+      >> logs/scope_check_exclusion_effect.jsonl
+  fi
 
   if [ "$VIOLATION_DETECTED" -eq 1 ]; then
     echo "Violation detected: The following files are changed but not in allowed_paths:" >&2
