@@ -42,3 +42,6 @@
   (出典: cmd_145 Part4是正。`pretooluse_reversibility_check.sh`実装・隔離試験は緑だったが、
   `reversibility_check_enabled`が`config/settings.yaml`に一度も追加されておらず本番では
   fail-safeで常時off・実ログ0行のまま完了報告されていた実例。将軍の実機検証2026-08-04で発覚)
+- done判定時は、成果物ファイルが実際にcommitされていることを`git status --porcelain`等で
+  確認する。commitし忘れたまま「完了」と判定しない(出典: cmd_146成果物が一部未commitのまま
+  done判定されていた実例、cmd_147是正)

@@ -296,6 +296,12 @@ When processing large datasets (30+ items requiring individual web search, API c
 | D007 | `mkfs`, `dd if=`, `fdisk`, `mount`, `umount` | Disk/partition destruction |
 | D008 | `curl|bash`, `wget -O-|sh`, `curl|sh` (pipe-to-shell patterns) | Remote code execution |
 
+**Note on D006 enforcement scope** (gunshi_audit_144 agenda1, verified 2026-08-01): the automatic
+PreToolUse guard in `.claude/settings.json` only prefix-matches top-level Bash command strings —
+`kill`/`pkill` invoked from *inside* a script are outside the automated check's reach. This does
+NOT relax D006's compliance obligation in any way — every agent must observe D006 absolutely,
+regardless of whether the automatic guard happens to catch a given invocation.
+
 ## Tier 2: STOP-AND-REPORT (halt work, notify Karo/Shogun)
 
 | Trigger | Action |

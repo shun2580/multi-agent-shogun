@@ -495,6 +495,13 @@ forbidden_actions.md` F007の5条件（published:false・ドキュメントの�
 本分岐の対象外であり、従来どおり殿必須を維持する。`mandate/judgment_model.md`・
 `mandate/approval_queue.md` にも明記する（mandate層だけを読む者にも分かる形で）。
 
+**新規feature flagの常用化判断（cmd_144議題5・cmd_147制定）**: 新規feature flagを
+「常用（恒久稼働・enforce化等）」へ切り替える判断は、本分岐の「戻せない操作」に
+準じ、`mandate/approval_queue.md`へ積んで殿が消化する運用へ統一する（出典:
+cmd_144議題5、cmd_147）。flag導入時のデフォルトoff（既存ルール）とは別の観点で
+あることに注意——本項が扱うのは「off/observeで導入済みのflagを、いつ・誰の判断で
+常用へ切り替えるか」である。
+
 ## Fast-Lane Exception（cmd_086 Part C 2026-07-10制定・2026-07-17再構成）
 
 **再構成に関する注記**: 本節は2026-07-11〜07-17の間に原因未特定のまま消失した
