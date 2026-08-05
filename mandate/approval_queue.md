@@ -51,15 +51,15 @@ ID | 日付 | 操作内容 | 理由 | doubt: 承認判断のために見るべ�
   備考: 2026-08-04 殿の明示許可により明日の裁定へ持ち越し(原文: 「AQ-001および未push分のキュー消化は明日の裁定に持ち越すことを明示的に許可する」)
   2026-08-05 殿裁定により承認、持ち越し状態は解消(出典: queue/shogun_to_karo.yaml cmd_147)
 
-- ID: AQ-002 | 日付: 2026-08-05 | 操作内容: 未push commit群(62件、`git log origin/main..HEAD --oneline | wc -l`実測)のリモート(origin
+- ID: AQ-002 | 日付: 2026-08-05 | 操作内容: 未push commit群(69件、push直前に
+  `git log origin/main..HEAD --oneline | wc -l`再実測、2026-08-05)のリモート(origin
   https://github.com/shun2580/multi-agent-shogun.git)へのpush |
   理由: 陣仕舞いに伴い、pushは「戻せない操作」としてapproval_queue経由の承認待ちとする(cmd_145 Part3の運用に従う) |
   doubt: (a) 対象ブランチ: `main`(`git branch --show-current`実測)。
-  (b) commit範囲: 最古`3341e34`(feat(instrumentation): Phase3 fired-state logging and fast-lane eligibility)〜
-  最新`6e5588b`(chore(cmd_146): record gunshi_decompose_146 task state)。62件全件は
-  `git log origin/main..HEAD --oneline --reverse`で再現可能。本サブタスク(陣仕舞い)自身が作った
-  4件(`877a0ec`週次蒸留・`f344ccf`urgentフラグ+合成データガード・`879d283`urgent運用ポリシー・
-  `6e5588b`gunshi.yamlタスク状態)を含む。
+  (b) commit範囲(push直前再実測): 最古`3341e34`(feat(instrumentation): Phase3 fired-state logging and
+  fast-lane eligibility)〜最新`9db129f`(docs(cmd_149 subtask_149b): codify approval-material staleness
+  pattern (E/F))。69件全件は`git log origin/main..HEAD --oneline --reverse`で再現可能。
+  本サブタスク(subtask_149b)自身が作ったcommit(cmd_149フェーズ2最終工程分)を含む。
   (c) 公開されて困る内容の有無: `git log origin/main..HEAD -p`をAPI鍵/token/password/秘密鍵等の
   パターンで実走査した結果、実際の秘匿値のヒットは無かった(「secrets」という語自体は
   `projects/`がgit-ignoreされている旨の説明コメントとしてのみ出現)。ただし1件、要判断事項を発見した:
@@ -75,5 +75,7 @@ ID | 日付 | 操作内容 | 理由 | doubt: 承認判断のために見るべ�
   (d) 生成物(AGENTS.md/.github/copilot-instructions.md/agents/default/system.md)は
   `bash scripts/build_instructions.sh`再実行後の`git status --porcelain`差分ゼロで
   手書き元(CLAUDE.md等)との同期を確認済み(本サブタスクの陣仕舞いcommit時点) |
-  状態: pending
+  状態: approved(2026-08-05・承認者: 殿・条件つき — ntfyトピックローテーション完了・
+  config/settings.yaml追跡除外・残存ゼロ確認後にpushする条件、出典: cmd_149)
   備考: 2026-08-04 殿の明示許可により明日の裁定へ持ち越し(原文: 「AQ-001および未push分のキュー消化は明日の裁定に持ち越すことを明示的に許可する」)
+  2026-08-05 殿裁定(cmd_149)により条件つき承認、doubt(b)をpush直前に再実測のうえpush実行(出典: queue/shogun_to_karo.yaml cmd_149)
