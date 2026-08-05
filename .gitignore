@@ -84,6 +84,11 @@
 !config/opencode-tui.json
 !config/opencode-permissions.yaml
 !config/cron_weekly_distill.sh
+!config/settings.yaml.example
+
+# config/settings.yaml contains secrets (ntfy_topic). Explicit deny (defense in
+# depth on top of the default whitelist exclusion) — cmd_149.
+config/settings.yaml
 
 # Templates
 !templates/

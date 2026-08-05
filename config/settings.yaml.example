@@ -1,0 +1,101 @@
+# Settings example (cmd_149)
+#
+# Usage:
+#   1. Copy this file to config/settings.yaml
+#   2. Fill in every <placeholder> with your own value
+#   3. config/settings.yaml is NOT tracked by git (whitelist .gitignore,
+#      explicit deny — it contains ntfy_topic, a secret used as your
+#      notification channel's de-facto access token)
+#
+# This file mirrors the full key structure of config/settings.yaml but
+# contains no real operational values — see each project doc / instructions/
+# for the meaning and recommended defaults of each key.
+
+features:
+  fastlane_enabled: <true|false>
+  deadman_enabled: <true|false>
+  scope_check_advisory: <true|false>
+  yaml_guard_enabled: <off|observe|enforce>
+  stall_detection_enabled: <true|false>
+  reporting_mode: <exception|verbose>
+  reversibility_check_enabled: <off|observe>
+deadman:
+  stall_threshold_min: <integer>
+stall_detection:
+  stall_threshold_min: <integer>
+  karo_escalation_wait_min: <integer>
+  ntfy_escalation_wait_min: <integer>
+  nudge_limit_per_task: <integer>
+  tick_sec: <integer>
+auto_heal:
+  silent_heal_enabled: <true|false>
+  escalation_window_minutes: <integer>
+  escalation_threshold_count: <integer>
+  cooldown_after_escalation_minutes: <integer>
+redo_escalation:
+  threshold_count: <integer>
+  cooldown_after_escalation_minutes: <integer>
+stuck_escalation:
+  threshold_count: <integer>
+  window_minutes: <integer>
+  cooldown_after_escalation_minutes: <integer>
+dashboard_staleness:
+  hours: <integer>
+  check_interval_minutes: <integer>
+  cooldown_after_escalation_minutes: <integer>
+urgent_inbox_escalation:
+  threshold_minutes: <integer>
+  check_interval_minutes: <integer>
+  cooldown_after_escalation_minutes: <integer>
+assignment_grace:
+  after_nudge_seconds: <integer>
+cli:
+  agents:
+    karo:
+      type: <claude|codex|opencode|copilot|kimi>
+      model: <model-id>
+      effort: <low|medium|high>
+    ashigaru1:
+      type: <claude|codex|opencode|copilot|kimi>
+      model: <model-id>
+      effort: <low|medium|high>
+    ashigaru2:
+      type: <claude|codex|opencode|copilot|kimi>
+      model: <model-id>
+      effort: <low|medium|high>
+    ashigaru3:
+      type: <claude|codex|opencode|copilot|kimi>
+      model: <model-id>
+      effort: <low|medium|high>
+    ashigaru4:
+      type: <claude|codex|opencode|copilot|kimi>
+      model: <model-id>
+      effort: <low|medium|high>
+    ashigaru5:
+      type: <claude|codex|opencode|copilot|kimi>
+      model: <model-id>
+      effort: <low|medium|high>
+    ashigaru6:
+      type: <claude|codex|opencode|copilot|kimi>
+      model: <model-id>
+    ashigaru7:
+      type: <claude|codex|opencode|copilot|kimi>
+      model: <model-id>
+    gunshi:
+      type: <claude|codex|opencode|copilot|kimi>
+      model: <model-id>
+      effort: <low|medium|high>
+    shogun:
+      model: <model-id>
+      type: <claude|codex|opencode|copilot|kimi>
+      effort: <low|medium|high>
+  default: <claude|codex|opencode|copilot|kimi>
+language: <ja|en>
+ntfy_topic: <your-private-ntfy-topic-here>
+logging:
+  level: <debug|info|warn|error>
+  path: <absolute-path-to-logs-dir>
+shell: <bash|zsh>
+skill:
+  local_path: <absolute-path-to-skills-dir>
+  save_path: <absolute-path-to-claude-skills-dir>
