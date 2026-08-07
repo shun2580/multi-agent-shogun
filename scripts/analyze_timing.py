@@ -160,12 +160,20 @@ def analyze_task(cmd_id: str, task_id: str, events: List[Dict], all_events: List
         results['qc_sec'] = gunshi_submit_sec - gunshi_start_sec
 
     # ④ Rework (gunshi fail → next redo pass in redo chain)
+    # No fail at all is a genuine negative observation (QC passed, no rework
+    # needed) -> 0.0. A fail that occurred but whose redo chain couldn't be
+    # located is an observation failure, not a zero -> stays None
+    # (judgment_model 原則1: do not conflate the two).
     if gunshi_fail_submitted:
         rework_sec, next_pass = find_rework_chain(all_events, task_id, gunshi_fail_submitted)
-        if rework_sec > 0:
-            results['rework_sec'] = rework_sec
+        results['rework_sec'] = rework_sec if next_pass is not None else None
+    else:
+        results['rework_sec'] = 0.0
 
-    # ⑤ Escalation (future: detect escalation events)
+    # ⑤ Escalation: detection logic is not implemented (no code path ever
+    # populates this from events) -> always an observation failure, never a
+    # genuine zero. Left as None on every task; callers must not print this
+    # as "0.0s" (see format_measurement usage in main()/run_phase_breakdown).
     results['escalation_sec'] = None
 
     return results
@@ -184,6 +192,28 @@ def calculate_unmeasurable_rate(total_task_ids: set, measured_tasks: set) -> flo
         return 0.0
     unmeasured_count = len(total_task_ids - measured_tasks)
     return unmeasured_count / len(total_task_ids)
+
+def format_measurement(total_val: float, measured: int, denom: int, decimals: int = 1,
+                        label: Optional[str] = None) -> str:
+    """
+    Format a numeric headline that may be partially or fully unmeasured,
+    without ever letting an unmeasured value read as a genuine '0.0s'
+    (judgment_model 原則1: never conflate observation failure with a
+    negative observation).
+
+    - denom == 0            : nothing to measure at all
+    - measured == 0          : nothing measured -> 'unknown (計測済み: 0/denom)'
+    - 0 < measured < denom   : partial sum, explicitly labeled as partial
+    - measured == denom      : full sum, plain number (no ambiguity)
+    """
+    tag = f"{label}: " if label else ""
+    if denom == 0:
+        return "unknown (対象0件)"
+    if measured == 0:
+        return f"unknown (計測済み {tag}0/{denom})"
+    if measured < denom:
+        return f"{total_val:.{decimals}f}s (計測済み {tag}{measured}/{denom}件、残りunknown)"
+    return f"{total_val:.{decimals}f}s"
 
 def calculate_true_wallclock_per_task(grouped: Dict) -> Dict[Tuple[str, str], float]:
     """
@@ -374,11 +404,13 @@ def run_phase_breakdown(cmd_filter: Optional[str] = None):
         if lord_events:
             print(f"    参考: lord_judgment_recorded {len(lord_events)}件 併存")
 
-        print(f"  実行: {exec_total_sec:.1f}s (計測済み task_id: {len(exec_measured)}/{len(task_ids)})")
+        exec_display = format_measurement(exec_total_sec, len(exec_measured), len(task_ids), label='task_id')
+        print(f"  実行: {exec_display}")
         if exec_unknown:
             print(f"    unknown task_id: {', '.join(exec_unknown)}")
 
-        print(f"  QC往復: {qc_total_sec:.1f}s (計測済み report_submitted: {qc_measured_count}/{len(report_events)})")
+        qc_display = format_measurement(qc_total_sec, qc_measured_count, len(report_events), label='report_submitted')
+        print(f"  QC往復: {qc_display}")
         if qc_unknown_count:
             print(f"    unknown report_submitted件数: {qc_unknown_count}")
 
@@ -434,31 +466,30 @@ def main():
             measured_tasks.add(task_id)
 
     # Calculate aggregates by cmd
-    cmd_aggregates = defaultdict(lambda: {
-        'generation_sec': 0,
-        'handoff_sec': 0,
-        'qc_sec': 0,
-        'rework_sec': 0,
-        'escalation_sec': 0,
-        'count': 0,
-    })
+    # Each *_sec key has a matching *_measured counter: a None value in
+    # analyze_task()'s result must never be silently added as 0 without
+    # recording that it was never measured (judgment_model 原則1).
+    TIMING_KEYS = ['generation_sec', 'handoff_sec', 'qc_sec', 'rework_sec', 'escalation_sec']
+    MEASURED_KEY = {k: k.replace('_sec', '_measured') for k in TIMING_KEYS}
 
-    total_aggregates = {
-        'generation_sec': 0,
-        'handoff_sec': 0,
-        'qc_sec': 0,
-        'rework_sec': 0,
-        'escalation_sec': 0,
-        'unmeasurable_sec': 0,
-    }
+    def _new_aggregate():
+        agg = {k: 0.0 for k in TIMING_KEYS}
+        agg.update({v: 0 for v in MEASURED_KEY.values()})
+        agg['count'] = 0
+        return agg
+
+    cmd_aggregates = defaultdict(_new_aggregate)
+    total_aggregates = _new_aggregate()
 
     for result in all_results:
         cmd_id = result['cmd_id']
-        for key in ['generation_sec', 'handoff_sec', 'qc_sec', 'rework_sec', 'escalation_sec']:
+        for key in TIMING_KEYS:
             val = result.get(key)
             if val is not None:
                 cmd_aggregates[cmd_id][key] += val
+                cmd_aggregates[cmd_id][MEASURED_KEY[key]] += 1
                 total_aggregates[key] += val
+                total_aggregates[MEASURED_KEY[key]] += 1
         cmd_aggregates[cmd_id]['count'] += 1
 
     # Calculate unmeasurable rate
@@ -473,7 +504,10 @@ def main():
     print(f"Total tasks found in reports: {len(all_task_ids)}")
     print(f"Tasks with timing events: {len(measured_tasks)}")
     print(f"Unmeasurable tasks: {len(all_task_ids) - len(measured_tasks)}")
-    print(f"Unmeasurable rate: {unmeasurable_rate*100:.1f}%")
+    if all_task_ids:
+        print(f"Unmeasurable rate: {unmeasurable_rate*100:.1f}%")
+    else:
+        print("Unmeasurable rate: N/A (queue/reports/*.yaml に task_id が0件)")
     print()
 
     print("Breakdown by Category (all commands):")
@@ -487,17 +521,22 @@ def main():
         total_aggregates['escalation_sec'],
     ])
 
+    total_task_count = len(all_results)
+
     categories = [
-        ('① Generation (real work)', total_aggregates['generation_sec']),
-        ('② Handoff wait (queue)', total_aggregates['handoff_sec']),
-        ('③ Gunshi QC', total_aggregates['qc_sec']),
-        ('④ Rework (fail→pass)', total_aggregates['rework_sec']),
-        ('⑤ Escalation', total_aggregates['escalation_sec']),
+        ('① Generation (real work)', 'generation_sec'),
+        ('② Handoff wait (queue)', 'handoff_sec'),
+        ('③ Gunshi QC', 'qc_sec'),
+        ('④ Rework (fail→pass)', 'rework_sec'),
+        ('⑤ Escalation', 'escalation_sec'),
     ]
 
-    for name, seconds in categories:
+    for name, key in categories:
+        seconds = total_aggregates[key]
+        measured = total_aggregates[MEASURED_KEY[key]]
         pct = (seconds / total_seconds * 100) if total_seconds > 0 else 0
-        print(f"{name:30s}: {seconds:8.1f}s ({pct:6.1f}%)")
+        display = format_measurement(seconds, measured, total_task_count, label='tasks')
+        print(f"{name:30s}: {display:40s} (share of measured total: {pct:5.1f}%)")
 
     print("-" * 60)
     print(f"{'Total measured time':30s}: {total_seconds:8.1f}s (100.0%)")
@@ -522,11 +561,16 @@ def main():
     print("-" * 60)
     for cmd_id in sorted(k for k in cmd_aggregates.keys() if k):
         agg = cmd_aggregates[cmd_id]
-        print(f"{cmd_id}: {agg['count']} tasks, "
-              f"gen={agg['generation_sec']:.0f}s, "
-              f"wait={agg['handoff_sec']:.0f}s, "
-              f"qc={agg['qc_sec']:.0f}s, "
-              f"rework={agg['rework_sec']:.0f}s")
+        denom = agg['count']
+        gen_d = format_measurement(agg['generation_sec'], agg['generation_measured'], denom, decimals=0)
+        wait_d = format_measurement(agg['handoff_sec'], agg['handoff_measured'], denom, decimals=0)
+        qc_d = format_measurement(agg['qc_sec'], agg['qc_measured'], denom, decimals=0)
+        rework_d = format_measurement(agg['rework_sec'], agg['rework_measured'], denom, decimals=0)
+        print(f"{cmd_id}: {denom} tasks, "
+              f"gen={gen_d}, "
+              f"wait={wait_d}, "
+              f"qc={qc_d}, "
+              f"rework={rework_d}")
 
 if __name__ == '__main__':
     main()
