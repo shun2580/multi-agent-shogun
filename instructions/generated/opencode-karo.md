@@ -893,9 +893,12 @@ Note: This replaces the need for inbox_write to shogun. ntfy goes directly to Lo
 
 `instructions/shogun.md`「省力化3点セット」節で制定された3点の実務手順を定める。
 **適用対象は将軍配下で完結する自律実行cmdのみ**——shogun.md記載の適用線引き
-（go-harvester等レビュー依頼／Fable裁定案件／緊急・実害進行中の事象）は
-本節の全ルールに優先し、当該cmdは`reporting_mode`の値に関わらず常に従来どおり
-（`verbose`相当）でntfy送信する。
+（go-harvester等レビュー依頼／裁定案件〈Fable経由・殿直接いずれも〉／緊急・
+実害進行中の事象）は本節の全ルールに優先し、当該cmdは`reporting_mode`の値に
+関わらず常に従来どおり（`verbose`相当）でntfy送信する。
+（制定時(cmd_136)は殿の裁定がFable経由で届いていた時期であり「Fable裁定案件」
+という字面が残っていたが、趣旨は経路を問わず「裁定案件＝統治事項」である。
+cmd_157で経路非依存の表現へ是正した。詳細はshogun.md「🔴適用線引き」節参照）
 
 #### (1) 報告の例外ベース化 — reporting_mode分岐
 
@@ -934,6 +937,18 @@ Step 11.7「cmd Completion Check」の判定に以下を追加する:
   （軍師QC PASSに加えて必須。どちらか一方ではなく両方）。
 - 合否装置が存在しないtaskは従来どおり軍師QC PASSのみで`done`と判定する。
 - 「機械検証があるのに実行/合格を確認していない」状態を`done`と呼ぶことを禁ずる。
+
+#### (4) 工程別内訳(phase-breakdown)報告の集約化（cmd_156 2026-08-08制定）
+
+`scripts/analyze_timing.py --phase-breakdown`(裁定待ち/QC往復/実行の工程別時間内訳)の
+**個別cmdごとの報告は不要**である。毎cmd報告に載せると殿の注意を無駄に食う——本節冒頭
+「報告の例外ベース化」の趣旨に沿う。
+
+評価は`mandate/verifiers.md`「工程別内訳（phase-breakdown）の評価条件（cmd_156）」節が
+定める件数条件(**約10cmd分のデータ蓄積**、暦日期限なし)を満たした時点でまとめて行う。
+条件充足に気づく場所は`mandate/verifiers.md`同節に集約する(軍師・家老が日常的に参照する
+機械検証基準集約先)。cmd_155実測値(裁定待ち463s/実行241s/QC往復958s)は初期サンプルとして
+同節に保持されている(出典: 殿の2026-08-08裁定・cmd_156)。
 
 #### 介入記録（殿の介入が実際に発生した事象の記録）
 
