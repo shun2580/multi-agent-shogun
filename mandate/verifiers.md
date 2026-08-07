@@ -67,17 +67,19 @@
 - `mandate/approval_queue.md`
 - `dashboard.md`
 
-**実測値（2026-08-08時点・subtask_155_AB完了直前に最終再実測）**:
+**実測値（2026-08-08時点・subtask_155_AB2完了直前に最終再実測。旧値49はashigaru1の
+自己言及インフレを見落としていた誤りだったため訂正した。詳細は
+`queue/reports/ashigaru1_report.yaml` task_id: subtask_155_AB2を参照）**:
 
 | ファイル | 件数 |
 |---|---|
 | queue/shogun_to_karo.yaml | 20 |
-| queue/reports/ashigaru*_report.yaml（合算） | 17（ashigaru1=9・ashigaru2=8・ashigaru3〜7=0） |
-| queue/reports/gunshi_report.yaml | 5 |
+| queue/reports/ashigaru*_report.yaml（合算） | 34（ashigaru1=26・ashigaru2=8・ashigaru3〜7=0） |
+| queue/reports/gunshi_report.yaml | 7 |
 | mandate/decisions_journal.md | 5 |
 | mandate/approval_queue.md | 1 |
 | dashboard.md | 1 |
-| **合計** | **49** |
+| **合計** | **68** |
 
 **自己言及による水増しの既知の限界**: 本節・decisions_journal.mdの本cmd自身のRULEエントリが
 検出規則を説明する際に`原則1`・`原則12`を**パターンの例示文字列**として含んでいるため、これらは
@@ -85,6 +87,20 @@
 decisions_journal.mdの1行に自己言及3件が含まれる。他ファイルは対象外のため影響なし）。
 検出規則はリテラル文字列一致という単純な設計であり、文脈判定（実引用か例示かの区別）は
 行わない。数字を良く見せるための除外はしていない——むしろ限界を明示する。
+
+**この限界はdecisions_journal.mdに固有の現象ではない（cmd_155-AB2是正）**: 判断引用の
+検出規則そのものを説明・分析する文書は、書き終えた時点で自分自身の被引用数が測定時点より
+増加する。これは`queue/reports/ashigaru*_report.yaml`群・`queue/reports/gunshi_report.yaml`にも
+等しく起こりうる（判断引用の集計や品質チェック結果を報告本文中で論じるため）。実例:
+subtask_155_ABの完了報告（`ashigaru1_report.yaml`）はA-4実測値としてashigaru1自身=9件と
+記載したが、`gunshi_qc_155_AB`が同一grepコマンドを独立再実行したところ実際には18件だった
+（報告書執筆によって`judgment_model`原則1・原則12への言及が増えたため）。さらにその
+QC結果自身（`gunshi_report.yaml` task_id: gunshi_qc_155_AB、issue説明文中に「原則1・原則12」の
+言及を含む）が`gunshi_report.yaml`の被引用数を5→7へ押し上げた（cmd_155-AB2是正時点で
+確認）。したがって、この検出規則を扱う6走査対象ファイルはいずれも自己言及インフレの
+対象になりうると理解し、**運用ルールの記帳・QC結果・完了報告いずれも、確定後の状態で
+最終再実測してから数値を報告すること**（測定した時点の値をそのまま報告に転記すると、
+報告本文の追記自体によって直後に陳腐化する）。
 
 月次集計は`scripts/analyze_timing.py --lord-judgments`（殿の判断回数）とは別軸であり、
 本節の`grep -oE`手順は原則引用回数専用（既存の月次集計コマンドに統合していない。理由:
