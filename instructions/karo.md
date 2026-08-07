@@ -893,9 +893,12 @@ Note: This replaces the need for inbox_write to shogun. ntfy goes directly to Lo
 
 `instructions/shogun.md`「省力化3点セット」節で制定された3点の実務手順を定める。
 **適用対象は将軍配下で完結する自律実行cmdのみ**——shogun.md記載の適用線引き
-（go-harvester等レビュー依頼／Fable裁定案件／緊急・実害進行中の事象）は
-本節の全ルールに優先し、当該cmdは`reporting_mode`の値に関わらず常に従来どおり
-（`verbose`相当）でntfy送信する。
+（go-harvester等レビュー依頼／裁定案件〈Fable経由・殿直接いずれも〉／緊急・
+実害進行中の事象）は本節の全ルールに優先し、当該cmdは`reporting_mode`の値に
+関わらず常に従来どおり（`verbose`相当）でntfy送信する。
+（制定時(cmd_136)は殿の裁定がFable経由で届いていた時期であり「Fable裁定案件」
+という字面が残っていたが、趣旨は経路を問わず「裁定案件＝統治事項」である。
+cmd_157で経路非依存の表現へ是正した。詳細はshogun.md「🔴適用線引き」節参照）
 
 #### (1) 報告の例外ベース化 — reporting_mode分岐
 
