@@ -26,6 +26,18 @@ ID | 日付 | 操作内容 | 理由 | doubt: 承認判断のために見るべ�
 明示判断があった場合のみ。実務手順は`instructions/shogun.md`・`instructions/karo.md`の
 陣仕舞い手順を参照。
 
+**殿の判断回数の計測(cmd_155)**: エントリの状態欄を`pending`→`approved`または`pending`→
+`rejected`へ更新する際は、その場で必ず以下を実行せよ(既存の`scripts/log_timing_event.sh`の
+拡張・新規計測機構は不要):
+
+```
+bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
+  --source=<agent> --extra=approval_queue_approved:<AQ-ID>
+```
+
+却下時は`--extra=approval_queue_rejected:<AQ-ID>`とする。検出規則・工程定義の全体像は
+`mandate/verifiers.md`を参照。
+
 ---
 
 ## 本サブタスク時点の状態

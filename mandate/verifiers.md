@@ -54,6 +54,42 @@
   改行区切り複合・コマンド置換を見逃していた分類器がcmd_152のQCと
   194件再スキャンをいずれも通過した実例)。
 
+## 原則引用回数の検出規則（cmd_155）
+
+**検出規則**: `judgment_model.md`の原則が明示的に引用された回数は、リテラル文字列パターン
+`原則\d+`（例:「原則1」「原則12」）への正規表現一致件数として数える（`grep -oE '原則[0-9]+' <file> | wc -l`）。
+
+**走査対象ファイル群**:
+- `queue/shogun_to_karo.yaml`
+- `queue/reports/ashigaru*_report.yaml`（全足軽分の合算）
+- `queue/reports/gunshi_report.yaml`
+- `mandate/decisions_journal.md`
+- `mandate/approval_queue.md`
+- `dashboard.md`
+
+**実測値（2026-08-08時点・subtask_155_AB完了直前に最終再実測）**:
+
+| ファイル | 件数 |
+|---|---|
+| queue/shogun_to_karo.yaml | 20 |
+| queue/reports/ashigaru*_report.yaml（合算） | 17（ashigaru1=9・ashigaru2=8・ashigaru3〜7=0） |
+| queue/reports/gunshi_report.yaml | 5 |
+| mandate/decisions_journal.md | 5 |
+| mandate/approval_queue.md | 1 |
+| dashboard.md | 1 |
+| **合計** | **49** |
+
+**自己言及による水増しの既知の限界**: 本節・decisions_journal.mdの本cmd自身のRULEエントリが
+検出規則を説明する際に`原則1`・`原則12`を**パターンの例示文字列**として含んでいるため、これらは
+実際の判断引用ではないが正規表現一致としてカウントされる（本走査対象6ファイル中では
+decisions_journal.mdの1行に自己言及3件が含まれる。他ファイルは対象外のため影響なし）。
+検出規則はリテラル文字列一致という単純な設計であり、文脈判定（実引用か例示かの区別）は
+行わない。数字を良く見せるための除外はしていない——むしろ限界を明示する。
+
+月次集計は`scripts/analyze_timing.py --lord-judgments`（殿の判断回数）とは別軸であり、
+本節の`grep -oE`手順は原則引用回数専用（既存の月次集計コマンドに統合していない。理由:
+原則引用はtiming_eventsに記録されるイベントではなく、既存文書への静的走査でのみ検出可能）。
+
 ## ntfyトピックローテーション完全手順（cmd_150）
 
 **選定理由**: 本ファイル冒頭の運用規則（機械的な手順は判断原則ではなく具体項目として

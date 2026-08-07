@@ -20,6 +20,18 @@
 書けない場合は2列とも省略し従来どおり5フィールドのまま記帳せよ(片方だけ埋める運用は禁止。
 既存エントリへの遡及追記も不要)。
 
+**殿の判断回数の計測(cmd_155)**: 種別`RULE`または`REJECT`のエントリを本ファイルへ追記する際は、
+その場で必ず以下を実行せよ(既存の`scripts/log_timing_event.sh`の拡張・新規計測機構は不要):
+
+```
+bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
+  --source=<agent> --extra=journal_rule:<一行要約>
+```
+
+REJECT型の場合は`--extra=journal_reject:<一行要約>`とする。CORRECT型エントリ(殿の裁定を
+伴わない自己訂正)はこのトリガーの対象外とする(殿の判断回数を水増ししないため)。検出規則・
+工程定義の全体像は`mandate/verifiers.md`を参照。
+
 **🔴初期データに関する注記**: 以下のQ1〜Q19は cmd_145 の指示に基づき、Fable(claude.ai側Claude)
 の裁定書から転記した初期データである。「殿の発言」欄はいずれも**Fableの裁定文からの逐語引用**
 であり、殿本人の発言ではない。Fableは殿より裁定権限を委任された対外の裁定者であり、本システムに
@@ -104,3 +116,5 @@
 2026-08-05 | RULE | cmd_138フィーチャーフリーズの解除 | 「cmd_138凍結の解除。監査議題6件の裁定・記帳完了をもって目的達成。」 | 出典: `queue/shogun_to_karo.yaml` cmd_150 command【C】節、殿の2026-08-05裁定。cmd_144で提起された監査議題6件の裁定・記帳（cmd_147・cmd_149・cmd_150にわたる）完了をもって、cmd_138フィーチャーフリーズの目的を達成したと認定する。凍結解除後の建造キュー（優先順・共通条件つき）の整備はdashboard.md側で家老が別途実施する（本journal記帳は範囲外）。
 
 2026-08-05 | CORRECT | cmd_153: cmd_152分類器の穴(改行区切り複合・コマンド置換)を将軍実機検証で発見 | 「原因: `_DANGER_CHARS_RE = re.compile(r"[><;|&]")` に改行が含まれず、コマンド置換($()・バッククォート)も検出しない。Bashでは改行は`;`と同じコマンド区切りである。」 | 出典: `queue/shogun_to_karo.yaml` cmd_153 command(将軍記、2026-08-05実機検証)。cmd_152は軍師QCおよび反転194件の危険部分文字列再スキャンをいずれも通過していたが、これは「既存ログに危険な形の混入が無い」ことを示したに過ぎず「分類器が敵対的入力に対して安全」であることは示していなかった(judgment_model原則1: 観測失敗と否定的観測の同一視、の適用例。標本に無いことと有り得ないことは別物)。上流`IRREVERSIBLE_BASH`の`file_delete`パターン`(^|[;&|]\s*)rm\s`も`re.MULTILINE`欠落により同型の欠陥を持っていたが、これはcmd_152起因ではなく既存欠陥である(対照的に`git push`等の`\b`アンカーのみのパターンは改行複合でも構造的に捕捉される)。是正=`scripts/pretooluse_reversibility_check.sh`の`_DANGER_CHARS_RE`拡張(改行・`$(`・バッククォート追加)+`file_delete`パターンへの`re.MULTILINE`とアンカー文字集合拡張+`external_send`パターンのバックスラッシュ行継続対応+敵対的回帰テスト8形新設(`tests/unit/test_pretooluse_reversibility_check.bats`)。検証手法の限界は`mandate/verifiers.md`へ追記済み。Part4はobserve維持のまま(実害は出ていない)。
+
+2026-08-08 | RULE | cmd_155 A/B: 原則引用検出規則+工程別時間内訳(裁定待ち/QC往復/実行)の境界定義(家老の設計決定) | 「「明示的に引かれた」の検出規則(どの文字列パターンを引用と数えるか、どのファイル群を走査対象とするか)を家老が定め、**明文化せよ**。曖昧なまま数えた数字は使えぬ。」「3工程の境界(どのイベントからどのイベントまでを各工程と定義するか)を家老が定め、**定義を明文化せよ**。定義なき数字は解釈できぬ。」 | 出典: `queue/shogun_to_karo.yaml` cmd_155 command【A. 殿の判断回数の計測(項目1)】節・【B. 工程別の時間内訳(項目2)】節。検出規則: リテラル文字列パターン`原則\d+`(例:「原則1」「原則12」)への正規表現一致、走査対象=`queue/shogun_to_karo.yaml`・`queue/reports/ashigaru*_report.yaml`・`queue/reports/gunshi_report.yaml`・`mandate/decisions_journal.md`・`mandate/approval_queue.md`・`dashboard.md`(明文化先: `mandate/verifiers.md`「原則引用回数の検出規則(cmd_155)」節)。工程境界3定義: ①実行=同一task_idの`agent_started`→`report_submitted`経過時間をcmd内全task_idで合算、②QC往復=同一cmd_id内で`report_submitted`後の次の`assigned`/`redo_dispatched`/`cmd_done`いずれかまでの経過時間の合算、③裁定待ち=`cmd_received`から当該cmdの最初の`assigned`までの経過時間(同一cmd_idに`lord_judgment_recorded`が存在する場合は承認待ち区間の参考値として併記可)。計測できない工程は0秒や「該当なし」へ潰さずunknownとして分離表示する(judgment_model原則1)。実装は`scripts/analyze_timing.py`への`--lord-judgments`/`--phase-breakdown`モード追加のみで行い、新規計測機構は建造していない。
