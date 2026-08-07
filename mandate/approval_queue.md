@@ -120,3 +120,21 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   queue/shogun_to_karo.yaml cmd_154。家老の独立走査結果はsubtask_154bで確認済み)
   備考: subtask_154cにてpush直前再実測(7件→9件に増加、cmd_154分2件が追加)・検算のうえ
   approvedへ更新し、push実行に至った。
+
+- ID: AQ-004 | 日付: 2026-08-08 | 操作内容: 新原則「記述の強制力は実装の実態を超えて謳わない
+  (fail-loudの逆を文書上つくらない)」のjudgment_model.mdへの追加承認申請 |
+  理由: 週次蒸留(cmd_155-D、初回実行)にてdecisions_journal.md 2026-08-05 RULEエントリ
+  「cmd_144議題1: restart_watchers.sh建造可否」から抽出。殿本人の発言(原文ママ)「実際より
+  強い強制力を謳う記述はfail-loudの逆」が根拠。実例: `.claude/settings.json`のkill系denyは
+  Bashツール最上位コマンド文字列への前方一致のみで、スクリプト内部で呼ばれるkillは検査対象外
+  であるにもかかわらず、当時のCLAUDE.md D006記述は実態より強い保証を謳っていた(是正済み:
+  本リポジトリCLAUDE.md冒頭近く「Note on D006 enforcement scope」節)。原則5「サイレントな
+  変更よりfail-loudを優先する」はコード側の挙動(拒否+理由提示の有無)を扱うが、本件は
+  文書・記述側が実際の防御力を過大に謳うことの害を指摘しており対象が異なる(原則5=コードの
+  沈黙、本件=文書の誇張) |
+  doubt: (a) 原則5への出典追加(統合型)で足りるか、独立した新原則として立てるべきか——
+  コード挙動と文書記述という対象の違いをどれだけ重視するかで判断が分かれる。
+  (b) 本件は現時点で単一事例(cmd_144議題1)のみであり、他事例での再現は未確認。
+  weekly_distill.mdが警告する「偽陽性の原則化(実運用で実証されていない仮説)」リスクに
+  該当しないか、追加事例の蓄積を待つべきか、殿の判断を仰ぐ |
+  状態: pending
