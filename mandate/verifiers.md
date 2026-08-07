@@ -106,6 +106,29 @@ QC結果自身（`gunshi_report.yaml` task_id: gunshi_qc_155_AB、issue説明文
 本節の`grep -oE`手順は原則引用回数専用（既存の月次集計コマンドに統合していない。理由:
 原則引用はtiming_eventsに記録されるイベントではなく、既存文書への静的走査でのみ検出可能）。
 
+## 工程別内訳（phase-breakdown）の評価条件（cmd_156）
+
+`scripts/analyze_timing.py --phase-breakdown`(裁定待ち/QC往復/実行の工程別時間内訳、
+検出規則・境界定義は本ファイル「原則引用回数の検出規則」節に隣接するcmd_155該当RULE
+エントリ〔`mandate/decisions_journal.md`〕を参照)の評価は、**「約10cmd分のデータ
+蓄積」という件数条件**を満たした時点で行う。🔴**暦日期限は設けない**
+(`judgment_model.md`原則4: 交通量と無関係な代理指標を避ける、の適用)。個別cmdごとの
+工程内訳報告は不要——評価はデータが十分溜まってからまとめて行う(出典: 殿の
+2026-08-08裁定・cmd_156。個別cmd報告不要の反映先は`instructions/karo.md`「省力化3点
+セット運用」節)。
+
+**初期サンプル(cmd_155実測値・消去禁止)**:
+
+| 工程 | 実測値 |
+|---|---|
+| 裁定待ち | 463s |
+| 実行 | 241s |
+| QC往復 | 958s |
+
+出典: `queue/shogun_to_karo.yaml` cmd_155 acceptance_criteria、`scripts/analyze_timing.py
+--phase-breakdown`実測(cmd_155時点)。件数条件(約10cmd分)を満たすまでは本値を初期
+サンプル1件として保持する。
+
 ## ntfyトピックローテーション完全手順（cmd_150）
 
 **選定理由**: 本ファイル冒頭の運用規則（機械的な手順は判断原則ではなく具体項目として
