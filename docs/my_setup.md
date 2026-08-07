@@ -213,3 +213,49 @@ ntfy（無料のプッシュ通知サービス）を導入することで、cmd�
 
 **異なるCLI間の通信プロトコル統合**
 Claude Code・Gemini CLI・OpenCode はそれぞれ異なるインターフェースを持つ。「inbox3」という短い起動シグナルは Claude Code しか解釈できないため、inbox_watcher.sh でエージェントのCLI種別を判定し、非Claudeエージェントには明示的なタスク指示文を生成して送信・inbox の自動既読処理を行う仕組みを実装した。これにより異種CLIを同一パイプラインで統一的に稼働させることが可能になった。
+
+---
+
+## 現在の環境の状態（2026-08-05時点・Fable追記）
+
+> 本節が現況の正。上部の「コスト構成」（OpenRouter/Ollama記載）・「構築環境」（Gemini CLI / OpenCode現役記載）は旧構成の歴史記録であり、現在はフリート全Claude化済み（cmd_070/075）。Ollama・OpenCode一式は休眠温存（削除禁止、opencode修正版リリース時に設定1行で再開可）。
+
+### 布陣（config/settings.yaml 準拠）
+
+| エージェント | モデル | 備考 |
+|---|---|---|
+| 将軍 | claude-opus-5 (effort: high) | Opus維持は意図的な設計判断 |
+| 家老・軍師 | claude-sonnet-5 (effort: high) | cmd_109でeffort明示（暗黙継承事故予防） |
+| 足軽1〜5 | claude-sonnet-5 (effort: high) | Sonnet帯5席化（cmd_145 Part1a, 2026-08-04殿裁定） |
+| 足軽6/7 | claude-haiku-4-5-20251001 | 軽量枠 |
+
+- **Sonnet×5＋Haiku×2** が現行ロースター。cmd_133のSonnet帯4席化（足軽3/4昇格）を経て、cmd_145 Part1aで足軽5を追加昇格（席1-5/6-7の連続性維持）。
+- 注意: 足軽5のconfig反映は2026-08-04実施済みだが**次回出陣（shutsujin_departure.sh）後に有効**。追記時点で出陣未実施なら実プロセスはHaikuのまま（`ps aux`で要実測確認）。
+
+### 有効なfeature flags（settings.yaml）
+
+| flag | 値 | 根拠 |
+|---|---|---|
+| yaml_guard_enabled | **enforce** | cmd_135（2026-07-29）。Fable裁定Q6の4条件（評価141件・出陣2回跨ぎ・偽would-deny 0・fail-open 0）充足確認後に移行。反復deny警報（cmd_134工程2）併設済み |
+| reporting_mode | **exception** | cmd_136 省力化3点セット。正常完了はdashboard記録のみ、ntfyは失敗・ブロック・caveat付き完了・殿裁定要・警報のみ。常時ntfy対象の適用除外: go-harvesterレビュー / Fable裁定案件 / 緊急実害進行中 |
+| stall_detection_enabled | true | cmd_143（2026-07-31）殿裁可。observe段なしで直接有効化 |
+| deadman_enabled | true | cmd_092。停滞警報v1（閾値20分）。精度レビューのチェックポイント待ち |
+| scope_check_advisory | true | advisory記録のみ継続。enforcement移行判断はデータ蓄積待ち |
+| fastlane_enabled | true | cmd_086 Part C。誤判定1件で家老がfalseへ戻す暫定運用 |
+| reversibility_check_enabled | **observe** | cmd_145 Part4是正（2026-08-04）で新設。flag不在によりPart4が本番不活性（fail-safe off固定）だった事故の是正。off\|observe二値、未知値は必ずoffへ倒すfail-safe設計 |
+
+その他: urgent_inbox_escalation（cmd_146②、緊急未読120分でエスカレーション。軍師報告3日滞留事案の再発防止）、dashboard_staleness段階的再通知（cmd_146③、360分→720分→1440分間隔）。
+
+### 現行の運用ポリシー
+
+- **省力化3点セット**（cmd_136）: 例外ベースntfy通知 / commit承認のセッション末バッチ化 / 「完了」の定義=機械検証＋QC pass
+- 直近の障害対応セッション（Fable裁定Q1〜Q19）で、busy判定の三値化（idle/busy/unknown・失敗モード時は安全側default）、slim_yaml.pyロード経路のfail-loud化、deadman/watcherのセッションライフサイクル死問題の切り分けなどを実施済み
+- 再発バグ族の命名: 「観測失敗と否定的観測の混同」「表示と実態の乖離」（cmd_116/128/133/145で同族事例を記録）
+
+### 保留・次回以降の判断待ち
+
+- 全システム監査: 殿のfeature freeze宣言後に実施（次回セッション以降）
+- Sonnet×5＋Haiku×2ロースターの稼働評価
+- scope_check.sh の advisory→enforcement 移行判断（データ蓄積待ち）
+- deadman警報の精度レビュー
+- 検討中（影武者記事きっかけ・未着手）: ①承認ゲート分岐基準を「外向き/内向き」から「可逆/不可逆」軸へ引き直し ②「実装前確認」から「実装後検証→通知」への寄せ。いずれも reversibility_check（observe）と write-guard enforce の実績データが揃ってから着手
