@@ -148,3 +148,49 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   観測された場合」**であり、それ以前の機構の先回り建造(検知スクリプト・照合バッチ・
   リマインダの類)は禁ずる(原則14〔出典Q18〕の運用=観測が先・機構は事実の後)。
   判断理由の記帳: `mandate/decisions_journal.md`(2026-08-08付RULEエントリ)を参照。
+
+- ID: AQ-005 | 日付: 2026-08-08 | 操作内容: 未push commit群(3件、提示直前に
+  `git fetch origin main`実行後`git log origin/main..HEAD --oneline | wc -l`で
+  再実測、2026-08-08)のリモート(origin https://github.com/shun2580/multi-agent-shogun.git)
+  へのpush |
+  理由: cmd_157の陣仕舞いに伴い、pushは「戻せない操作」としてapproval_queue経由の
+  承認待ちとする(cmd_145 Part3の運用に従う) |
+  doubt: (a) 対象ブランチ: `main`(`git branch --show-current`実測)。
+  (b) commit範囲(提示直前・`git fetch origin main`実行後に再実測、2026-08-08): 3件。
+  最古`3bf2dbd`(chore(cmd_157 subtask_157_A2): regenerate instructions from updated
+  source templates)〜最新`ab3a72d`(fix(cmd_156 subtask_156_B): stop --phase-breakdown
+  from showing unmeasurable timing as 0.0s)。内訳: cmd_156(1件: ab3a72d)・
+  cmd_157(2件: 3bf2dbd, 1d94b07)。合計検算: 1+2=3件、総数3件と一致(足軽3号が
+  subtask_157_C着手時点で自ら再実測・検算済み)。3件全件は
+  `git log origin/main..HEAD --oneline --reverse`で再現可能。本サブタスク
+  (subtask_157_C)自身が積むcommit、および並行実施中のsubtask_157_Bのcommitは
+  この実測後に発生するため件数に含まれない(pending中に増加し得る)。
+  (c) 公開されて困る内容の有無: 本エントリ起票時点では未走査。AQ-002/AQ-003に倣い、
+  push承認確定・実行の直前に改めて再実測のうえ走査する運用とする(本3件はmandate層の
+  記帳・instructions再生成・スクリプト是正のみで、新規の秘匿設定ファイル追加は無い) |
+  状態: pending
+  備考: 殿の明示許可により2026-08-09(明日)のキュー消化まで持ち越し(原文:
+  「未push分はapproval_queueへ積み、pendingのまま明日へ持ち越すことを明示的に許可する。
+  明日のキュー消化で判断する。」出典: queue/shogun_to_karo.yaml cmd_157)。
+
+  【参考記録・01:53:40 push事件(確定事実・C-3)】2026-08-08 01:53:40、
+  `origin/main`が`bb07740`→`f8b31bc`へpushされ、cmd_155(5件)・cmd_156(2件)の
+  agent commit計7件(押し出したcommit`f8b31bc`自身を含む範囲`bb07740..f8b31bc`は
+  合計8commit)が、approval_queueの承認を経ずに公開された。押し出したcommitは
+  `f8b31bc`(docs: my_setup.mdに現在の環境状態のスナップショットを追記
+  （2026-08-05時点）、01:53:31 commit)である。**実行者は殿ご自身であることを
+  殿ご自身が明示確認された(2026-08-08)。これは推定ではなく確定事実として記録する**
+  (将軍が`.git/logs/refs/remotes/origin/main`で当初検出した事実に、殿ご自身の
+  確認が加わったもの)。**副作用(agent commit 7件が承認キューを経ずに公開されたこと)
+  についても、殿の裁定により「押した本人が承認者ゆえ問題なし」とされており、
+  規律違反(無断push等)として扱わない。** 本エントリ(c)の未走査は上記7件の
+  内容とは無関係(それらは別途cmd_157【C.追加御下命】により家老が
+  `bb07740..f8b31bc`を実走査し`queue/reports/karo_report.yaml`へ記録する)。
+  なお本エントリのcommit範囲が3件と小さいのは、この直接pushにより従来の
+  未push分の大半が既に反映されたためである。
+  実在確認(足軽3号 subtask_157_C・2026-08-08実施): `.git/logs/refs/remotes/origin/main`
+  に該当update行(`bb07740b65254a9ec069750777020448527ce9ed f8b31bcddc1adaf1af9a1d8ca0d326d9d4a85c66`、
+  UNIXタイムスタンプ`1786121620`=`date -d @1786121620`で2026-08-08 01:53:40 +0900と
+  一致確認)を確認。`git log bb07740..f8b31bc --oneline --reverse`で該当8commit
+  (fb48171, ad5abcf, 35e10b1, c502b10, eed78fe, c8a28af, 4ea9408, f8b31bc)を
+  確認済み。
