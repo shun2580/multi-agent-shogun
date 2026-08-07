@@ -237,7 +237,178 @@ def verify_consistency(all_results: List[Dict], wallclock_per_task: Dict) -> Tup
     else:
         return True, "All tasks: measured categories sum ≈ wall-clock time ✓"
 
+def run_lord_judgments(month_filter: Optional[str] = None):
+    """
+    cmd_155 A-3: monthly aggregation of 'lord_judgment_recorded' events,
+    broken down by extra-field prefix (approval_queue_approved/rejected,
+    journal_rule/journal_reject).
+    """
+    events = read_events('logs/timing_events.jsonl')
+    judgments = [e for e in events if e.get('event') == 'lord_judgment_recorded']
+
+    if month_filter:
+        judgments = [e for e in judgments if e.get('ts', '')[:7] == month_filter]
+
+    by_month = defaultdict(lambda: defaultdict(int))
+    for e in judgments:
+        month = e.get('ts', '')[:7] or 'unknown'
+        extra = e.get('extra') or ''
+        prefix = extra.split(':', 1)[0] if extra else 'unlabeled'
+        by_month[month][prefix] += 1
+
+    print("=" * 60)
+    print("Lord Judgment Count (monthly)")
+    print("=" * 60)
+    print()
+    print(f"Total lord_judgment_recorded events: {len(judgments)}")
+    if month_filter:
+        print(f"(filtered to month={month_filter})")
+    print()
+
+    if not judgments:
+        print("No lord_judgment_recorded events found.")
+        return
+
+    for month in sorted(by_month.keys()):
+        prefixes = by_month[month]
+        total = sum(prefixes.values())
+        print(f"{month}: {total} 件")
+        for prefix in sorted(prefixes.keys()):
+            print(f"  {prefix:30s}: {prefixes[prefix]}")
+    print()
+
+
+def run_phase_breakdown(cmd_filter: Optional[str] = None):
+    """
+    cmd_155 B: per-cmd elapsed time for 3 phases (裁定待ち / QC往復 / 実行).
+    Unmeasurable segments are reported as 'unknown', never silently zeroed
+    (judgment_model 原則1).
+    """
+    events = read_events('logs/timing_events.jsonl')
+
+    by_cmd = defaultdict(list)
+    for e in events:
+        cid = e.get('cmd_id')
+        if cid:
+            by_cmd[cid].append(e)
+
+    cmd_ids = [cmd_filter] if cmd_filter else sorted(by_cmd.keys())
+
+    print("=" * 60)
+    print("Phase Breakdown (裁定待ち / QC往復 / 実行)")
+    print("=" * 60)
+    print()
+
+    total_instances = 0
+    total_unknown = 0
+
+    for cmd_id in cmd_ids:
+        cmd_events = sorted(by_cmd.get(cmd_id, []), key=lambda e: timestamp_to_seconds(e['ts']))
+        if not cmd_events:
+            print(f"{cmd_id}: no events found")
+            print()
+            continue
+
+        # --- 裁定待ち: cmd_received -> first assigned (any task_id) ---
+        received = [e for e in cmd_events if e['event'] == 'cmd_received']
+        assigned = [e for e in cmd_events if e['event'] == 'assigned']
+        waiting_sec = None
+        if received and assigned:
+            received_sec = timestamp_to_seconds(received[0]['ts'])
+            after = [timestamp_to_seconds(e['ts']) for e in assigned
+                     if timestamp_to_seconds(e['ts']) >= received_sec]
+            if after:
+                waiting_sec = min(after) - received_sec
+
+        lord_events = [e for e in cmd_events if e['event'] == 'lord_judgment_recorded']
+
+        # --- 実行: per task_id, agent_started -> report_submitted, summed ---
+        task_ids = sorted({e.get('task_id') for e in cmd_events if e.get('task_id')})
+        exec_total_sec = 0.0
+        exec_measured = []
+        exec_unknown = []
+        for tid in task_ids:
+            starts = [timestamp_to_seconds(e['ts']) for e in cmd_events
+                      if e.get('task_id') == tid and e['event'] == 'agent_started']
+            subs = [timestamp_to_seconds(e['ts']) for e in cmd_events
+                    if e.get('task_id') == tid and e['event'] == 'report_submitted']
+            matched = False
+            if starts and subs:
+                start_sec = min(starts)
+                candidates = [s for s in subs if s >= start_sec]
+                if candidates:
+                    exec_total_sec += (min(candidates) - start_sec)
+                    exec_measured.append(tid)
+                    matched = True
+            if not matched:
+                exec_unknown.append(tid)
+
+        # --- QC往復: each report_submitted -> next assigned/redo_dispatched/cmd_done ---
+        report_events = [e for e in cmd_events if e['event'] == 'report_submitted']
+        qc_total_sec = 0.0
+        qc_measured_count = 0
+        qc_unknown_count = 0
+        for re_event in report_events:
+            r_sec = timestamp_to_seconds(re_event['ts'])
+            nexts = [timestamp_to_seconds(e['ts']) for e in cmd_events
+                     if e['event'] in ('assigned', 'redo_dispatched', 'cmd_done')
+                     and timestamp_to_seconds(e['ts']) > r_sec]
+            if nexts:
+                qc_total_sec += (min(nexts) - r_sec)
+                qc_measured_count += 1
+            else:
+                qc_unknown_count += 1
+
+        # --- unknown-rate bookkeeping (per-cmd, in "measurement instance" units) ---
+        cmd_instances = 1 + len(task_ids) + len(report_events)  # 裁定待ち(1) + 実行(N task) + QC(N report)
+        cmd_unknown = (1 if waiting_sec is None else 0) + len(exec_unknown) + qc_unknown_count
+        total_instances += cmd_instances
+        total_unknown += cmd_unknown
+        cmd_unknown_rate = (cmd_unknown / cmd_instances * 100) if cmd_instances else 0.0
+
+        print(f"{cmd_id}:")
+        if waiting_sec is not None:
+            print(f"  裁定待ち: {waiting_sec:.1f}s")
+        else:
+            print(f"  裁定待ち: unknown (cmd_received または assigned が欠落/不整合)")
+        if lord_events:
+            print(f"    参考: lord_judgment_recorded {len(lord_events)}件 併存")
+
+        print(f"  実行: {exec_total_sec:.1f}s (計測済み task_id: {len(exec_measured)}/{len(task_ids)})")
+        if exec_unknown:
+            print(f"    unknown task_id: {', '.join(exec_unknown)}")
+
+        print(f"  QC往復: {qc_total_sec:.1f}s (計測済み report_submitted: {qc_measured_count}/{len(report_events)})")
+        if qc_unknown_count:
+            print(f"    unknown report_submitted件数: {qc_unknown_count}")
+
+        print(f"  cmd unknown率: {cmd_unknown_rate:.1f}% ({cmd_unknown}/{cmd_instances} instances)")
+        print()
+
+    overall_rate = (total_unknown / total_instances * 100) if total_instances else 0.0
+    print("-" * 60)
+    print(f"全体unknown率: {overall_rate:.1f}% ({total_unknown}/{total_instances} instances)")
+
+
 def main():
+    argv = sys.argv[1:]
+
+    if '--lord-judgments' in argv:
+        month_filter = None
+        for arg in argv:
+            if arg.startswith('--month='):
+                month_filter = arg.split('=', 1)[1]
+        run_lord_judgments(month_filter)
+        return
+
+    if '--phase-breakdown' in argv:
+        cmd_filter = None
+        for arg in argv:
+            if arg.startswith('--cmd='):
+                cmd_filter = arg.split('=', 1)[1]
+        run_phase_breakdown(cmd_filter)
+        return
+
     # Read events
     events = read_events('logs/timing_events.jsonl')
 
