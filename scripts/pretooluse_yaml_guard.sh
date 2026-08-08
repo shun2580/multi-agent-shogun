@@ -26,6 +26,11 @@ NTFY_SCRIPT="${YAML_GUARD_NTFY_SCRIPT:-$SCRIPT_DIR/scripts/ntfy.sh}"
 LOG_FILE="${YAML_GUARD_LOG:-$SCRIPT_DIR/logs/yaml_guard.log}"
 REPO_ROOT="${YAML_GUARD_REPO_ROOT:-$SCRIPT_DIR}"
 TIMING_EVENTS_LOG="${YAML_GUARD_TIMING_LOG:-$SCRIPT_DIR/logs/timing_events.jsonl}"
+# cmd_161 subtask_161_C: affects_runtime宣言タスクのdone拒否チェックで呼ぶ
+# check_runtime_reflection.sh(subtask_161_B成果物)の場所。REPO_ROOTとは独立に
+# 実体のあるSCRIPT_DIRを既定値とする(テストでREPO_ROOTを一時dirへ差し替えても
+# 本チェッカー自体は実スクリプトを指し続けるため)。
+RUNTIME_REFLECTION_SCRIPT="${YAML_GUARD_RUNTIME_REFLECTION_SCRIPT:-$SCRIPT_DIR/scripts/check_runtime_reflection.sh}"
 
 # ─── 反復DENY警報 (cmd_134 工程2) ───
 # 同一ファイル($FILE_PATH)への実DENYが直近10分以内に3件以上発生した場合、
@@ -155,9 +160,110 @@ mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
 
 read -r -d '' PYCODE <<'PYEOF' || true
 import json
+import subprocess
 import sys
 
 import yaml
+
+# cmd_161 subtask_161_C: check_runtime_reflection.sh の絶対パス(argv経由で
+# bash側から渡す。REPO_ROOT差し替えの影響を受けないSCRIPT_DIR基準)。
+RUNTIME_REFLECTION_SCRIPT = sys.argv[1] if len(sys.argv) > 1 else None
+
+
+def deny(reason):
+    print(json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": reason,
+        }
+    }))
+    sys.exit(0)
+
+
+def find_dicts(node):
+    """入れ子構造から全dictを再帰的に列挙する(task直下のフィールドを
+    深さに依らず拾うため)。"""
+    if isinstance(node, dict):
+        yield node
+        for v in node.values():
+            yield from find_dicts(v)
+    elif isinstance(node, list):
+        for item in node:
+            yield from find_dicts(item)
+
+
+def check_affects_runtime_done_gate(docs, file_path):
+    """queue/tasks/*.yamlへのstatus: done遷移のうち、同一task内に
+    affects_runtime: trueが宣言されているものだけを対象に、
+    check_runtime_reflection.shでの反映確認を要求する(cmd_161 Q20(b))。
+    affects_runtime宣言の無いtaskは対象外(従来どおり通過)。"""
+    if "/queue/tasks/" not in file_path.replace("\\", "/"):
+        return
+    for doc in docs:
+        for d in find_dicts(doc):
+            if not isinstance(d, dict):
+                continue
+            if d.get("status") != "done":
+                continue
+            if not d.get("affects_runtime"):
+                continue
+
+            rrc = d.get("runtime_reflection_check")
+            if not isinstance(rrc, dict):
+                deny(
+                    "affects_runtime宣言タスクの反映未確認: "
+                    "runtime_reflection_check宣言(pid_source/search_string)が"
+                    "見つかりません"
+                )
+            pid_source = str(rrc.get("pid_source") or "")
+            search_string = str(rrc.get("search_string") or "")
+            if not pid_source or not search_string:
+                deny(
+                    "affects_runtime宣言タスクの反映未確認: "
+                    "runtime_reflection_check.pid_source/search_stringが空です"
+                )
+
+            if pid_source.isdigit():
+                pid = pid_source
+            else:
+                try:
+                    pgrep_out = subprocess.run(
+                        ["pgrep", "-f", pid_source],
+                        capture_output=True, text=True, timeout=2,
+                    )
+                    pids = [l for l in pgrep_out.stdout.splitlines() if l.strip()]
+                except Exception:
+                    pids = []
+                if len(pids) != 1:
+                    deny(
+                        "affects_runtime宣言タスクの反映未確認: "
+                        f"pid_source='{pid_source}' からPIDを一意に解決できません"
+                        f"(該当{len(pids)}件)"
+                    )
+                pid = pids[0]
+
+            if not RUNTIME_REFLECTION_SCRIPT:
+                deny(
+                    "affects_runtime宣言タスクの反映未確認: "
+                    "check_runtime_reflection.shの場所が未設定です"
+                )
+            try:
+                result = subprocess.run(
+                    ["bash", RUNTIME_REFLECTION_SCRIPT, pid, search_string],
+                    capture_output=True, text=True, timeout=4,
+                )
+                lines = result.stdout.strip().splitlines()
+                verdict = lines[0].strip() if lines else "UNKNOWN"
+            except Exception:
+                verdict = "UNKNOWN"
+
+            if verdict != "REFLECTED":
+                deny(
+                    "affects_runtime宣言タスクの反映未確認"
+                    f"(check_runtime_reflection.sh判定={verdict}, pid={pid}, "
+                    f"search='{search_string}')"
+                )
 
 
 def fail_open(msg):
@@ -205,10 +311,8 @@ try:
     try:
         # safe_load_all(): 単一ドキュメントも1文書ストリームとして通る。
         # ガードの責務は構文であり、スキーマ適合(ドキュメント数・キー構造等)は
-        # 消費者側の責務のため、ここでは全ドキュメントの構文消費のみ行う。
-        for _ in yaml.safe_load_all(simulated):
-            pass
-        sys.exit(0)
+        # 消費者側の責務のため、構文検証自体はここで完結させる。
+        docs = list(yaml.safe_load_all(simulated))
     except yaml.YAMLError as e:
         mark = getattr(e, "problem_mark", None)
         loc = f"line {mark.line + 1}, column {mark.column + 1}" if mark is not None else "unknown location"
@@ -224,6 +328,11 @@ try:
             }
         }))
         sys.exit(0)
+
+    # cmd_161 subtask_161_C: 構文的に妥当なqueue/tasks/*.yamlに限り、
+    # affects_runtime宣言によるdone拒否チェックを実施(該当が無ければ何もしない)。
+    check_affects_runtime_done_gate(docs, file_path)
+    sys.exit(0)
 except SystemExit:
     raise
 except Exception as e:
@@ -233,7 +342,7 @@ PYEOF
 ERR_TMP="$(mktemp)"
 trap 'rm -f "$ERR_TMP"' EXIT
 
-OUTPUT="$(printf '%s' "$INPUT" | timeout 4 "$PYTHON_BIN" -c "$PYCODE" 2>"$ERR_TMP")"
+OUTPUT="$(printf '%s' "$INPUT" | timeout 8 "$PYTHON_BIN" -c "$PYCODE" "$RUNTIME_REFLECTION_SCRIPT" 2>"$ERR_TMP")"
 PY_EXIT=$?
 
 # ─── ログ形式(cmd_121 A-2): 1評価1行・追記型・grep -cで機械集計可能な形式。
