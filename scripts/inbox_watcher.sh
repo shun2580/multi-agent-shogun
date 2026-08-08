@@ -2277,14 +2277,52 @@ else:
     esac
 }
 
-# subtask_158_C が build_fleet_idle_message() の実装で上書きする前提の
-# 暫定プレースホルダ。関数シグネチャ(引数なし・通知本文をstdoutへ)のみ
-# 先に確定させる。既に定義済み(Cが先に完了済み)ならこちらは何もしない。
-if ! type build_fleet_idle_message &>/dev/null; then
-    build_fleet_idle_message() {
-        echo "🈳 全cmd消化・次の下命待ち"
-    }
-fi
+# 通知本文生成 (cmd_158 依頼事項4・subtask_158_C 正式実装)。
+# mandate/approval_queue.mdのAQエントリを走査し、pending系(状態欄に
+# approved/rejectedのいずれも含まないもの)が1件以上あれば件数・ID列挙を
+# 末尾に付記する。引数なし・通知本文をstdoutへ返す規約はプレースホルダから変更なし。
+build_fleet_idle_message() {
+    local prefix="🈳 全cmd消化・次の下命待ち"
+    local aq_file="${SCRIPT_DIR}/mandate/approval_queue.md"
+    local pending_out
+    pending_out=$("$SCRIPT_DIR/.venv/bin/python3" -c "
+import re
+try:
+    with open('${aq_file}', encoding='utf-8') as f:
+        text = f.read()
+except Exception:
+    print('')
+    raise SystemExit(0)
+
+# エントリ境界: 行頭'- ID: AQ-<num>'から次の同パターン(またはEOF)まで。
+entries = list(re.finditer(r'^- ID: (AQ-\d+)', text, re.MULTILINE))
+pending_ids = []
+for i, m in enumerate(entries):
+    aq_id = m.group(1)
+    start = m.end()
+    end = entries[i + 1].start() if i + 1 < len(entries) else len(text)
+    body = text[start:end]
+    status_m = re.search(r'^\s*状態:\s*(.+)\$', body, re.MULTILINE)
+    if status_m is None:
+        continue
+    status_val = status_m.group(1)
+    # 消去法判定(軍師設計注記: approved/rejected以外は全てpending系とみなす。
+    # 将来の状態語彙追加〈例: 'on_hold'等〉で誤判定し得る既知の脆さがある)。
+    if 'approved' not in status_val and 'rejected' not in status_val:
+        pending_ids.append(aq_id)
+print(str(len(pending_ids)) + '\t' + ','.join(pending_ids))
+" 2>/dev/null)
+
+    local pending_count="${pending_out%%$'\t'*}"
+    local pending_ids_csv="${pending_out#*$'\t'}"
+    if [[ "$pending_count" =~ ^[0-9]+$ ]] && [ "$pending_count" -gt 0 ]; then
+        local pending_ids_joined
+        pending_ids_joined=$(echo "$pending_ids_csv" | sed 's/,/, /g')
+        echo "${prefix} approval_queue pending ${pending_count}件(${pending_ids_joined})"
+    else
+        echo "$prefix"
+    fi
+}
 
 # ─── 陣手空き検知→ntfy通知 本体 (cmd_158 依頼事項2) ───
 # 3要素(全ashigaru idle・cmd実行中/queuedなし・全エージェントinbox未読ゼロ)を
@@ -2393,6 +2431,14 @@ except Exception:
 
     local message
     message=$(build_fleet_idle_message)
+
+    # 秘匿値混入防止ガード(多重防御・cmd_158-C): 一次防御は通知文の構成要素に
+    # トピック名・トークンを一切含めない設計そのもの。加えて送信直前にfail-loudな
+    # 簡易パターン検査を行う(cmd_149「トピック名は非git管理ファイル経由のみ」運用との多重防御)。
+    if echo "$message" | grep -qi "ntfy\.sh/\|Bearer \|topic"; then
+        echo "[$(date)] [FLEET-IDLE-NOTIFY] ERROR blocked_possible_secret_leak_in_message" >&2
+        return 0
+    fi
 
     if [ "$mode" = "enforce" ]; then
         bash "${SCRIPT_DIR}/scripts/ntfy.sh" "$message" >&2 || true
