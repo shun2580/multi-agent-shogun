@@ -194,3 +194,160 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   一致確認)を確認。`git log bb07740..f8b31bc --oneline --reverse`で該当8commit
   (fb48171, ad5abcf, 35e10b1, c502b10, eed78fe, c8a28af, 4ea9408, f8b31bc)を
   確認済み。
+
+  【追記・2026-08-08 22:xx・subtask_158_B2(足軽5号・cmd_158緊急封じ込め対応)】
+  起票時点(3件)からcmd_158関連commitが積み増され、commit範囲が変化した。
+  再実測(`git log origin/main..HEAD --oneline`、本追記直前実行): 現在8件。
+  最古`3bf2dbd`(chore(cmd_157 subtask_157_A2))〜最新`1f4b612`
+  (fix(config): untrack settings.yaml again (secret exposure incident,
+  cmd_158))。内訳: 上記(b)記載の3件(cmd_156×1・cmd_157×2)に加え、
+  cmd_157系1件(`ce337af` docs: file AQ-005 ...)・cmd_158系4件
+  (`db0414f`, `1963907`, `c1b4227`, `1f4b612`)が追加。合計検算:
+  3+1+4=8件、`git rev-list --count origin/main..HEAD`実測値8と一致。
+
+  🔴**秘匿値混入の発覚と封じ込め**: 上記8件のうち`1963907`
+  (feat(config): add fleet_idle_notify flags for cmd_158)が、cmd_149で
+  git追跡から恒久除外されていたはずの`config/settings.yaml`
+  (ntfy_topic秘匿値を含む)を「new file」として135行まるごと再追跡し、
+  秘匿値を平文でcommit treeオブジェクトへ焼き込んだ事実が軍師QC
+  (`gunshi_qc_158_B`)により発覚した。本サブタスク(subtask_158_B2)により
+  `git rm --cached config/settings.yaml`を実行し追跡を再度解除した
+  (commit `1f4b612`。working tree内容は無傷、index上の除外のみ)。
+
+  🔴**状態の明示的更新(push可否)**: 上記(備考)の「殿の明示許可により
+  明日へ持ち越し」は明日のキュー消化自体の許可であり維持されるが、
+  **push実行自体は本項の追加条件を満たすまで実行不可**とする——
+  `1963907`のblobオブジェクト自体に残る秘匿値の平文が除去される
+  (履歴書換え、backup branch必須)まで、本AQ-005のpushは実行しては
+  ならない。`1f4b612`による追跡解除は今後の変更を防ぐのみで、
+  `1963907`のblob自体に焼き込まれた平文は消えていない点に注意。
+
+  `1963907`のblobからの秘匿値除去(履歴書換え)は本サブタスクの範囲外
+  であり、家老が別途(subtask_158_Aの完了によりworking treeが競合しない
+  タイミングで)対応する。
+
+  原因調査(本サブタスクで実施): ashigaru6の報告
+  (`queue/reports/ashigaru6_report.yaml task_id: subtask_158_B`)には
+  実行した具体的なgitコマンドの記載が無く、`git add -f`等の使用有無は
+  報告からは特定不能だった。instructions/ashigaru.md・scripts/*.sh・
+  lib/*.shを走査した結果、ashigaru向けのcommit手順やスクリプトに
+  `git add -f`/`git add -A`/`git commit -a`等の無差別追加パターンを
+  常用させる記述・実装は見つからなかった(README.md:913の
+  `privategit add -f`は別のbare repo(私用ファイル専用)向けの
+  file-scoped指定であり本件とは無関係)。本件は構造的リスクではなく
+  ashigaru6号個別の一回性ミスと判断する(是正提案はしない・発見のみ)。
+
+  【追記・2026-08-08 22:xx・subtask_158_G(足軽1号・cmd_158-G履歴書換え仕上げ)】
+  🔴**1963907のblob除去(履歴書換え)完了**: `git rebase --onto 1963907^ 1963907
+  main`を実行(backup branch: `backup-cmd158-pre-history-purge-20260808-222447`、
+  削除せず保持)。`1f4b612`(untrack commit)は"patch contents already upstream"で
+  自動スキップされ`Successfully rebased`まで正常完了(想定内パターン)。
+  検証結果: `git log --oneline | grep 1963907`は空(mainから消滅を確認)、working
+  tree上の`config/settings.yaml`は実行前バックアップ(`/tmp/cmd158_settings_yaml_backup_*`、
+  検証後削除済み)と`diff`差分ゼロで内容無傷、`fleet_idle_notify_enabled`・
+  `fleet_idle_notify_stable_sec`の2行含め健全、`git ls-files config/settings.yaml`は
+  空(追跡外)。退避していた本ファイル(approval_queue.md)・queue/tasks/gunshi.yaml
+  の変更は`git stash pop`で復元し内容一致確認済み。以上により、AQ-005本文
+  (状態:pending)が課していた「1963907のblobから秘匿値が除去されるまでpush不可」
+  という追加条件(217-223行目)は**解消**した。ただし**AQ-005本来のpush承認自体は
+  従来どおり明日(2026-08-09)のキュー消化(殿の判断)を待つ**——本追記は
+  自動承認を意味しない。
+
+  🔴🔴**新規発見・別インシデント(本サブタスクのスコープ外・要緊急判断)**:
+  Step4検証中、`git log --all --oneline -- config/settings.yaml`が空にならず、
+  `1963907`/`1f4b612`(backup branch由来)に加えて、**現mainの祖先として
+  `dda6b30`(cmd_113)〜`60a0299`(cmd_149「chore(config): rotate ntfy_topic,
+  untrack settings.yaml, add .example」)までの11件のcommitがconfig/settings.yamlを
+  追跡していた**ことが判明した(`git merge-base --is-ancestor 60a0299 HEAD`
+  =true・`dda6b30`も同様=true、いずれもbackup branchではなくmain本流の祖先)。
+  さらに`git merge-base --is-ancestor 60a0299 origin/main`
+  =true・`dda6b30`も同様=trueであり、**この範囲は既にorigin
+  (https://github.com/shun2580/multi-agent-shogun.git)へpush済み**である
+  ことを確認した。cmd_149のcommit message自体が「rotate ntfy_topic」と
+  明記しており当時秘匿値のローテーションが実施された形跡はあるが、
+  dda6b30〜60a0299の各commit blobにどの時点の値が焼き込まれているか
+  (ローテーション済みで無効化された値のみか、複数世代混在か)は本サブタスクの
+  権限・スコープ外につき調査していない(秘匿値そのものへの接触を避けるため)。
+  この件は1963907除去とは別次元・別スコープの既存インシデントであり、
+  本サブタスクでは一切手を加えていない(触れていない)。家老への緊急報告
+  (inbox_write urgent)で別途エスカレーション済み。**この新規発見について
+  家老/殿が評価・判断するまで、AQ-005のpush実行は本件を理由に不可と
+  みなすべきである**(1963907分の条件解消とは独立した、新たなpushブロッカー)。
+
+  【追記・2026-08-08 22:5x・subtask_158_H(足軽1号・dda6b30〜60a0299の独立再現検証
+  +一次資料照合)】上記(subtask_158_G記載分)を貴殿(足軽1号)自身が独立に再現検証し、
+  加えて家老修正指示(msg_20260808_223557)に従い、論点を①②③の3点に分けて記載する。
+
+  ①**1963907除去(履歴書換え)**: subtask_158_Gにて完了済み(上記参照)。本件は解決済み。
+
+  ②**dda6b30〜60a0299(cmd_113〜cmd_149)の公開済み旧履歴に含まれるntfy_topic値
+  そのものの安全性**: 家老の先行調査(1)(2)(3)を貴殿が独立に再現し、技術的に完全
+  一致した。`git log -1`でdda6b30=cmd_113(2026-07-27)・60a0299=cmd_149「rotate
+  ntfy_topic, untrack settings.yaml」(2026-08-05)と確認。`git log --all --oneline
+  -- config/settings.yaml`でdda6b30〜60a0299間の11件を確認、両commitとも
+  `git merge-base --is-ancestor`でHEAD・origin/main双方の祖先(=既にGitHub公開済み)
+  であることも確認した。🔴値そのものは非開示・ハッシュのみで比較:
+  `git show 60a0299^:config/settings.yaml | grep '^ntfy_topic:' | sha256sum`
+  (ローテーション前)と`grep '^ntfy_topic:' config/settings.yaml | sha256sum`
+  (現在)は**不一致**——ローテーション前後で値が異なることを独立に確認した。
+  したがって**値そのものとしては既に無効化(死値化)されており、この範囲の
+  既公開履歴は「値の漏洩」という観点では新規のpushブロッカーとして扱わない**。
+  🔴既に公開済みの履歴を書き換える(force-push相当の履歴改変)ことは、
+  本件では推奨しない。理由: (a)値自体は既にローテーション済みで無効化されており
+  「値としての」実害が無い(b)公開済み履歴の書換えはfork・clone・キャッシュ等に
+  旧版が残存する可能性があり完全な除去を保証できない(c)force-push相当の操作は
+  D003の趣旨に照らし極めて慎重を要する操作であり、下記③が未解決のまま実施すべき
+  ではない。
+
+  ③🔴🔴**(②とは別軸・未解決)旧ntfyトピックの購読解除(⑤)の実施記録が
+  見つからない**: `mandate/decisions_journal.md:112`(CORRECTエントリ、将軍の
+  自己申告)・`mandate/verifiers.md:132-163`(ntfyトピックローテーション完全手順・
+  cmd_150で成文化)を確認したところ、正しい手順は①新名生成→②git外伝達→
+  ③購読替え→④到達確認→**⑤旧購読解除(必須)**→⑥pushの順であり、「⑤購読解除
+  して初めて、旧トピック名は死値となる」と明記されている。しかしcmd_149の実施には
+  この⑤が欠けていたことが将軍自身の自己申告で確定しており(decisions_journal.md:112)、
+  ⑤が事後的に実施されたことを示す記録は`mandate/decisions_journal.md`・
+  `mandate/approval_queue.md`(本ファイル)・`dashboard.md`・`memory/MEMORY.md`の
+  いずれにも見つからなかった(貴殿が`grep -rn '旧購読\|旧トピック\|購読解除'
+  mandate/ dashboard.md`で独立に再確認済み。ヒットはverifiers.mdの手順定義文と
+  decisions_journal.mdのCORRECTエントリ自体のみ)。
+  この事実は`queue/reports/gunshi_report.yaml task_id: gunshi_qc_158_G`
+  (2026-08-08T22:40:00完了、north_star_alignment.status: misaligned、urgent: true)
+  でも独立に指摘されている。**②が示す「値としての無害化」は、旧トピック名という
+  『器』そのものが今も公開GitHub履歴に生きたまま存在し、殿がその購読を実際に
+  解除していなければ第三者が偽の通知を投げ込み殿を欺きうる、という別種のリスクを
+  解消しない**。この確認・解決は殿ご本人がntfyアプリ側の購読設定を確認する以外に
+  方法が無く、いかなるエージェントもgit操作の範囲では確認・解決できない
+  (D001-D008の範囲外)。
+
+  **結論**: ①②は解決済み(②は「値としてのpushブロッカー」ではなくなった)。
+  ③は未解決・別軸の要対応事項であり、殿ご本人の確認が必要。家老は既にdashboard.md
+  🚨要対応セクションへの記載・ntfy緊急送信(22:35送信済み、gunshi_qc_158_G発)で
+  殿への到達を確保済み。AQ-005本来のpush承認自体は、②③いずれについても
+  従来どおり家老/殿の総合判断(2026-08-09キュー消化)を待つものとし、本追記は
+  自動承認を意味しない。
+
+  【追記・2026-08-08 22:5x・subtask_158_I(足軽1号・cmd_159殿裁定(3)(4)の記帳)】
+
+  🔴**(3) subtask_158_Gの事後承認(1963907のblob除去、cmd_159殿裁定(3))**:
+  subtask_158_G(上記【追記・2026-08-08 22:xx・subtask_158_G】参照、1963907の
+  blob除去・backup branch: `backup-cmd158-pre-history-purge-20260808-222447`)は
+  殿により事後承認された(2026-08-08、出典: `queue/shogun_to_karo.yaml` cmd_159
+  command(3)節「(3)subtask_158_G(1963907のblob除去): **事後承認する**。backup
+  branch保持により可逆性が担保されていた以上『戻せる操作=自動進行』の運用に
+  整合する。」)。承認理由: backup branch保持により可逆性が担保されていたため、
+  「戻せる操作=自動進行」の運用(`instructions/karo.md`「戻せる/戻せない操作の
+  分岐」節)に整合すると殿が判断された。
+  🔴**backup branch自体の削除は「戻せない操作」であり、今は削除しないこと**。
+  AQ-005のpush完了・安定確認後に、改めてapproval_queue経由で(新規AQエントリと
+  して)諮ること(出典: 同cmd_159 command(3)節「ただし backup branch の削除は
+  戻せない操作ゆえ、AQ-005 push完了・安定確認後に approval_queue 経由で
+  諮れ(今は消すな)。」)。
+
+  🔴**(4) push直前再走査の必須条件(cmd_159殿裁定(4))**: AQ-005のpush実行前の
+  再走査は、`subtask_158_B`(秘匿値混入発覚)・`subtask_158_G`(blob除去)・
+  `subtask_158_H`(公開履歴の無害化2点セット確認)の結論をすべて反映した状態で
+  行うことを必須条件とする(出典: `queue/shogun_to_karo.yaml` cmd_159
+  command(4)節「(4)AQ-005(push): 明日の消化予定を維持。🔴push直前の再走査は
+  158_B/G/H の結論をすべて反映した状態で行うことを必須条件とする。」)。
+  明日(2026-08-09)のキュー消化予定自体は維持される。
