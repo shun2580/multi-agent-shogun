@@ -351,3 +351,130 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   command(4)節「(4)AQ-005(push): 明日の消化予定を維持。🔴push直前の再走査は
   158_B/G/H の結論をすべて反映した状態で行うことを必須条件とする。」)。
   明日(2026-08-09)のキュー消化予定自体は維持される。
+
+- ID: AQ-006 | 日付: 2026-08-08 | 操作内容: `config/settings.yaml`
+  `features.fleet_idle_notify_enabled` を `off` → `enforce` へ恒久化するか
+  (cmd_158最終工程・subtask_158_E) |
+  理由: cmd_158は陣「全消化・下命待ち」遷移をntfyで殿へ通知する機構を
+  建造する任務であり、コード実装(subtask_158_A/C)・軍師QC PASS・
+  config/settings.yaml.exampleへの雛形追記(subtask_158_F)・
+  instructions/karo.md reporting_mode表への類型追加(subtask_158_D)は
+  全て完了済みだが、機構は既定`off`のため恒久化(常用化)の可否判断は
+  instructions/karo.md「新規feature flagの常用化判断」(cmd_144議題5・
+  cmd_147制定)に従いapproval_queue経由で殿に委ねる |
+  doubt: 🔴**実機発火・抑止ログいずれも実測できていない(0件)**。
+  理由は機能未実装ではなく、**現在稼働中のkaro担当inbox_watcher.sh
+  プロセス(PID 2178、起動2026-08-08 21:22:33)が、fleet-idle機構実装
+  commit(`1f9faf7` 22:08:48・`7336fcb` 22:34:40、いずれもプロセス起動後)
+  より前の旧版スクリプトを読み込んだまま稼働し続けているため**。
+  証拠: (1)`/proc/2178/fd/255`が`scripts/inbox_watcher.sh (deleted)`を
+  指しており当該プロセスの実行コードは既にディレクトリから外れた旧
+  inode由来と確認、(2)`/proc/2178/fd/255`の中身(2189行)を直接grepしても
+  `check_fleet_idle_notify`・`build_fleet_idle_message`・`fleet_idle`の
+  いずれの文字列も1件もヒットせず(現ディスク上のファイル2535行には
+  両関数とも存在)、(3)実機で`fleet_idle_notify_enabled: enforce`へ
+  一時変更・全10エージェント(shogun/karo/gunshi/ashigaru1-7)のinbox
+  未読ゼロを維持した状態で40秒(karoのinotify timeout一巡分)待機したが、
+  `logs/ntfy.log`(228行のまま増加なし)・`logs/fleet_idle_events.jsonl`
+  (未生成)・`logs/.fleet_idle_candidate_since`(未生成)のいずれにも
+  変化なし——静的証拠と一致する形で実測上も無反応だった(subtask_158_E
+  実施記録・`queue/reports/ashigaru2_report.yaml`参照)。
+  この状態でのenforce恒久化はプロセス再起動(inbox_watcher.sh再起動)を
+  経て初めて実効化される。再起動はD006(kill/pkill禁止)によりいかなる
+  エージェントも自身で実行できず、殿の手元操作を要する。
+  **常用化(off→enforce)の可否そのものは殿の判断事項として本エントリに
+  委ねるが、判断材料として「再起動未実施のため実測0件」という制約を
+  上記のとおり明示する**。再起動後に改めて実測(発火ログ・抑止ログとも
+  最低1件)を取得してから本エントリを最終承認する運用を推奨する。 |
+  状態: approved(2026-08-09・根拠: 実発火実証済み・Fable裁定Q24)
+  備考: 2026-08-09T00:37:35に実機発火を実証済み(出典: `logs/ntfy.log:235`
+  該当行、cmd_158 caveat解除の根拠と同一)。Fable裁定Q24(実証優先の資格要件
+  3条件——cmd_158の実発火が観測された時点で見送り理由は消滅)により、
+  上記doubt欄が示していた「実測0件」の制約は解消され、この実証をもって
+  承認条件が満たされたと判断する(出典: `~/fable_situation_20260809_0100.md`・
+  Fable裁定2026-08-09・殿経由で受領)。🔴flagは既に`enforce`
+  (`config/settings.yaml` `features.fleet_idle_notify_enabled: enforce`)
+  であり**値の変更は不要**——本承認は現状維持(enforce据置)を承認内容とする
+  ものであり、追加のflag変更操作は伴わない(subtask_160_C・足軽4号記帳)。
+
+- ID: AQ-007 | 日付: 2026-08-09 | 操作内容: `config/settings.yaml`
+  `features.git_push_block_enabled` を `off`(現状)→恒久的に`observe`または
+  `enforce`へ移行するか(cmd_159最終工程・subtask_159_D) |
+  理由: cmd_159はgit pushをPreToolUseで機械的にdenyし、
+  `mandate/approval_queue.md`の承認済みAQエントリを`AQ_APPROVED_ID`環境変数で
+  明示指定した場合のみ通す機構を建造する任務であり、コード実装
+  (subtask_159_A)・settings.jsonへのフック登録(subtask_159_C)・
+  flag新設(既定off、subtask_159_B)は軍師QC PASS済み。加えて本サブタスク
+  (subtask_159_D)により**実機での挙動確認**(設定記述とテスト緑のみでなく、
+  実際にPreToolUseがdenyすることの実測)まで完了した。恒久化(off→observe
+  または off→enforce)の可否判断はinstructions/karo.md「新規feature flagの
+  常用化判断」(cmd_144議題5・cmd_147制定)に従いapproval_queue経由で殿に
+  委ねる |
+  doubt: 🔴**実測結果(本サブタスクで取得、2026-08-09)**:
+  (1) Step1(observeモード・合成JSON単体テスト、`logs/git_push_block.log`
+  00:11:21〜00:11:38記録): (a)`AQ_APPROVED_ID`無しの`git push origin main`
+  → `WOULD-DENY reason="no AQ_APPROVED_ID prefix found in command"`
+  (b)存在しないAQ ID(AQ-999)指定 →
+  `WOULD-DENY reason="AQ entry AQ-999 not found in approval_queue.md"`
+  (c)承認済みAQ ID(AQ-001、状態: approved)指定 → `ALLOW`
+  (d)`git status`(push非対象) → `ALLOW`。4パターンとも期待通りの判定。
+  (2) Step2(enforceモード・実機push、二重安全策使用):
+  ダミーリモート`cmd159_test_dummy`(`/nonexistent/path/that/does/not/exist`、
+  実在しないローカルパス)を作成した上で、実際にBashツール経由で
+  `git push cmd159_test_dummy main`(`AQ_APPROVED_ID`無し)を発行した結果、
+  PreToolUseによって**実際にコマンドが実行されずdeny**された
+  (エラー出力: `git push blocked (cmd_159): no AQ_APPROVED_ID prefix found
+  in command`)。`logs/git_push_block.log`にも`[2026-08-09T00:12:02+09:00]
+  DENY mode=enforce session=e070c0ae-6003-4221-994c-94343a811057 tool=Bash`
+  として記録済み。実在するリモート(origin/upstream)への到達は一切無し
+  (二重安全策: (i)hookが機能していれば到達前にdeny、(ii)仮にhook不発でも
+  ダミーリモートは実在しないローカルパスにつき即座にローカルエラー終了、
+  いずれも満たしダミーリモートは検証後に`git remote remove`で削除済み)。
+  (3) Step3(flag復元): 検証後`git_push_block_enabled`を`off`へ復元し、
+  `git diff config/settings.yaml`で差分ゼロ(コミット済み状態と一致)を
+  確認。off復元後は`git_push_block.log`に新規行が追加されないこと
+  (early returnによりpython起動自体が発生しないこと)も確認した。
+  🔴**恒久化(常用化)移行閾値の暫定案**(cmd_158のAQ-006と同型の4条件
+  フォーマットに倣う。最終値は将軍・殿の裁定に委ねる):
+  (1) AQ承認済みpush通過1回以上 — 本サブタスクのStep1(c)で1回確認済み。
+  (2) 非承認push試行のWOULD-BLOCK検出1回以上 — 本サブタスクのStep1(a)(b)・
+  Step2で複数回確認済み。
+  (3) 偽WOULD-BLOCKゼロ — 本サブタスクの範囲では偽陽性(非push系コマンドが
+  誤ってWOULD-DENY/DENYされた事例)は観測されなかった(Step1(d)・
+  ダミーリモート削除後の`tail`コマンド等、`push`という文字列自体を含む
+  非git-push系コマンドはいずれも正しく`ALLOW`)。
+  (4) fail-open発生ゼロまたは全件原因説明済み — 本サブタスクでは
+  `FAIL-OPEN`ログの発生は無かった(`grep -c FAIL-OPEN logs/git_push_block.log`
+  で確認可能)。
+  件数閾値は「対象評価5件以上」を暫定案として示すが、本サブタスクで得られた
+  評価件数は単一セッション内の合成テスト+実機テスト計6件(Step1×4+Step2×1
+  +off復元後確認×1)にとどまり、AQ-006が指摘したような「複数セッション・
+  複数エージェントに跨る実測」は未実施である点に留意されたい。最終的な
+  移行閾値・件数条件は将軍・殿の裁定に委ねる |
+  状態: observeへ移行済み・enforce昇格はAQ-005 push実測後に判断
+  備考: 【追記・2026-08-09・subtask_160_C(足軽4号・Fable裁定Q24によるobserve
+  移行)】Fable裁定Q24(cmd_158実発火観測をもって実証優先の見送り理由は消滅)
+  に基づき、`config/settings.yaml` `features.git_push_block_enabled`を
+  `off`→`observe`へ変更した(working tree限定・git追跡対象外ファイルにつき
+  commit不要)。変更後、合成JSONペイロード経由(subtask_159_D検証手法に倣う、
+  実push試行はsubtask_159_Dで完了済みにつき重複させず)で3パターンを
+  `logs/git_push_block.log`にて実機確認: (a)`AQ_APPROVED_ID`無しの
+  `git push origin main` → `WOULD-DENY reason="no AQ_APPROVED_ID prefix
+  found in command"`(session=subtask_160_C_test1、01:09:00)、
+  (b)存在しないAQ ID(AQ-999)指定 → `WOULD-DENY reason="AQ entry AQ-999 not
+  found in approval_queue.md"`(session=subtask_160_C_test2、01:09:00)、
+  (c)承認済みAQ ID(AQ-006、本サブタスクにより本エントリ直前でapproved化
+  済み)指定 → `ALLOW`(session=subtask_160_C_test3、01:09:00)。3パターンとも
+  期待通りの判定(observeモードにつきいずれもdenyせず通過、WOULD-DENY/ALLOWの
+  ログ記録のみ)。🔴副次的観測: 上記検証コマンド自体(echoペイロード文字列に
+  `git push origin main`という文字列断片を含む)が、本物のPreToolUseフック
+  (settings.json経由・observe化直後に有効化)により本足軽自身のBashツール
+  呼出しとしても検知され、実セッションID(3fd216a0-...)でWOULD-DENYが1件
+  ログされた(01:08:59、reason=AQ-999、これは本検証コマンド文字列内の最初の
+  `AQ_APPROVED_ID=AQ-999`断片が拾われたもの)。これは「pushという文字列を
+  含む合成テストコマンド自体がフックの対象になり得る」というスクリプト自身の
+  設計上の限界(粗いフィルタ、コメント参照)の実例であり、観測を汚染する
+  実害は無い(observeモードにつきdenyされず、テストコマンドは正常完了)。
+  enforce昇格は本エントリ単独では行わず、AQ-005のpush実測後に改めて諮る
+  (出典: `queue/shogun_to_karo.yaml` cmd_160 acceptance_criteria)。
+  🔴AQ-005には一切触れていない(閲覧のみ、変更・push実行いずれも未実施)。
