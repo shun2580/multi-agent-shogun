@@ -69,6 +69,12 @@ if [ "${__INBOX_WATCHER_TESTING__:-}" != "1" ]; then
         source "$_agent_status_lib"
     fi
 
+    # Source shared agent registry library (fleet_all_ashigaru_idle_tri用, cmd_158)
+    _agent_registry_lib="${SCRIPT_DIR}/lib/agent_registry.sh"
+    if [ -f "$_agent_registry_lib" ]; then
+        source "$_agent_registry_lib"
+    fi
+
     # Detect OS and select file-watching backend
     INBOX_WATCHER_OS="$(uname -s)"
     if [ "$INBOX_WATCHER_OS" = "Darwin" ]; then
@@ -1022,6 +1028,81 @@ agent_is_busy_tri() {
         echo "[$(date)] [BUSY-DETERMINATION] agent=$AGENT_ID path=pane verdict=$verdict" >&2
     fi
     return "$rc"
+}
+
+# ─── Fleet-wide ashigaru idle detection (cmd_158 依頼事項1) ───
+# agent_is_busy_tri()は自プロセスのAGENT_ID/PANE_TARGETグローバルに暗黙依存する
+# 設計(1プロセス=1エージェント専属)であり、karo等の単一プロセスから他の
+# ashigaruの状態をこの関数経由で問い合わせることはできない
+# (gunshi_decompose_158 item1)。パラメータ化済みの下位プリミティブ
+# agent_is_busy_check(pane, cli)を直接呼ぶことで再発明を避ける。
+#
+# watcher_supervisor.shのget_multiagent_pane_base()と同型のpane_base解決。
+# 別ファイルの関数を直接参照できないため、同一ロジックをここに複製する。
+_fleet_multiagent_pane_base() {
+    if [ -n "${SHOGUN_PANE_BASE:-}" ]; then
+        echo "$SHOGUN_PANE_BASE"
+        return 0
+    fi
+    tmux show-options -gv pane-base-index 2>/dev/null || echo 0
+}
+
+# 戻り値はagent_is_busy_check()と同じ規約: 0=busy(1体でもbusy)
+# / 1=idle(全ashigaru idle) / 2=unknown(1体でも判定不能)。
+# 判定不能をidle側へ倒す経路は作らない(judgment_model原則1)。
+fleet_all_ashigaru_idle_tri() {
+    if ! type agent_registry_default_agents &>/dev/null || ! type agent_is_busy_check &>/dev/null; then
+        echo "[$(date)] [FLEET-IDLE-DETERMINATION] agent=ALL verdict=unknown reason=required_lib_functions_unavailable" >&2
+        return 2
+    fi
+
+    local pane_base
+    pane_base=$(_fleet_multiagent_pane_base)
+
+    local agent pane cli rc verdict
+    local saw_unknown=0
+    local saw_busy=0
+
+    while IFS= read -r agent; do
+        [[ "$agent" =~ ^ashigaru[0-9]+$ ]] || continue
+
+        if [ -f "${IDLE_FLAG_DIR:-/tmp}/shogun_idle_${agent}" ]; then
+            echo "[$(date)] [FLEET-IDLE-DETERMINATION] agent=$agent path=flag verdict=idle" >&2
+            continue
+        fi
+
+        if ! pane=$(agent_registry_pane_for_agent "$agent" "$pane_base"); then
+            echo "[$(date)] [FLEET-IDLE-DETERMINATION] agent=$agent path=pane verdict=unknown reason=pane_resolution_failed" >&2
+            saw_unknown=1
+            continue
+        fi
+
+        cli=$(tmux show-options -p -t "$pane" -v @agent_cli 2>/dev/null || echo "")
+
+        agent_is_busy_check "$pane" "$cli"
+        rc=$?
+        case "$rc" in
+            0) verdict="busy"; saw_busy=1 ;;
+            1) verdict="idle" ;;
+            *) verdict="unknown"; saw_unknown=1 ;;
+        esac
+        if [ "$rc" -eq 2 ]; then
+            echo "[$(date)] [FLEET-IDLE-DETERMINATION] agent=$agent path=pane verdict=unknown reason=${AGENT_STATUS_UNKNOWN_REASON:-<no reason recorded>}" >&2
+        else
+            echo "[$(date)] [FLEET-IDLE-DETERMINATION] agent=$agent path=pane verdict=$verdict" >&2
+        fi
+    done < <(agent_registry_default_agents)
+
+    if [ "$saw_unknown" -eq 1 ]; then
+        echo "[$(date)] [FLEET-IDLE-DETERMINATION] agent=ALL verdict=unknown" >&2
+        return 2
+    fi
+    if [ "$saw_busy" -eq 1 ]; then
+        echo "[$(date)] [FLEET-IDLE-DETERMINATION] agent=ALL verdict=busy" >&2
+        return 0
+    fi
+    echo "[$(date)] [FLEET-IDLE-DETERMINATION] agent=ALL verdict=idle" >&2
+    return 1
 }
 
 # ─── Non-destructive fail-safe direction (nudge / delivery actions) ───
@@ -2113,6 +2194,217 @@ for path in sorted(glob.glob(os.path.join(inbox_dir, '*.yaml'))):
     return 0
 }
 
+# ─── 陣手空き検知: cmd実行中判定・inbox未読集約判定 (cmd_158 依頼事項1後半) ───
+# 戻り値はfleet_all_ashigaru_idle_tri()と同じ規約: 0=busy/1=idle/2=unknown。
+_fleet_cmd_status_tri() {
+    local out
+    out=$("$SCRIPT_DIR/.venv/bin/python3" -c "
+import yaml
+try:
+    with open('${SCRIPT_DIR}/queue/shogun_to_karo.yaml', encoding='utf-8') as f:
+        data = yaml.safe_load(f) or {}
+    commands = data.get('commands') or []
+    if not commands:
+        print('idle')
+    else:
+        status = commands[-1].get('status')
+        if status is None:
+            print('unknown')
+        elif status == 'in_progress':
+            print('busy')
+        else:
+            print('idle')
+except Exception:
+    print('unknown')
+" 2>/dev/null)
+    case "$out" in
+        busy)
+            echo "[$(date)] [FLEET-IDLE-DETERMINATION] element=cmd verdict=busy" >&2
+            return 0 ;;
+        idle)
+            echo "[$(date)] [FLEET-IDLE-DETERMINATION] element=cmd verdict=idle" >&2
+            return 1 ;;
+        *)
+            echo "[$(date)] [FLEET-IDLE-DETERMINATION] element=cmd verdict=unknown reason=shogun_to_karo_yaml_unreadable_or_unparseable" >&2
+            return 2 ;;
+    esac
+}
+
+# 対象は明示列挙(shogun/karo/gunshi/ashigaru1-7)。test_*.yaml等の
+# 非エージェントファイルをglobで拾わないため。shogunを含める根拠:
+# 通知対象自身(将軍宛の未処理下命)を除外すると誤ってidle判定してしまう
+# (gunshi_decompose_158 item1後半)。
+_fleet_inbox_unread_tri() {
+    local inbox_dir="${SCRIPT_DIR}/queue/inbox"
+    local out
+    out=$(INBOX_DIR="$inbox_dir" "$SCRIPT_DIR/.venv/bin/python3" -c "
+import os
+import yaml
+
+inbox_dir = os.environ['INBOX_DIR']
+agents = ['shogun', 'karo', 'gunshi', 'ashigaru1', 'ashigaru2', 'ashigaru3',
+          'ashigaru4', 'ashigaru5', 'ashigaru6', 'ashigaru7']
+total = 0
+error = False
+for name in agents:
+    path = os.path.join(inbox_dir, name + '.yaml')
+    try:
+        with open(path, encoding='utf-8') as f:
+            data = yaml.safe_load(f) or {}
+    except Exception:
+        error = True
+        continue
+    for msg in (data.get('messages') or []):
+        if isinstance(msg, dict) and not msg.get('read'):
+            total += 1
+if error:
+    print('unknown\t0')
+else:
+    print(('busy' if total > 0 else 'idle') + '\t' + str(total))
+" 2>/dev/null)
+    local verdict="${out%%$'\t'*}"
+    local count="${out#*$'\t'}"
+    case "$verdict" in
+        busy)
+            echo "[$(date)] [FLEET-IDLE-DETERMINATION] element=inbox verdict=busy unread_total=$count" >&2
+            return 0 ;;
+        idle)
+            echo "[$(date)] [FLEET-IDLE-DETERMINATION] element=inbox verdict=idle unread_total=0" >&2
+            return 1 ;;
+        *)
+            echo "[$(date)] [FLEET-IDLE-DETERMINATION] element=inbox verdict=unknown reason=inbox_yaml_unreadable_or_unparseable" >&2
+            return 2 ;;
+    esac
+}
+
+# subtask_158_C が build_fleet_idle_message() の実装で上書きする前提の
+# 暫定プレースホルダ。関数シグネチャ(引数なし・通知本文をstdoutへ)のみ
+# 先に確定させる。既に定義済み(Cが先に完了済み)ならこちらは何もしない。
+if ! type build_fleet_idle_message &>/dev/null; then
+    build_fleet_idle_message() {
+        echo "🈳 全cmd消化・次の下命待ち"
+    }
+fi
+
+# ─── 陣手空き検知→ntfy通知 本体 (cmd_158 依頼事項2) ───
+# 3要素(全ashigaru idle・cmd実行中/queuedなし・全エージェントinbox未読ゼロ)を
+# 集約した三値判定がidleへ遷移してから features.fleet_idle_notify_stable_sec
+# 秒(既定300)安定したら1回だけ通知する。既存のkaro限定rc=2(30秒timeout)
+# ティックへ相乗りする設計であり、新規ポーリングループは作らない(F004)。
+check_fleet_idle_notify() {
+    # 🔴フラグゲート: enforce/observe以外(未設定・off・読取失敗含む)は
+    # 即return 0。settings.yamlはPyYAMLのYAML1.1解釈で無引用の`off`が
+    # bool Falseへ変換されるが、'observe'/'enforce'のいずれとも一致しない
+    # 限りすべて'off'扱いになるため fail-safe は影響を受けない。
+    local mode
+    mode=$("$SCRIPT_DIR/.venv/bin/python3" -c "
+import yaml
+try:
+    with open('${SCRIPT_DIR}/config/settings.yaml', encoding='utf-8') as f:
+        data = yaml.safe_load(f) or {}
+    v = (data.get('features') or {}).get('fleet_idle_notify_enabled')
+    print(v if v in ('observe', 'enforce') else 'off')
+except Exception:
+    print('off')
+" 2>/dev/null)
+    [ "$mode" = "observe" ] || [ "$mode" = "enforce" ] || return 0
+
+    mkdir -p "${SCRIPT_DIR}/logs" 2>/dev/null || true
+    local candidate_marker="${SCRIPT_DIR}/logs/.fleet_idle_candidate_since"
+    local notified_marker="${SCRIPT_DIR}/logs/.fleet_idle_notified_since"
+    local events_jsonl="${SCRIPT_DIR}/logs/fleet_idle_events.jsonl"
+
+    local ashigaru_rc cmd_rc inbox_rc overall
+    fleet_all_ashigaru_idle_tri; ashigaru_rc=$?
+    _fleet_cmd_status_tri; cmd_rc=$?
+    _fleet_inbox_unread_tri; inbox_rc=$?
+
+    if [ "$ashigaru_rc" -eq 2 ] || [ "$cmd_rc" -eq 2 ] || [ "$inbox_rc" -eq 2 ]; then
+        overall="unknown"
+        local reasons=""
+        [ "$ashigaru_rc" -eq 2 ] && reasons="${reasons}ashigaru "
+        [ "$cmd_rc" -eq 2 ] && reasons="${reasons}cmd "
+        [ "$inbox_rc" -eq 2 ] && reasons="${reasons}inbox "
+        echo "[$(date)] [FLEET-IDLE-DETERMINATION] agent=ALL verdict=unknown reason=undetermined_elements:${reasons% }" >&2
+    elif [ "$ashigaru_rc" -eq 0 ] || [ "$cmd_rc" -eq 0 ] || [ "$inbox_rc" -eq 0 ]; then
+        overall="busy"
+        echo "[$(date)] [FLEET-IDLE-DETERMINATION] agent=ALL verdict=busy" >&2
+    else
+        overall="idle"
+        echo "[$(date)] [FLEET-IDLE-DETERMINATION] agent=ALL verdict=idle" >&2
+    fi
+
+    if [ "$overall" != "idle" ]; then
+        # 候補状態が安定待ちの途中で崩れた場合、抑止した事実をログへ残す
+        # (誤発火抑止の実測、judgment_model原則14)。
+        if [ -f "$candidate_marker" ]; then
+            local candidate_since now_epoch held_for
+            candidate_since=$(cat "$candidate_marker" 2>/dev/null || echo "")
+            if [[ "$candidate_since" =~ ^[0-9]+$ ]]; then
+                now_epoch=$(date +%s)
+                held_for=$((now_epoch - candidate_since))
+                printf '{"event":"candidate_broken","candidate_since":%s,"broken_at":%s,"held_for_sec":%s}\n' \
+                    "$candidate_since" "$now_epoch" "$held_for" >> "$events_jsonl"
+            fi
+            rm -f "$candidate_marker"
+        fi
+        # busy/unknownへ戻ったら次回idle再遷移時に新エピソードとして扱う。
+        rm -f "$notified_marker"
+        return 0
+    fi
+
+    # overall == idle
+    local now_epoch candidate_since
+    now_epoch=$(date +%s)
+    if [ -f "$candidate_marker" ]; then
+        candidate_since=$(cat "$candidate_marker" 2>/dev/null || echo "")
+    fi
+    if ! [[ "${candidate_since:-}" =~ ^[0-9]+$ ]]; then
+        candidate_since="$now_epoch"
+        echo "$candidate_since" > "$candidate_marker"
+    fi
+
+    local stable_sec
+    stable_sec=$("$SCRIPT_DIR/.venv/bin/python3" -c "
+import yaml
+try:
+    with open('${SCRIPT_DIR}/config/settings.yaml', encoding='utf-8') as f:
+        data = yaml.safe_load(f) or {}
+    v = (data.get('features') or {}).get('fleet_idle_notify_stable_sec')
+    print(int(v))
+except Exception:
+    print(300)
+" 2>/dev/null)
+    [[ "$stable_sec" =~ ^[0-9]+$ ]] || stable_sec=300
+
+    local elapsed=$((now_epoch - candidate_since))
+    if [ "$elapsed" -lt "$stable_sec" ]; then
+        return 0
+    fi
+
+    local notified_since=""
+    if [ -f "$notified_marker" ]; then
+        notified_since=$(cat "$notified_marker" 2>/dev/null || echo "")
+    fi
+    if [ -n "$notified_since" ] && [ "$notified_since" = "$candidate_since" ]; then
+        # 同一の手空きエピソード内 → 再送しない
+        return 0
+    fi
+
+    local message
+    message=$(build_fleet_idle_message)
+
+    if [ "$mode" = "enforce" ]; then
+        bash "${SCRIPT_DIR}/scripts/ntfy.sh" "$message" >&2 || true
+        bash "${SCRIPT_DIR}/scripts/log_timing_event.sh" fleet_idle_notified cmd_158 "" "" \
+            --source=inbox_watcher.sh --extra="candidate_since:${candidate_since}" || true
+    else
+        echo "[$(date)] [FLEET-IDLE-NOTIFY] mode=observe suppressed message=${message}" >&2
+    fi
+    echo "$candidate_since" > "$notified_marker"
+    return 0
+}
+
 # ─── Main loop: event-driven via inotifywait (skipped in testing mode) ───
 if [ "${__INBOX_WATCHER_TESTING__:-}" != "1" ]; then
 # Timeout 30s: WSL2 /mnt/c/ can miss inotify events.
@@ -2169,6 +2461,7 @@ while true; do
         if [ "$AGENT_ID" = "karo" ]; then
             check_dashboard_staleness || true
             check_urgent_inbox_escalation || true
+            check_fleet_idle_notify || true
         fi
         if [ "${ASW_PROCESS_TIMEOUT:-1}" = "1" ]; then
             process_unread "timeout"
@@ -2186,4 +2479,11 @@ fi  # end testing guard
 _agent_status_lib="${SCRIPT_DIR}/lib/agent_status.sh"
 if [ -f "$_agent_status_lib" ] && ! type agent_is_busy_check &>/dev/null; then
     source "$_agent_status_lib"
+fi
+
+# Same rationale for lib/agent_registry.sh (fleet_all_ashigaru_idle_tri用, cmd_158):
+# make agent_registry_* functions available in test mode too.
+_agent_registry_lib="${SCRIPT_DIR}/lib/agent_registry.sh"
+if [ -f "$_agent_registry_lib" ] && ! type agent_registry_default_agents &>/dev/null; then
+    source "$_agent_registry_lib"
 fi
