@@ -2355,7 +2355,10 @@ try:
 except Exception:
     print('off')
 " 2>/dev/null)
-    [ "$mode" = "observe" ] || [ "$mode" = "enforce" ] || return 0
+    if [ "$mode" != "observe" ] && [ "$mode" != "enforce" ]; then
+        echo "[$(date)] [FLEET-IDLE-DETERMINATION] element=flag_mode mode=off action=silent_return" >&2
+        return 0
+    fi
 
     mkdir -p "${SCRIPT_DIR}/logs" 2>/dev/null || true
     local candidate_marker="${SCRIPT_DIR}/logs/.fleet_idle_candidate_since"
