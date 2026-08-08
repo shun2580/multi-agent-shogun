@@ -149,6 +149,15 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   リマインダの類)は禁ずる(原則14〔出典Q18〕の運用=観測が先・機構は事実の後)。
   判断理由の記帳: `mandate/decisions_journal.md`(2026-08-08付RULEエントリ)を参照。
 
+  【追記・2026-08-09・subtask_161_D(足軽4号・Fable裁定Q22によるPREVENT記帳種別の
+  新設・再提出条件の追加)】
+  PREVENT型記帳3件の蓄積をもって、実害2例目の観測を待たず本件(AQ-004)の
+  再提出条件充足と見なす(Fable裁定Q22、2026-08-09)。2026-08-08時点で
+  PREVENT 1件目(cmd_159先回り記載)を記帳済み(出典: `mandate/decisions_journal.md`
+  2026-08-08付PREVENTエントリ「cmd_159受け入れ条件への先回り記載」)。
+  本追記は上記の既存doubt・備考(再提出条件・弱い設計の自覚)を変更するものでは
+  なく、新設された代替充足条件(PREVENT 3件蓄積)を追加するのみである。
+
 - ID: AQ-005 | 日付: 2026-08-08 | 操作内容: 未push commit群(3件、提示直前に
   `git fetch origin main`実行後`git log origin/main..HEAD --oneline | wc -l`で
   再実測、2026-08-08)のリモート(origin https://github.com/shun2580/multi-agent-shogun.git)
