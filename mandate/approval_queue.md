@@ -158,6 +158,14 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   本追記は上記の既存doubt・備考(再提出条件・弱い設計の自覚)を変更するものでは
   なく、新設された代替充足条件(PREVENT 3件蓄積)を追加するのみである。
 
+  【追記・2026-08-09・subtask_162_B(足軽4号・cmd_162陣仕舞い持ち越し3件記帳)】
+  cmd_162陣仕舞い時点での持ち越し確認: 条件付き据置を維持する。再開トリガーは
+  (1)実害2例目の観測、または(2)PREVENT 3件の蓄積(Fable裁定Q22)のいずれか。
+  PREVENT件数を`grep -c "| PREVENT |" mandate/decisions_journal.md`で実測した
+  結果、現在1件(2026-08-08付、cmd_159受け入れ条件への先回り記載、
+  subtask_161_Dで記帳済みの1件目)のみであり、上記(2)の閾値(3件)には未達。
+  よってcmd_162時点でも(1)(2)いずれの再開トリガーも未成立であり、据置を継続する。
+
 - ID: AQ-005 | 日付: 2026-08-08 | 操作内容: 未push commit群(3件、提示直前に
   `git fetch origin main`実行後`git log origin/main..HEAD --oneline | wc -l`で
   再実測、2026-08-08)のリモート(origin https://github.com/shun2580/multi-agent-shogun.git)
@@ -361,6 +369,17 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   158_B/G/H の結論をすべて反映した状態で行うことを必須条件とする。」)。
   明日(2026-08-09)のキュー消化予定自体は維持される。
 
+  【追記・2026-08-09・subtask_162_B(足軽4号・cmd_162陣仕舞い持ち越し3件記帳)】
+  cmd_162陣仕舞い時点で、AQ-005のpush承認について**殿の明示確認は未取得のまま
+  持ち越す**(出典: `queue/shogun_to_karo.yaml` cmd_162 acceptance_criteria
+  「🔴AQ-005(push)には一切手を触れないこと。pushを実行するな。殿の明示確認が
+  未取得のまま持ち越す旨をエントリと報告の双方へ明記すること」)。
+  再開トリガー=殿の承認。承認後のpush実行前には、cmd_159殿裁定(4)
+  (本エントリ上記【追記・subtask_158_I】節参照)のとおり158_B/G/Hの結論を
+  すべて反映した状態での再走査が必須条件であることを、cmd_162陣仕舞い記録として
+  改めて明記する。本追記は追記専用であり、状態欄(pending)・既存本文はいずれも
+  変更していない。
+
 - ID: AQ-006 | 日付: 2026-08-08 | 操作内容: `config/settings.yaml`
   `features.fleet_idle_notify_enabled` を `off` → `enforce` へ恒久化するか
   (cmd_158最終工程・subtask_158_E) |
@@ -487,3 +506,12 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   enforce昇格は本エントリ単独では行わず、AQ-005のpush実測後に改めて諮る
   (出典: `queue/shogun_to_karo.yaml` cmd_160 acceptance_criteria)。
   🔴AQ-005には一切触れていない(閲覧のみ、変更・push実行いずれも未実施)。
+
+  【追記・2026-08-09・subtask_162_B(足軽4号・cmd_162陣仕舞い持ち越し3件記帳)】
+  cmd_162陣仕舞い時点でもenforce昇格は引き続き保留する。再開トリガー=AQ-005の
+  push実測後に「承認済み経路(`AQ_APPROVED_ID`指定)が実際に通る」ことを
+  確認すること(出典: `queue/shogun_to_karo.yaml` cmd_162【持ち越し3件】節
+  「AQ-007: git_push_blockのenforce昇格。再開トリガー=AQ-005 pushで
+  『承認済み経路が実際に通る』実測を得ること。」既存の本文備考・subtask_160_C
+  追記「enforce昇格は本エントリ単独では行わず、AQ-005のpush実測後に改めて
+  諮る」と同一方針を、cmd_162陣仕舞い記録として再確認するもの)。
