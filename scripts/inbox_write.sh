@@ -52,14 +52,29 @@ _PY_URGENT="False"
 # inbox_watcher.sh had no choice but to regex-parse CONTENT for agent_started
 # events — which fails because task_assigned notification text never
 # contains subtask_id. Calculation logic is unchanged, only moved earlier.
-_TIMING_EVENT=""
+#
+# Fix (cmd_160-A): determine the base event from $TYPE FIRST, then only let
+# --redo_of upgrade it to redo_dispatched when $TYPE is a dispatch-direction
+# type (task_assigned/clear_command — karo→agent redo command). Previously
+# any --redo_of unconditionally forced redo_dispatched regardless of $TYPE,
+# which silently mislabeled ashigaru's completion reports (report_received,
+# which conventionally carries --redo_of=<original_task_id> per the redo
+# report-back convention) as redo_dispatched instead of report_submitted.
+# That made the redo task's own completion invisible to
+# lib/inflight_tasks.sh / deadman_watcher.sh, which treat "no
+# report_submitted after the latest assigned/redo_dispatched" as in-flight
+# — so completed+QC-passed redo tasks stayed flagged as stalled forever
+# (real incidents: subtask_158_B2/H2/E2, 2026-08-08).
+case "$TYPE" in
+    cmd_new) _TIMING_EVENT="cmd_received" ;;
+    task_assigned) _TIMING_EVENT="assigned" ;;
+    report_received) _TIMING_EVENT="report_submitted" ;;
+    clear_command) _TIMING_EVENT="" ;;
+    *) _TIMING_EVENT="" ;;
+esac
 if [ -n "$_ARG_REDO_OF" ]; then
-    _TIMING_EVENT="redo_dispatched"
-else
     case "$TYPE" in
-        cmd_new) _TIMING_EVENT="cmd_received" ;;
-        task_assigned) _TIMING_EVENT="assigned" ;;
-        report_received) _TIMING_EVENT="report_submitted" ;;
+        task_assigned|clear_command) _TIMING_EVENT="redo_dispatched" ;;
     esac
 fi
 _TIMING_CMD_ID="${_ARG_CMD_ID:-$(printf '%s' "$CONTENT" | grep -oE 'cmd_[0-9]+[a-zA-Z]*' | head -1)}"
