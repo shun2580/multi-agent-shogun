@@ -2207,11 +2207,21 @@ try:
     if not commands:
         print('idle')
     else:
-        status = commands[-1].get('status')
-        if status is None:
-            print('unknown')
-        elif status == 'in_progress':
+        terminal = {'done', 'done_with_caveat'}
+        has_busy = False
+        has_unknown = False
+        for c in commands:
+            status = c.get('status') if isinstance(c, dict) else None
+            if status in ('pending', 'in_progress'):
+                has_busy = True
+            elif isinstance(status, str) and (status in terminal or status.startswith('superseded')):
+                pass
+            else:
+                has_unknown = True
+        if has_busy:
             print('busy')
+        elif has_unknown:
+            print('unknown')
         else:
             print('idle')
 except Exception:
