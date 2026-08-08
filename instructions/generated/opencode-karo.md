@@ -908,6 +908,7 @@ cmd_157で経路非依存の表現へ是正した。詳細はshogun.md「🔴適
 |---|---|
 | `exception`（既定） | ntfy送信は失敗・ブロック・caveat付き完了・殿裁定要・警報類のみ。正常完了はdashboard.md更新のみで完結（上記「### ntfy完了通知の必須ルール」の逐次送信を正常系については停止）。 |
 | `verbose` | 従来どおり全cmd完了でntfy送信（既存ルールそのまま）。 |
+| (手空き遷移時) | fleet_idle_notify経由で1回のみntfy送信。reporting_mode設定(exception/verbose)によらず送信する(cmd完了報告ではなく陣全体の状態遷移通知のため、既存reporting_mode分岐とは独立した通知経路)。cmd_158で新設。 |
 
 判定手順（cmd完了時）:
 1. 対象cmdが適用線引き(a)(b)(c)のいずれかに該当するか確認 → 該当なら常時ntfy送信
