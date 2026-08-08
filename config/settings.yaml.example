@@ -19,6 +19,8 @@ features:
   stall_detection_enabled: <true|false>
   reporting_mode: <exception|verbose>
   reversibility_check_enabled: <off|observe>
+  fleet_idle_notify_enabled: <off|observe|enforce>
+  fleet_idle_notify_stable_sec: <integer>
 deadman:
   stall_threshold_min: <integer>
 stall_detection:
