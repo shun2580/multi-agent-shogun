@@ -2332,6 +2332,63 @@ print(str(len(pending_ids)) + '\t' + ','.join(pending_ids))
     else
         echo "$prefix"
     fi
+
+    # 未起票残タスク件数+最古起票日(cmd_165-B・手空き通知への相乗り)。
+    # 集計元はdashboard.mdの「## 📌 予定事項」(共通prefix・「候補」有無
+    # いずれも対象)配下のcreated_at件数+「### 🏗 建造キュー」配下の
+    # 番号付き項目のうち自身の段落に✅完了を含まないもの。建造キュー分は
+    # 起票日情報を持たないため日付集計は予定事項側のみを対象とする
+    # (正直な限定)。
+    local dashboard_file="${SCRIPT_DIR}/dashboard.md"
+    local untriaged_out
+    untriaged_out=$("$SCRIPT_DIR/.venv/bin/python3" -c "
+import re
+try:
+    with open('${dashboard_file}', encoding='utf-8') as f:
+        text = f.read()
+except Exception:
+    print('0\t')
+    raise SystemExit(0)
+
+all_headings = list(re.finditer(r'^#{2,3} .*\$', text, re.MULTILINE))
+
+def section_body(heading_match):
+    start = heading_match.end()
+    end = len(text)
+    for h in all_headings:
+        if h.start() > heading_match.start():
+            end = h.start()
+            break
+    return text[start:end]
+
+# 予定事項(両見出し共通prefix): created_at件数+最古日
+schedule_dates = []
+for h in re.finditer(r'^## 📌 予定事項.*\$', text, re.MULTILINE):
+    body = section_body(h)
+    schedule_dates.extend(re.findall(r'<!-- created_at: ([0-9T:-]+) -->', body))
+
+# 建造キュー: 番号付き項目を段落分割し、自身の段落に✅完了を含まないものを未起票扱い
+# (罠: 完了済み項目の段落内に別件言及として'着手cmd未起票'という文言が
+# 部分一致で登場し得るため、単純な文字列カウントは使わず段落単位で判定する)。
+queue_uncommitted = 0
+qh = re.search(r'^### 🏗 建造キュー.*\$', text, re.MULTILINE)
+if qh:
+    qbody = section_body(qh)
+    items = re.split(r'(?=^\d+\. )', qbody, flags=re.MULTILINE)
+    for item in items:
+        if re.match(r'^\d+\. ', item) and '✅完了' not in item:
+            queue_uncommitted += 1
+
+total = len(schedule_dates) + queue_uncommitted
+oldest = min(schedule_dates).split('T')[0] if schedule_dates else '不明'
+print(str(total) + '\t' + oldest)
+" 2>/dev/null)
+
+    local untriaged_count="${untriaged_out%%$'\t'*}"
+    local untriaged_oldest="${untriaged_out#*$'\t'}"
+    if [[ "$untriaged_count" =~ ^[0-9]+$ ]]; then
+        echo "未起票残タスク件数: ${untriaged_count}件(最古: ${untriaged_oldest})"
+    fi
 }
 
 # ─── 陣手空き検知→ntfy通知 本体 (cmd_158 依頼事項2) ───
