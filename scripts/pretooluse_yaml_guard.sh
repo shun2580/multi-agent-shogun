@@ -117,6 +117,25 @@ if [ "$MODE" = "off" ]; then
     exit 0
 fi
 
+# ─── 副flag: parent_cmd_done_gate_enabled (cmd_164 subtask_164_B) ───
+# yaml_guard_enabledがoff以外(=ここに到達した時点で確定)のときのみ評価する
+# 独立の副flag。off|observe|enforceの3値、未知値・空値は必ずoffへ倒す
+# fail-safe(yaml_guard_enabledと同方針)。単独でoffへ戻せるよう、既存の
+# affects_runtimeチェックとは完全に独立した変数として扱う。
+RAW_LINE_PG=$(grep -E '^[[:space:]]*parent_cmd_done_gate_enabled:' "$SETTINGS" 2>/dev/null | head -1)
+RAW_VALUE_PG=$(printf '%s' "$RAW_LINE_PG" | sed -E \
+    -e 's/^[[:space:]]*parent_cmd_done_gate_enabled:[[:space:]]*//' \
+    -e 's/[[:space:]]*#.*$//' \
+    -e 's/[[:space:]]*$//' \
+    -e 's/^"(.*)"$/\1/' \
+    -e "s/^'(.*)'\$/\1/")
+
+case "$RAW_VALUE_PG" in
+    enforce) PARENT_GATE_MODE="enforce" ;;
+    observe) PARENT_GATE_MODE="observe" ;;
+    *) PARENT_GATE_MODE="off" ;;  # off/空/未知値はすべてfail-safeでoff
+esac
+
 # ─── 早期リターン2: tool_name/file_pathの軽量抽出(python起動なし) ───
 # 抽出はここでは「対象パスか否か」の判定のみに使う。実際の検証はpython側で
 # stdinのJSONを正規にパースし直して行うため、ここでの抽出精度が甘くても
@@ -159,6 +178,7 @@ esac
 mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
 
 read -r -d '' PYCODE <<'PYEOF' || true
+import glob
 import json
 import subprocess
 import sys
@@ -168,6 +188,13 @@ import yaml
 # cmd_161 subtask_161_C: check_runtime_reflection.sh の絶対パス(argv経由で
 # bash側から渡す。REPO_ROOT差し替えの影響を受けないSCRIPT_DIR基準)。
 RUNTIME_REFLECTION_SCRIPT = sys.argv[1] if len(sys.argv) > 1 else None
+
+# cmd_164 subtask_164_B: check_parent_cmd_done_gate()用の副flag値・
+# queue/tasks/*.yaml探索用REPO_ROOT・直接ログ追記用LOG_FILE(いずれも
+# argv経由でbash側から渡す。RUNTIME_REFLECTION_SCRIPTと同型のグローバル参照)。
+PARENT_GATE_MODE = sys.argv[2] if len(sys.argv) > 2 else "off"
+PARENT_GATE_REPO_ROOT = sys.argv[3] if len(sys.argv) > 3 else None
+PARENT_GATE_LOG_FILE = sys.argv[4] if len(sys.argv) > 4 else None
 
 
 def deny(reason):
@@ -266,6 +293,100 @@ def check_affects_runtime_done_gate(docs, file_path):
                 )
 
 
+def _emit_would_deny_parent_gate(reason, file_path):
+    """副flag=observe時、既存deny()(=外側yaml_guard_enabled MODEのDENY/
+    WOULD-DENY機構に載る)を呼ばずに、LOG_FILEへ識別可能なタグ
+    (WOULD-DENY-PARENT-GATE)を付けて直接1行追記する(cmd_164 subtask_164_B)。
+    スクリプトの終了コード・標準出力には一切影響させない。書込失敗は
+    握り潰す(fail-safe、判定結果に波及させない)。"""
+    if not PARENT_GATE_LOG_FILE:
+        return
+    try:
+        import os
+        os.makedirs(os.path.dirname(PARENT_GATE_LOG_FILE), exist_ok=True)
+        ts_result = subprocess.run(
+            ["date", "-Iseconds"], capture_output=True, text=True, timeout=2,
+        )
+        ts = ts_result.stdout.strip() or "unknown-time"
+        with open(PARENT_GATE_LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(
+                f"[{ts}] WOULD-DENY-PARENT-GATE mode={PARENT_GATE_MODE} "
+                f"file={file_path} reason={reason}\n"
+            )
+    except Exception:
+        pass
+
+
+def check_parent_cmd_done_gate(docs, file_path):
+    """queue/shogun_to_karo.yaml上であるcmdのstatusをdoneへ変更しようと
+    したとき、queue/tasks/*.yaml中のparent_cmd一致エントリの全statusが
+    doneであることを機械確認するゲート(cmd_164 subtask_164_B・stale
+    assigned放置の再発防止)。独立の副flag PARENT_GATE_MODE
+    (off|observe|enforce)で段階導入し、yaml_guard_enabled本体とは
+    別にoffへ戻せる。"""
+    if PARENT_GATE_MODE == "off":
+        return
+    if "/queue/shogun_to_karo.yaml" not in file_path.replace("\\", "/"):
+        return
+    if not PARENT_GATE_REPO_ROOT:
+        return
+
+    for doc in docs:
+        for d in find_dicts(doc):
+            if not isinstance(d, dict):
+                continue
+            if d.get("status") != "done":
+                continue
+            cmd_id = d.get("id")
+            if not isinstance(cmd_id, str) or not cmd_id:
+                continue
+
+            incomplete = []
+            found_any = False
+            try:
+                task_files = glob.glob(f"{PARENT_GATE_REPO_ROOT}/queue/tasks/*.yaml")
+            except Exception as e:
+                task_files = []
+                incomplete.append(f"queue/tasks/*.yaml 探索失敗(判定不能): {e}")
+
+            for tf in task_files:
+                try:
+                    with open(tf, "r", encoding="utf-8") as f:
+                        tdocs = list(yaml.safe_load_all(f))
+                except Exception as e:
+                    incomplete.append(f"{tf}: 読取/パース失敗・判定不能({e})")
+                    continue
+                for tdoc in tdocs:
+                    if not isinstance(tdoc, dict):
+                        continue
+                    task = tdoc.get("task")
+                    if not isinstance(task, dict):
+                        continue
+                    if task.get("parent_cmd") != cmd_id:
+                        continue
+                    found_any = True
+                    tstatus = task.get("status")
+                    if tstatus != "done":
+                        incomplete.append(
+                            f"{tf}: task_id={task.get('task_id')} status={tstatus}"
+                        )
+
+            # 該当parent_cmdを持つtaskが1件も無く、探索自体も失敗していなければ
+            # 検査対象なし=ALLOW(無関係なcmdの誤denyを避ける。全滅解釈にしない)。
+            if not found_any and not incomplete:
+                continue
+
+            if incomplete:
+                reason = (
+                    f"cmd_id={cmd_id}のdone遷移拒否: 配下subtaskに未完了/判定不能が"
+                    "あります — " + "; ".join(incomplete)
+                )
+                if PARENT_GATE_MODE == "enforce":
+                    deny(reason)
+                else:
+                    _emit_would_deny_parent_gate(reason, file_path)
+
+
 def fail_open(msg):
     print(msg, file=sys.stderr)
     sys.exit(1)
@@ -332,6 +453,10 @@ try:
     # cmd_161 subtask_161_C: 構文的に妥当なqueue/tasks/*.yamlに限り、
     # affects_runtime宣言によるdone拒否チェックを実施(該当が無ければ何もしない)。
     check_affects_runtime_done_gate(docs, file_path)
+    # cmd_164 subtask_164_B: queue/shogun_to_karo.yamlに限り、親cmdのdone
+    # 遷移時に配下subtaskの全status doneを機械確認するゲートを実施
+    # (副flag PARENT_GATE_MODE=off時は関数内で即return)。
+    check_parent_cmd_done_gate(docs, file_path)
     sys.exit(0)
 except SystemExit:
     raise
@@ -342,7 +467,7 @@ PYEOF
 ERR_TMP="$(mktemp)"
 trap 'rm -f "$ERR_TMP"' EXIT
 
-OUTPUT="$(printf '%s' "$INPUT" | timeout 8 "$PYTHON_BIN" -c "$PYCODE" "$RUNTIME_REFLECTION_SCRIPT" 2>"$ERR_TMP")"
+OUTPUT="$(printf '%s' "$INPUT" | timeout 8 "$PYTHON_BIN" -c "$PYCODE" "$RUNTIME_REFLECTION_SCRIPT" "$PARENT_GATE_MODE" "$REPO_ROOT" "$LOG_FILE" 2>"$ERR_TMP")"
 PY_EXIT=$?
 
 # ─── ログ形式(cmd_121 A-2): 1評価1行・追記型・grep -cで機械集計可能な形式。

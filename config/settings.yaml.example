@@ -21,6 +21,7 @@ features:
   reversibility_check_enabled: <off|observe>
   fleet_idle_notify_enabled: <off|observe|enforce>
   fleet_idle_notify_stable_sec: <integer>
+  parent_cmd_done_gate_enabled: <off|observe|enforce>
 deadman:
   stall_threshold_min: <integer>
 stall_detection:
