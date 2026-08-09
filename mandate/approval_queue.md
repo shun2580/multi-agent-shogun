@@ -442,6 +442,23 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   詳細な実行コマンド・出力全文は`queue/reports/ashigaru2_report.yaml
   task_id: subtask_163_A`参照。
 
+  【追記・2026-08-10・subtask_167_C2(足軽4号・cmd_167陣仕舞い・新規未push分の
+  pending持ち越し記帳)】
+  AQ-005本来のpush(commit `543666a`、subtask_163_B)完了後、cmd_164〜cmd_167の
+  作業により新たな未push commit群が積み増された。cmd_167着手時点で自ら再実測
+  (`git fetch origin main`実行後`git log origin/main..HEAD --oneline | wc -l`、
+  2026-08-10): **11件**(内訳`git log origin/main..HEAD --oneline | grep -oE
+  '\(cmd_[0-9]+' | sort | uniq -c`: cmd_164×3・cmd_165×4・cmd_166×3・cmd_167×1、
+  合計検算3+4+3+1=11件、総数11件と一致)。cmd_167本文(acceptance_criteria)は
+  「10件」と記すが将軍の直近実測は11件であり、いずれも援用せず本サブタスクで
+  改めて再実測した結果も11件(将軍実測と一致)。
+  🔴**殿の明示許可により、この新規未push分11件はpendingのまま持ち越し
+  (cmd_167・2026-08-10)**(出典: `queue/shogun_to_karo.yaml` cmd_167
+  acceptance_criteria「未push 10件とAQ-008は、殿の明示許可によりpendingのまま
+  持ち越してよい」)。本追記はAQ-005本来のpush承認(既にapproved・push実行済み)を
+  変更するものではなく、その後新たに積み増された別範囲のcommit群についての
+  持ち越し記録である。pushは本サブタスクでも実行していない。
+
 - ID: AQ-006 | 日付: 2026-08-08 | 操作内容: `config/settings.yaml`
   `features.fleet_idle_notify_enabled` を `off` → `enforce` へ恒久化するか
   (cmd_158最終工程・subtask_158_E) |
@@ -631,3 +648,28 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   ntfy_topic値が1件含まれる」——ここでの「1件」は平文値の混入件数であり、未push
   コミット件数ではない)を誤って比較対象に拾ったもの。実際の不一致は存在しない。
   詳細: `queue/reports/gunshi_report.yaml task_id: gunshi_qc_165_A`。
+
+  【追記・2026-08-10・subtask_167_C2(足軽4号・cmd_167陣仕舞い・pending持ち越し記帳)】
+  cmd_167陣仕舞い時点で、AQ-008(backup branch削除可否)は引き続き**pendingのまま**
+  持ち越す。🔴**殿の明示許可によりpendingのまま持ち越し(cmd_167・2026-08-10)**
+  (出典: `queue/shogun_to_karo.yaml` cmd_167 acceptance_criteria「AQ-008は、殿の
+  明示許可によりpendingのまま持ち越してよい」)。状態欄(pending)・既存本文は
+  いずれも変更していない(追記専用)。
+
+- ID: AQ-009 | 日付: 2026-08-10 | 操作内容: `config/settings.yaml`
+  `features.parent_cmd_done_gate_enabled` を off→enforce へ常用化移行
+  (cmd_164 subtask_164_Bで建造、cmd_167で常用化) |
+  理由: 新規flagの常用化判断は `instructions/karo.md`「新規feature flagの常用化判断」に従い
+  approval_queue経由で殿が消化する運用。本件は殿裁定(Fable Q30経由・
+  2026-08-10)により直接承認された |
+  doubt: 実測根拠として以下を記すこと(貴殿自身が一次資料を確認して正確に記述せよ・援用禁止):
+  (a) build時の実機検証(`gunshi_qc_164_B`——隔離環境でのALLOW/DENY/
+      off即通過3パターン確認、既存bats37件+専用bats7件の回帰確認)
+  (b) 常用化までの間に実際にstale assignedが5件再発した事実
+      (subtask_167_A・cmd_165/166系列)——ゲートが`off`のまま
+      運用実効性を持たなかった実例
+  (c) 昇格根拠(非対称性): 誤denyは可逆(手戻りのみ)、放置は
+      不可逆側(完了済みタスクの再実行という実害)——殿裁定(Fable
+      Q30経由)の判断根拠をそのまま記すこと |
+  状態: approved(承認者: 殿・Fable裁定Q30経由・2026-08-10、
+  根拠: `queue/shogun_to_karo.yaml` cmd_167 ruling_source)
