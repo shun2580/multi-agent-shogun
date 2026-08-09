@@ -185,7 +185,12 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   (c) 公開されて困る内容の有無: 本エントリ起票時点では未走査。AQ-002/AQ-003に倣い、
   push承認確定・実行の直前に改めて再実測のうえ走査する運用とする(本3件はmandate層の
   記帳・instructions再生成・スクリプト是正のみで、新規の秘匿設定ファイル追加は無い) |
-  状態: pending
+  状態: approved(2026-08-09・承認者: 殿・Fable裁定Q29経由・出典:
+  `queue/shogun_to_karo.yaml` cmd_163 ruling_source「Fable裁定Q29
+  (2026-08-09)・殿経由で受領。出典: ~/fable_situation_20260809_2130.md
+  への回答」。承認条件=cmd_163 acceptance_criteria全項。条件充足の
+  再確認結果はsubtask_163_A(本エントリ末尾の追記【subtask_163_A】節)
+  参照)
   備考: 殿の明示許可により2026-08-09(明日)のキュー消化まで持ち越し(原文:
   「未push分はapproval_queueへ積み、pendingのまま明日へ持ち越すことを明示的に許可する。
   明日のキュー消化で判断する。」出典: queue/shogun_to_karo.yaml cmd_157)。
@@ -379,6 +384,63 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   すべて反映した状態での再走査が必須条件であることを、cmd_162陣仕舞い記録として
   改めて明記する。本追記は追記専用であり、状態欄(pending)・既存本文はいずれも
   変更していない。
+
+  【追記・2026-08-09・subtask_163_A(足軽2号・cmd_163 push前検証・push未実行)】
+  殿裁定(Fable Q29経由・2026-08-09、出典: `queue/shogun_to_karo.yaml`
+  cmd_163)によりAQ-005のpush自体は承認された。本サブタスクはその承認条件
+  (cmd_163 acceptance_criteria)の充足を**今この時点で**再確認したのみで、
+  `git push`は実行していない(push実行は後続subtask_163_Bの担当)。
+
+  🔴**(1) 未pushコミット再実測**: `git fetch origin main`実行後
+  `git log origin/main..HEAD --oneline | wc -l` = 22件(将軍21:30時点値・
+  cmd_159時点8件・起票時3件、いずれも援用せず自ら再実測)。内訳
+  (`git log origin/main..HEAD --oneline | grep -oE '\(cmd_[0-9]+' | sort |
+  uniq -c`): cmd_158×6・cmd_161×5・cmd_157×4・cmd_160×3・cmd_159×2・
+  cmd_162×1・cmd_156×1。合計検算: 6+5+4+3+2+1+1=22件、総数22件と一致。
+
+  🔴**(2) 秘匿値の全件走査**: `git log origin/main..HEAD -p`を
+  `(api[_-]?key|secret|token|password|private[_-]?key|-----BEGIN)`
+  (大小文字区別なし)で走査、5件ヒット。全件を実内容確認した結果、いずれも
+  秘匿値インシデントの説明文(decisions_journal記述・approval_queue追記)、
+  または秘匿値検知機構(`fleet_idle_notify`のsecret-leak guard)の実装コード
+  中の"secret"という単語であり、実際の鍵・token・password値は含まれない
+  ことを確認。追加で`ntfy_topic`(config/settings.yaml.example実キー名)を
+  対象に走査(10件ヒット)したが、全件が①のRULEエントリ本文中の説明文、
+  または②ハッシュ比較コマンド文字列(`git show 60a0299^:config/settings.yaml
+  | grep '^ntfy_topic:' | sha256sum`)であり、`ntfy.sh/<topic>`形式のURLは
+  0件だった。ただし`grep -inE '^\+.*ntfy_topic\s*:'`は2件ヒット。いずれも
+  `mandate/decisions_journal.md`追記行中の上記ハッシュ比較コマンド引用文字列
+  であり、`+ntfy_topic: <実値>`形式の実キー・実値の追加ではないことを
+  目視確認した。**ゼロ確認**。
+
+  🔴**(3) cmd_159殿裁定(4)の3点、いま現在の再確認**:
+  (a) subtask_158_B(秘匿値混入): `git ls-files | grep -c
+  'config/settings.yaml$'` = 0。現在もuntracked、確認OK。
+  (b) subtask_158_G(blob除去、対象commit `1963907`): `git log --oneline |
+  grep -c 1963907`(main/HEAD) = 0、`git log origin/main --oneline |
+  grep -c 1963907` = 0——mainからの消滅を確認(subtask_158G原記録の解決
+  基準と一致)。参考: `git log --all --oneline | grep -c 1963907` = 1だが、
+  到達元はローカルbackup branch
+  `backup-cmd158-pre-history-purge-20260808-222447`のみ(`git for-each-ref`
+  で確認、origin側に同名refは存在しない)。同branchはcmd_159殿裁定(3)
+  「backup branch保持により可逆性が担保されていた」ことを根拠に**意図的に
+  削除せず保持**されているものであり、その残存は解決の未達ではなく承認済み
+  設計どおりの状態。確認OK。
+  (c) subtask_158_H(公開済み履歴の無害化2点セット): ①値ローテーション済み
+  ——`git show 60a0299^:config/settings.yaml | grep '^ntfy_topic:' |
+  sha256sum` = `9167041e...`(ローテーション前)、`grep '^ntfy_topic:'
+  config/settings.yaml | sha256sum` = `6bf9a65b...`(現在値、settings.yamlは
+  untrackedのためファイルシステムから直接読取)。両者不一致——値が異なる
+  ことを再確認。②旧購読解除済み——`mandate/decisions_journal.md:130`
+  (2026-08-08付CORRECTエントリ)に「殿ご自身がntfyアプリを実確認され
+  『既に解除済み』と確定」と記帳済みであることを確認(再現手段を持たない
+  ため、殿確認済み・journal記載済みであることの確認に留める)。
+
+  **結論**: (1)(2)(3)いずれも再確認でき、cmd_163 acceptance_criteriaの
+  push前提条件は全項充足。**push実行可能**(実際のpush・
+  `AQ_APPROVED_ID=AQ-005`付与・`ALLOW`ログ確認は後続subtask_163_Bで実施)。
+  詳細な実行コマンド・出力全文は`queue/reports/ashigaru2_report.yaml
+  task_id: subtask_163_A`参照。
 
 - ID: AQ-006 | 日付: 2026-08-08 | 操作内容: `config/settings.yaml`
   `features.fleet_idle_notify_enabled` を `off` → `enforce` へ恒久化するか
