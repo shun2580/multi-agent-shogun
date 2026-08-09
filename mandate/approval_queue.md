@@ -591,6 +591,14 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   本追記で判断せず、殿の判断へ委ねる(状態欄参照)。
 
   🔴STALE(自動再実測不一致・2026-08-09T22:55:23+0900・軍師/家老が要再確認): 記載値=1件、実測値=4件
+  🔴訂正(cmd_165 subtask_165_D・2026-08-09T23:17:18+0900): 上記STALE標識は誤検知である。
+  `scripts/check_approval_queue_staleness.sh`のキーワード限定ヒューリスティックが、
+  未pushコミット数とは無関係な文脈の「1件」(出典: 本エントリ直前の
+  subtask_163_B追記「これによりAQ-007のenforce昇格判断に必要としていた
+  『承認済み経路(`AQ_APPROVED_ID`指定)が実際にobserveモードのpushを通る』
+  実測を1件取得した」——ここでの「1件」はALLOW実測の取得件数であり、未pushコミット
+  件数ではない)を誤って比較対象に拾ったもの。実際の不一致は存在しない。
+  詳細: `queue/reports/gunshi_report.yaml task_id: gunshi_qc_165_A`。
 - ID: AQ-008 | 日付: 2026-08-09 | 操作内容: backup branch
   `backup-cmd158-pre-history-purge-20260808-222447` の削除可否
   (cmd_163・subtask_163_B起票) |
@@ -616,3 +624,10 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   という削除理由が対立する形になる点に留意されたい |
   状態: pending
   🔴STALE(自動再実測不一致・2026-08-09T22:55:23+0900・軍師/家老が要再確認): 記載値=1件、実測値=4件
+  🔴訂正(cmd_165 subtask_165_D・2026-08-09T23:17:18+0900): 上記STALE標識は誤検知である。
+  `scripts/check_approval_queue_staleness.sh`のキーワード限定ヒューリスティックが、
+  未pushコミット数とは無関係な文脈の「1件」(出典: doubt(b)の記述「当該backup branch
+  には`git log --all -p -- mandate/approval_queue.md`で検出可能な平文の旧
+  ntfy_topic値が1件含まれる」——ここでの「1件」は平文値の混入件数であり、未push
+  コミット件数ではない)を誤って比較対象に拾ったもの。実際の不一致は存在しない。
+  詳細: `queue/reports/gunshi_report.yaml task_id: gunshi_qc_165_A`。
