@@ -541,7 +541,9 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   +off復元後確認×1)にとどまり、AQ-006が指摘したような「複数セッション・
   複数エージェントに跨る実測」は未実施である点に留意されたい。最終的な
   移行閾値・件数条件は将軍・殿の裁定に委ねる |
-  状態: observeへ移行済み・enforce昇格はAQ-005 push実測後に判断
+  状態: observeへ移行済み・AQ-005 push(cmd_163・2026-08-09)にて承認済み経路
+  (`AQ_APPROVED_ID=AQ-005`指定)の`ALLOW`実測を1件追加取得済み・enforce昇格の
+  可否は殿の判断待ち(昇格自体は本エントリ更新時点で未実施)
   備考: 【追記・2026-08-09・subtask_160_C(足軽4号・Fable裁定Q24によるobserve
   移行)】Fable裁定Q24(cmd_158実発火観測をもって実証優先の見送り理由は消滅)
   に基づき、`config/settings.yaml` `features.git_push_block_enabled`を
@@ -577,3 +579,40 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   『承認済み経路が実際に通る』実測を得ること。」既存の本文備考・subtask_160_C
   追記「enforce昇格は本エントリ単独では行わず、AQ-005のpush実測後に改めて
   諮る」と同一方針を、cmd_162陣仕舞い記録として再確認するもの)。
+
+  【追記・2026-08-09・subtask_163_B(足軽2号・AQ-005実push実行・承認済み経路の実測回収)】
+  AQ-005承認編集commit後、`AQ_APPROVED_ID=AQ-005`を明示付与して
+  `git push origin main`を実行(commit `543666a`、fetch後の未push数23件→
+  push後0件を確認)。`logs/git_push_block.log`最終行に本pushに対応する
+  `ALLOW mode=observe session=d9735ace-e152-4881-92b9-84d9b4b3e0da tool=Bash`
+  行を実出力で確認した(DENY/WOULD-DENYではなくALLOW)。これによりAQ-007の
+  enforce昇格判断に必要としていた「承認済み経路(`AQ_APPROVED_ID`指定)が
+  実際にobserveモードのpushを通る」実測を1件取得した。昇格の可否自体は
+  本追記で判断せず、殿の判断へ委ねる(状態欄参照)。
+
+  🔴STALE(自動再実測不一致・2026-08-09T22:55:23+0900・軍師/家老が要再確認): 記載値=1件、実測値=4件
+- ID: AQ-008 | 日付: 2026-08-09 | 操作内容: backup branch
+  `backup-cmd158-pre-history-purge-20260808-222447` の削除可否
+  (cmd_163・subtask_163_B起票) |
+  理由: cmd_159殿裁定(3)により、当該backup branchはblob除去(subtask_158_G)の
+  可逆性担保として意図的に削除せず保持されてきたが、削除可否そのものの判断は
+  「push安定確認後に改めて諮る」こととされていた(出典: `queue/shogun_to_karo.yaml`
+  cmd_163 acceptance_criteria「backup branch削除は実行するな。push安定確認後に
+  諮るための新規AQエントリ(AQ-008)を起票するのみ」)。AQ-005のpush実行
+  (本cmd_163・subtask_163_B)により「push安定確認後」の前提条件が成立したため、
+  本エントリを起票する |
+  doubt: (a) push実行(本cmd_163・subtask_163_B)が安定完了したこと——
+  commit `543666a`のpush後、`git log origin/main..HEAD --oneline | wc -l`が
+  0件であることを確認済み、かつ`logs/git_push_block.log`に対応する`ALLOW`行を
+  実出力で確認済み(詳細は本エントリ直前のAQ-007追記および
+  `queue/reports/ashigaru2_report.yaml task_id: subtask_163_B`参照)。
+  (b) subtask_163_A2で軍師が発見した事実——当該backup branchには
+  `git log --all -p -- mandate/approval_queue.md`で検出可能な平文の旧
+  ntfy_topic値が1件含まれる。当該コミットは`git log origin/main..HEAD`の
+  範囲外(origin未到達のローカル専用ref経由)につき今回のpush対象には影響
+  しなかったが、backup branch自体を残す限りこの平文値はローカルに残存し
+  続ける。これはbackup branch削除の是非判断における新たな検討材料であり、
+  削除する場合は「可逆性の担保」という保持理由と「平文の旧秘匿値の残存」
+  という削除理由が対立する形になる点に留意されたい |
+  状態: pending
+  🔴STALE(自動再実測不一致・2026-08-09T22:55:23+0900・軍師/家老が要再確認): 記載値=1件、実測値=4件
