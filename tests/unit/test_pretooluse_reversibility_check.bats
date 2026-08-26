@@ -375,6 +375,75 @@ run_check_with_settings() {
     [ "$status" -eq 0 ]
 }
 
+# --- cmd_175: 非Bashツール分類 ---
+
+@test "cmd_175: TaskCreate logged as WOULD-ALLOW category=nonbash_task_tracking" {
+    local payload='{"session_id":"s-taskcreate","tool_name":"TaskCreate","tool_input":{}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-ALLOW mode=observe session=s-taskcreate file=NA tool=TaskCreate category=nonbash_task_tracking " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "cmd_175: TaskUpdate logged as WOULD-ALLOW category=nonbash_task_tracking" {
+    local payload='{"session_id":"s-taskupdate","tool_name":"TaskUpdate","tool_input":{}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-ALLOW mode=observe session=s-taskupdate file=NA tool=TaskUpdate category=nonbash_task_tracking " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "cmd_175: ToolSearch logged as WOULD-ALLOW category=nonbash_read_only" {
+    local payload='{"session_id":"s-toolsearch","tool_name":"ToolSearch","tool_input":{}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-ALLOW mode=observe session=s-toolsearch file=NA tool=ToolSearch category=nonbash_read_only " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "cmd_175: mcp__memory__read_graph logged as WOULD-ALLOW category=nonbash_read_only" {
+    local payload='{"session_id":"s-readgraph","tool_name":"mcp__memory__read_graph","tool_input":{}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-ALLOW mode=observe session=s-readgraph file=NA tool=mcp__memory__read_graph category=nonbash_read_only " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "cmd_175: Monitor logged as WOULD-ALLOW category=nonbash_read_only" {
+    local payload='{"session_id":"s-monitor","tool_name":"Monitor","tool_input":{}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-ALLOW mode=observe session=s-monitor file=NA tool=Monitor category=nonbash_read_only " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "cmd_175: AskUserQuestion logged as WOULD-ALLOW category=nonbash_read_only" {
+    local payload='{"session_id":"s-askuser","tool_name":"AskUserQuestion","tool_input":{}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-ALLOW mode=observe session=s-askuser file=NA tool=AskUserQuestion category=nonbash_read_only " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "cmd_175 conservative: mcp__memory__delete_entities (write/delete-capable sibling tool, NOT explicitly classified) stays WOULD-UNKNOWN category=tool_unclassified" {
+    local payload='{"session_id":"s-deleteentities","tool_name":"mcp__memory__delete_entities","tool_input":{}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-UNKNOWN mode=observe session=s-deleteentities file=NA tool=mcp__memory__delete_entities category=tool_unclassified " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+    run grep -c "WOULD-ALLOW.*s-deleteentities" "$LOG_FILE"
+    [ "$status" -ne 0 ]
+}
+
+@test "cmd_175 conservative: Agent (downstream effects unknown at call site) stays WOULD-UNKNOWN category=tool_unclassified" {
+    local payload='{"session_id":"s-agent","tool_name":"Agent","tool_input":{}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-UNKNOWN mode=observe session=s-agent file=NA tool=Agent category=tool_unclassified " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+    run grep -c "WOULD-ALLOW.*s-agent" "$LOG_FILE"
+    [ "$status" -ne 0 ]
+}
+
+@test "cmd_175 conservative: ScheduleWakeup (deferred effect, unclear at call site) stays WOULD-UNKNOWN category=tool_unclassified" {
+    local payload='{"session_id":"s-wakeup","tool_name":"ScheduleWakeup","tool_input":{}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-UNKNOWN mode=observe session=s-wakeup file=NA tool=ScheduleWakeup category=tool_unclassified " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
 # --- fail-open: python欠落時もunknownとして記録しexit0(クラッシュしない) ---
 
 @test "python binary missing: still exits 0 and logs WOULD-UNKNOWN category=hook_internal_error" {

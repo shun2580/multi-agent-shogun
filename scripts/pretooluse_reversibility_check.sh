@@ -194,8 +194,38 @@ if tool_name in ("Read", "Grep", "Glob", "TodoWrite"):
     emit("reversible", "read_only", tool_name, session_id, "NA", tool_name)
     sys.exit(0)
 
-# 上記いずれにも該当しないツール(WebFetch/mcp__*等)は判定不能として
-# unknownに倒す(安全側)。
+# ─── 非Bashツールの追加分類 (cmd_175) ───
+# cmd_148実測でcategory=tool_unclassifiedの内訳上位を占めた非Bashツールのうち、
+# ツール名の意味(harness側の機能定義)だけから確信を持って副作用の性質を判定
+# できるもののみを個別列挙で分類する。verbホワイトリスト方式(cmd_152の
+# READONLY_VERBS)と異なりプレフィックス一致は行わない——例えばmcp__memory__
+# 名前空間には削除・書込系ツール(delete_entities等)も同居しており、
+# プレフィックスで束ねるとそれらまで誤ってreversible化するリスクがあるため、
+# 個々のツール名を明示列挙する(判定に迷うものは対象外とし、既存の
+# tool_unclassifiedへフォールスルーさせる。cmd_152のsed/awk対象外判断と同型)。
+#
+# TaskCreate/TaskUpdate: 既存コードが既にTodoWrite(同種のセッション内タスク
+# 管理・外部副作用なし)をreversible/read_onlyへ分類している前例に倣う。
+# ToolSearch/mcp__memory__read_graph/Monitor/AskUserQuestion: いずれも
+# 読取専用または単なるUI応答であり、ファイルシステム・外部システムへの
+# 書込/削除/送信能力を持たない。
+#
+# Agent/ScheduleWakeup等は、委譲先の挙動やスケジュール後の実処理まで
+# 本ツール呼出し単体からは判定できないため、意図的に対象外のまま
+# tool_unclassifiedへフォールスルーさせる(保守的側=unknown)。
+NONBASH_TASK_TRACKING = {"TaskCreate", "TaskUpdate"}
+NONBASH_READONLY = {"ToolSearch", "mcp__memory__read_graph", "Monitor", "AskUserQuestion"}
+
+if tool_name in NONBASH_TASK_TRACKING:
+    emit("reversible", "nonbash_task_tracking", tool_name, session_id, "NA", tool_name)
+    sys.exit(0)
+
+if tool_name in NONBASH_READONLY:
+    emit("reversible", "nonbash_read_only", tool_name, session_id, "NA", tool_name)
+    sys.exit(0)
+
+# 上記いずれにも該当しないツール(WebFetch/Agent/ScheduleWakeup/mcp__*の
+# 他ツール等)は判定不能として unknownに倒す(安全側)。
 emit("unknown", "tool_unclassified", tool_name, session_id, "NA", tool_name)
 PYEOF
 
