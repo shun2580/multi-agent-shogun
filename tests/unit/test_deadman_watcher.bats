@@ -9,10 +9,12 @@ setup() {
     DEADMAN_SCRIPT="$PROJECT_ROOT/scripts/deadman_watcher.sh"
     TEST_TMP="$(mktemp -d)"
     TIMING_LOG="$TEST_TMP/timing_events.jsonl"
+    STALL_LOG="$TEST_TMP/stall_events.jsonl"
     ALERTS_LOG="$TEST_TMP/deadman_alerts.log"
     INCIDENTS_DIR="$TEST_TMP/incidents"
     SETTINGS="$TEST_TMP/settings.yaml"
     : > "$ALERTS_LOG"
+    : > "$STALL_LOG"
     # 固定の"現在時刻"(DEADMAN_TEST_NOWオーバーライド)でelapsed計算を決定的にする。
     NOW_ISO="2026-07-17T12:00:00+09:00"
 }
@@ -37,6 +39,7 @@ run_deadman() {
     local snippet="$1"
     run env \
         TIMING_EVENTS_JSONL="$TIMING_LOG" \
+        STALL_EVENTS_LOG="$STALL_LOG" \
         DEADMAN_ALERTS_LOG="$ALERTS_LOG" \
         DEADMAN_INCIDENTS_DIR="$INCIDENTS_DIR" \
         DEADMAN_SETTINGS="$SETTINGS" \
@@ -162,4 +165,88 @@ EOF
 
     run grep -c '"event": "deadman_fired"' "$ALERTS_LOG"
     [ "$output" -eq 2 ]
+}
+
+# ─── cmd_179: activity和集合化(timing_events ∪ stall_events output_changed)の
+# 敵対的テスト。subtask_179_A(足軽4号)実装のget_in_flight_tasks()
+# best_ts/best_event/best_dt選択ロジック(oc_dt > best_dtならoutput_changedを採用)を対象とする。
+
+# --- ① 両方(timing_events・output_changed)新しい → 不発火 ---
+
+@test "(g) cmd_179 union: both timing_events and output_changed are fresh -> no false alarm" {
+    cat > "$TIMING_LOG" <<'EOF'
+{"ts": "2026-07-17T11:00:00+09:00", "event": "assigned", "cmd_id": "cmd_g", "task_id": "task_g", "agent": "ashigaru1", "redo_of": null, "qc_result": null, "source": "test", "extra": null}
+{"ts": "2026-07-17T11:50:00+09:00", "event": "agent_started", "cmd_id": "cmd_g", "task_id": "task_g", "agent": "ashigaru1", "redo_of": null, "qc_result": null, "source": "test", "extra": null}
+EOF
+    cat > "$STALL_LOG" <<'EOF'
+{"ts": "2026-07-17T11:55:00+09:00", "event": "output_changed", "cmd_id": "cmd_g", "task_id": "task_g"}
+EOF
+    write_settings true 20
+
+    run_deadman "check_stalls"
+    [ "$status" -eq 0 ]
+    [ ! -s "$ALERTS_LOG" ]
+    [ ! -f "$TEST_TMP/ntfy.log" ]
+}
+
+# --- ② timing_eventsは古いがoutput_changedが新しい → 不発火(核心シナリオ・cmd_175実例の再現) ---
+
+@test "(h) cmd_179 union: stale timing_events but fresh output_changed suppresses false alarm" {
+    cat > "$TIMING_LOG" <<'EOF'
+{"ts": "2026-07-17T11:00:00+09:00", "event": "assigned", "cmd_id": "cmd_h", "task_id": "task_h", "agent": "ashigaru1", "redo_of": null, "qc_result": null, "source": "test", "extra": null}
+{"ts": "2026-07-17T11:30:00+09:00", "event": "agent_started", "cmd_id": "cmd_h", "task_id": "task_h", "agent": "ashigaru1", "redo_of": null, "qc_result": null, "source": "test", "extra": null}
+EOF
+    cat > "$STALL_LOG" <<'EOF'
+{"ts": "2026-07-17T11:50:00+09:00", "event": "output_changed", "cmd_id": "cmd_h", "task_id": "task_h"}
+EOF
+    write_settings true 20
+
+    run_deadman "check_stalls"
+    [ "$status" -eq 0 ]
+    [ ! -s "$ALERTS_LOG" ]
+    [ ! -f "$TEST_TMP/ntfy.log" ]
+}
+
+# --- ③ 両方古い → 発火(失報側の担保・最重要) ---
+
+@test "(i) cmd_179 union: both timing_events and output_changed are stale -> still fires (no missed alarm)" {
+    cat > "$TIMING_LOG" <<'EOF'
+{"ts": "2026-07-17T11:00:00+09:00", "event": "assigned", "cmd_id": "cmd_i", "task_id": "task_i", "agent": "ashigaru1", "redo_of": null, "qc_result": null, "source": "test", "extra": null}
+EOF
+    cat > "$STALL_LOG" <<'EOF'
+{"ts": "2026-07-17T11:05:00+09:00", "event": "output_changed", "cmd_id": "cmd_i", "task_id": "task_i"}
+EOF
+    write_settings true 20
+
+    run_deadman "check_stalls"
+    [ "$status" -eq 0 ]
+
+    run grep -c '"event": "deadman_fired"' "$ALERTS_LOG"
+    [ "$output" -eq 1 ]
+
+    run cat "$TEST_TMP/ntfy.log"
+    [[ "$output" == *"NOTIFIED"* ]]
+    [[ "$output" == *"task_i"* ]]
+}
+
+# --- ④ output_changedが存在しないtask_id → timing_events単独で従来どおり判定(後方互換性) ---
+
+@test "(j) cmd_179 union: task_id absent from output_changed falls back to timing_events alone" {
+    cat > "$TIMING_LOG" <<'EOF'
+{"ts": "2026-07-17T11:00:00+09:00", "event": "assigned", "cmd_id": "cmd_j", "task_id": "task_j", "agent": "ashigaru1", "redo_of": null, "qc_result": null, "source": "test", "extra": null}
+EOF
+    cat > "$STALL_LOG" <<'EOF'
+{"ts": "2026-07-17T11:58:00+09:00", "event": "output_changed", "cmd_id": "cmd_other", "task_id": "task_other"}
+EOF
+    write_settings true 20
+
+    run_deadman "check_stalls"
+    [ "$status" -eq 0 ]
+
+    run grep -c '"event": "deadman_fired"' "$ALERTS_LOG"
+    [ "$output" -eq 1 ]
+
+    run grep '"event": "deadman_fired"' "$ALERTS_LOG"
+    [[ "$output" == *'"last_event_type": "assigned"'* ]]
+    [[ "$output" == *'"last_event_ts": "2026-07-17T11:00:00+09:00"'* ]]
 }
