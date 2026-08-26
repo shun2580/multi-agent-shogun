@@ -6,8 +6,14 @@
 # cmd_092 (Fable正典 fable_directive_deadman.md / 軍師設計 subtask_092_design 準拠)。
 # v1スコープ: 検出・通知・証拠保全のみ。自動復旧(send-keys/nudge/再起動)は行わない。
 #
-# in-flight判定: logs/timing_events.jsonl を唯一の権威ソースとし、task_id粒度で
+# in-flight判定: logs/timing_events.jsonl のライフサイクルイベント(assigned/
+# redo_dispatched〜report_submitted)を対象task_idの権威ソースとし、task_id粒度で
 # 判定する(cmd_doneイベントは実質未運用のため使わない)。
+# 活動時刻(elapsed計算の基準)は cmd_179 (2026-08-26) により、timing_events.jsonl の
+# ライフサイクルイベント ∪ logs/stall_events.jsonl の output_changed イベント の
+# うちより新しい方(union・max)を採用する。ライフサイクルイベントのみを見ると、
+# 実際には毎分output_changedを記録しつつ稼働中の足軽を「無活動」と誤判定する
+# (観測の不在を停止の観測に潰す・cmd_175 subtask_175_A 2026-08-26T21:35:11実例)。
 #
 # 統合: inbox_watcher.shと同型のinotifywait+timeoutパターンを流用した専用1プロセス。
 # 起動・生存監視は watcher_supervisor.sh へ委譲。
@@ -42,6 +48,7 @@ fi
 
 # ─── Overridable paths (env override → bats fixtures point these at tmp dirs) ───
 TIMING_EVENTS_JSONL="${TIMING_EVENTS_JSONL:-${SCRIPT_DIR}/logs/timing_events.jsonl}"
+STALL_EVENTS_LOG="${STALL_EVENTS_LOG:-${SCRIPT_DIR}/logs/stall_events.jsonl}"
 DEADMAN_ALERTS_LOG="${DEADMAN_ALERTS_LOG:-${SCRIPT_DIR}/logs/deadman_alerts.log}"
 DEADMAN_INCIDENTS_DIR="${DEADMAN_INCIDENTS_DIR:-${SCRIPT_DIR}/logs/incidents}"
 DEADMAN_SETTINGS="${DEADMAN_SETTINGS:-${SCRIPT_DIR}/config/settings.yaml}"
@@ -117,19 +124,25 @@ _deadman_pane_base() {
     tmux show-options -gv pane-base-index 2>/dev/null || echo 0
 }
 
-# ─── 論点1: in-flight判定(logs/timing_events.jsonlを唯一の権威ソースとする) ───
+# ─── 論点1: in-flight判定(logs/timing_events.jsonlのライフサイクルイベントを
+# 対象task_idの権威ソースとする) ───
 # task_id粒度: event in (assigned, redo_dispatched) が存在し、その最新出現より
 # 後に event == report_submitted が存在しない task_id を in-flight とみなす。
 # cmd_doneイベントには一切依存しない(実質未運用のため)。
+# 活動時刻(last_event_ts)は cmd_179 により、上記ライフサイクルイベントの最新ts と
+# logs/stall_events.jsonl の output_changed イベント最新ts(同一task_id・cmd_id
+# 一致時のみ、誤結合防止の二重キー)の**より新しい方**を採用する(和集合)。
 # 出力: JSON配列 [{"cmd_id","task_id","last_event_type","last_event_ts"}, ...]
 get_in_flight_tasks() {
-    TIMING_EVENTS_JSONL="$TIMING_EVENTS_JSONL" "$SCRIPT_DIR/.venv/bin/python3" - <<'PY'
+    TIMING_EVENTS_JSONL="$TIMING_EVENTS_JSONL" STALL_EVENTS_LOG="$STALL_EVENTS_LOG" \
+        "$SCRIPT_DIR/.venv/bin/python3" - <<'PY'
 import datetime
 import json
 import os
 from collections import defaultdict
 
 path = os.environ.get("TIMING_EVENTS_JSONL", "")
+stall_path = os.environ.get("STALL_EVENTS_LOG", "")
 
 
 def parse_ts(s):
@@ -158,6 +171,32 @@ try:
 except FileNotFoundError:
     pass
 
+# output_changed(logs/stall_events.jsonl): task_id粒度で最新tsを蓄積する。
+# cmd_idも保持し、timing_events側と一致する場合のみ採用する(誤結合防止)。
+output_changed_by_task = defaultdict(list)
+try:
+    with open(stall_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except Exception:
+                continue
+            if rec.get("event") != "output_changed":
+                continue
+            tid = rec.get("task_id")
+            ts = rec.get("ts")
+            if not tid or not ts:
+                continue
+            dt = parse_ts(ts)
+            if dt is None:
+                continue
+            output_changed_by_task[tid].append((ts, rec.get("cmd_id"), dt))
+except FileNotFoundError:
+    pass
+
 results = []
 for tid, events in tasks.items():
     parsed = [(ts, ev, cid, parse_ts(ts)) for ts, ev, cid in events]
@@ -180,19 +219,27 @@ for tid, events in tasks.items():
     if completed:
         continue
 
-    last_ts, last_event, _, _ = parsed[-1]
+    last_ts, last_event, _, last_dt = parsed[-1]
     cmd_id = None
     for ts, ev, cid, dt in reversed(parsed):
         if cid:
             cmd_id = cid
             break
 
+    # 和集合(union): output_changedの最新tsがtiming側より新しければ採用する。
+    best_ts, best_event, best_dt = last_ts, last_event, last_dt
+    for oc_ts, oc_cid, oc_dt in output_changed_by_task.get(tid, []):
+        if cmd_id and oc_cid and oc_cid != cmd_id:
+            continue
+        if oc_dt > best_dt:
+            best_ts, best_event, best_dt = oc_ts, "output_changed", oc_dt
+
     results.append(
         {
             "cmd_id": cmd_id,
             "task_id": tid,
-            "last_event_type": last_event,
-            "last_event_ts": last_ts,
+            "last_event_type": best_event,
+            "last_event_ts": best_ts,
         }
     )
 
