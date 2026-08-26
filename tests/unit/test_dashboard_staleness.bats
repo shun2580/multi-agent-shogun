@@ -354,3 +354,146 @@ EOF
     # 通知は止まったが、項目自体はdashboard.mdから削除されていないこと
     grep -q "可視性維持の確認対象" "$TEST_TMP/dashboard.md"
 }
+
+# ═══════════════════════════════════════════════════════════════
+# ④ 敵対的回帰(cmd_170: 取消線除外・項目単位created_at・持ち越しマーカー)
+# ═══════════════════════════════════════════════════════════════
+
+@test "④-1: 取消線あり・単一行 → 通知されない" {
+    local old_ts
+    old_ts="$(ts_minutes_ago 1600)"
+    cat > "$TEST_TMP/dashboard.md" <<EOF
+## 🚨 要対応
+<!-- created_at: ${old_ts} -->
+- ~~取消線あり単一行の項目~~ ✅完了
+EOF
+    run_dashboard_staleness
+    [ "$status" -eq 0 ]
+    [ ! -s "$NTFY_LOG" ]
+}
+
+@test "④-2: 取消線あり・複数行にまたがる → 通知されない" {
+    local old_ts
+    old_ts="$(ts_minutes_ago 1600)"
+    cat > "$TEST_TMP/dashboard.md" <<EOF
+## 🚨 要対応
+<!-- created_at: ${old_ts} -->
+- ~~取消線が
+複数行にまたがる項目~~ ✅完了
+EOF
+    run_dashboard_staleness
+    [ "$status" -eq 0 ]
+    [ ! -s "$NTFY_LOG" ]
+}
+
+@test "④-3: 取消線なし・項目単位created_atが新しい(閾値未満) → 通知されない" {
+    local recent_ts
+    recent_ts="$(ts_minutes_ago 60)"  # 24h閾値未満
+    cat > "$TEST_TMP/dashboard.md" <<EOF
+## 🚨 要対応
+<!-- created_at: ${recent_ts} -->
+- 取消線なし・created_atが新しい項目
+EOF
+    run_dashboard_staleness
+    [ "$status" -eq 0 ]
+    [ ! -s "$NTFY_LOG" ]
+}
+
+@test "④-4: 取消線なし・項目単位created_atが古い(閾値超過) → 通知される" {
+    local old_ts
+    old_ts="$(ts_minutes_ago 1600)"
+    cat > "$TEST_TMP/dashboard.md" <<EOF
+## 🚨 要対応
+<!-- created_at: ${old_ts} -->
+- 取消線なし・created_atが古い項目
+EOF
+    run_dashboard_staleness
+    [ "$status" -eq 0 ]
+    [ "$(grep -c '^NTFY' "$NTFY_LOG")" -eq 1 ]
+    grep -q "取消線なし・created_atが古い項目" "$NTFY_LOG"
+}
+
+@test "④-5: carryover_approvedあり・created_at超過 → 通知されない" {
+    local old_ts
+    old_ts="$(ts_minutes_ago 1600)"
+    cat > "$TEST_TMP/dashboard.md" <<EOF
+## 🚨 要対応
+<!-- created_at: ${old_ts} -->
+<!-- carryover_approved: true -->
+- carryover承認済み・放置ではない項目
+EOF
+    run_dashboard_staleness
+    [ "$status" -eq 0 ]
+    [ ! -s "$NTFY_LOG" ]
+}
+
+@test "④-6: carryover_approvedなし・created_at超過 → 通知される(非存在チェックの明示分離)" {
+    local old_ts
+    old_ts="$(ts_minutes_ago 1600)"
+    cat > "$TEST_TMP/dashboard.md" <<EOF
+## 🚨 要対応
+<!-- created_at: ${old_ts} -->
+- carryover_approvedマーカーが存在しない・超過項目
+EOF
+    run_dashboard_staleness
+    [ "$status" -eq 0 ]
+    [ "$(grep -c '^NTFY' "$NTFY_LOG")" -eq 1 ]
+    grep -q "carryover_approvedマーカーが存在しない・超過項目" "$NTFY_LOG"
+}
+
+@test "④-7: 同一セクション内に取消線あり1件+carryoverあり1件+通常stale1件が混在 → stale1件のみ通知される" {
+    local old_ts
+    old_ts="$(ts_minutes_ago 1600)"
+    cat > "$TEST_TMP/dashboard.md" <<EOF
+## 🚨 要対応
+<!-- created_at: ${old_ts} -->
+- ~~取消線あり項目(混在)~~ ✅完了
+<!-- created_at: ${old_ts} -->
+<!-- carryover_approved: true -->
+- carryover承認済み項目(混在)
+<!-- created_at: ${old_ts} -->
+- 通常stale項目(混在・唯一通知されるべき)
+EOF
+    run_dashboard_staleness
+    [ "$status" -eq 0 ]
+    [ "$(grep -c '^NTFY' "$NTFY_LOG")" -eq 1 ]
+    grep -q "通常stale項目(混在・唯一通知されるべき)" "$NTFY_LOG"
+    ! grep -q "取消線あり項目(混在)" "$NTFY_LOG"
+    ! grep -q "carryover承認済み項目(混在)" "$NTFY_LOG"
+}
+
+@test "④-8: 取消線の開始~~のみあり閉じタグが無い(壊れたMarkdown) → 安全側(通知する)へ倒れる" {
+    local old_ts
+    old_ts="$(ts_minutes_ago 1600)"
+    cat > "$TEST_TMP/dashboard.md" <<EOF
+## 🚨 要対応
+<!-- created_at: ${old_ts} -->
+- ~~閉じタグの無い壊れたMarkdown項目
+EOF
+    run_dashboard_staleness
+    [ "$status" -eq 0 ]
+    [ "$(grep -c '^NTFY' "$NTFY_LOG")" -eq 1 ]
+    grep -q "閉じタグの無い壊れたMarkdown項目" "$NTFY_LOG"
+}
+
+@test "④-9: 同一セクション内でcooldown中の項目とstale初回項目が混在しても項目単位で独立して判定される(旧セクション単位1マーカーでは検証不能だった回帰)" {
+    local old_ts_a old_ts_b prev_notify_ts
+    old_ts_a="$(ts_minutes_ago 1600)"
+    old_ts_b="$(ts_minutes_ago 1700)"
+    prev_notify_ts="$(ts_minutes_ago 100)"  # cooldown 360分未満 → old_ts_aは抑止されるべき
+    cat > "$TEST_TMP/dashboard.md" <<EOF
+## 🚨 要対応
+<!-- created_at: ${old_ts_a} -->
+- cooldown中のため抑止されるべき項目(混在)
+<!-- created_at: ${old_ts_b} -->
+- 初回stale・通知されるべき項目(混在)
+EOF
+    seed_notify_record "$prev_notify_ts" "$old_ts_a" 1
+    run_dashboard_staleness
+    [ "$status" -eq 0 ]
+    [ "$(grep -c '^NTFY' "$NTFY_LOG")" -eq 1 ]
+    grep -q "初回stale・通知されるべき項目(混在)" "$NTFY_LOG"
+    ! grep -q "cooldown中のため抑止されるべき項目" "$NTFY_LOG"
+    grep -qF "\"task_id\": \"${old_ts_b}\"" "$TIMING_LOG"
+    grep -qF "\"extra\": \"notify_count=1\"" "$TIMING_LOG"
+}
