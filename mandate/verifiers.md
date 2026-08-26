@@ -318,3 +318,26 @@ mandate/decisions_journal.md`で確認可能)と同趣旨だが、(1)受け入�
 **意図的に付与されていない**(=通常の放置検出対象のまま)。マーカーの
 「あり/なし」両パターンが本番データに実在する(dashboard.md 205行目・209行目、
 `created_at`のみでcarryover_approvedコメントなし)。
+
+## 秘匿値記述禁止則(cmd_180)
+
+「**秘匿値(トピック名・鍵・トークン等)は記帳・報告の本文へ平文で書かず、参照名(設定キー名)で書く。
+値そのものが必要な場合は設定ファイル(untracked)のみに置く**」
+(出典: 殿の直接下命、`queue/shogun_to_karo.yaml` cmd_180 acceptance_criteria
+【工程3・一般則の制定】項、2026-08-26。契機は`mandate/decisions_journal.md`
+2026-08-09付エントリへのntfy_topic平文混入が17日間PUBLICリポジトリ上に露出した
+インシデント——詳細は同ファイルの該当CORRECTエントリ〈cmd_180〉参照)。
+
+**根本原因の構造**: `memory/MEMORY.md`では既にこの規律が守られていた(同ファイル
+145行目・296行目、いずれも「🔴秘匿値〈ntfy_topic等〉はここに転記していない」と
+明記)一方、`mandate/decisions_journal.md`にはこの規律が及んでいなかった——
+同ファイルの2026-08-09付CORRECTエントリ(cmd_158 caveat解除の独立再確認、
+subtask_160_C記帳)が`logs/ntfy.log`引用文中のtopic=部分にntfy_topic値を
+平文のまま書き写し、それが2026-08-09 21:57のpushで公開された。**規律は
+存在したが、一部の台帳にしか及んでいなかった**構造であり、本則はこの
+構造的欠陥を記帳・報告のあらゆる経路へ一般化して塞ぐものである。
+
+**適用対象**: `mandate/*.md`各台帳・`dashboard.md`・`queue/reports/*`・
+`queue/inbox/*`・tracked配下の`logs/`等、秘匿値を書き得る全ての記帳・報告経路。
+cmd_180工程3(横展開点検)による機械列挙・点検結果(点検済み/未点検の区分)は
+`queue/reports/ashigaru2_report.yaml` task_id: subtask_180_B参照。
