@@ -1933,6 +1933,12 @@ except Exception:
 }
 
 check_dashboard_staleness() {
+    local enabled
+    enabled=$(_read_dashboard_staleness_setting enabled true)
+    if [ "$enabled" != "true" ] && [ "$enabled" != "True" ]; then
+        return 0
+    fi
+
     local marker="${SCRIPT_DIR}/logs/.dashboard_staleness_last_check"
     local interval_min
     interval_min=$(_read_dashboard_staleness_setting check_interval_minutes 30)

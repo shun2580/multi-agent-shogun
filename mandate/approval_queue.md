@@ -673,3 +673,20 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
       Q30経由)の判断根拠をそのまま記すこと |
   状態: approved(承認者: 殿・Fable裁定Q30経由・2026-08-10、
   根拠: `queue/shogun_to_karo.yaml` cmd_167 ruling_source)
+
+- ID: AQ-010 | 日付: 2026-08-26 | 操作内容: `config/settings.yaml`
+  `dashboard_staleness.enabled` のobserve/enforce相当の常用化判断
+  (cmd_168 subtask_168_Aで新設、既定値false=止血中) |
+  理由: 新設接続則(Q37項目10・cmd_168、`mandate/verifiers.md`)により、
+  新設flagは常用化判断がAQへ起票されるまで完了とみなさない。本flagは
+  2026-08-26 14:54:59の偽陽性通知(cmd_166で解決済み・取消線付き項目を
+  名指し)を受けた一時停止(止血)の実装であり、項目6(本修正——section限定
+  パース等)完了後に常用化(observe/enforce)判断が必要になる |
+  doubt: 常用化判断時に確認すること(本サブタスクでは承認しない・起票のみ):
+  (a) 項目6本修正の完了とその実機検証結果
+  (b) 停止期間中、代替可視化2経路(手空き通知pending行・セッション開始
+      点検スイープ)が実際に機能し続けたことの実測(停止中に見落としが
+      発生していないか)
+  (c) 本修正後の再発試験(偽陽性が解消されたことの実機確認)——確認できる
+      までは`enabled: false`(止血継続)を維持し、安易にtrueへ戻さないこと |
+  状態: pending

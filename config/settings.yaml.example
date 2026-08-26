@@ -43,6 +43,7 @@ stuck_escalation:
   window_minutes: <integer>
   cooldown_after_escalation_minutes: <integer>
 dashboard_staleness:
+  enabled: <boolean>
   hours: <integer>
   check_interval_minutes: <integer>
   cooldown_after_escalation_minutes: <integer>
