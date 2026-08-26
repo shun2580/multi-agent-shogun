@@ -735,7 +735,17 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   すると、これら13件を含む`git add .`/`git commit -a`が今後すべてdeny
   されるため、フック登録(a)に先立って.gitignoreのallowlistへこの13件を
   追記するか、殿がこの副作用を許容のうえ登録を進めるかの判断が必要 |
-  状態: pending
+  状態: approved
+  追記(cmd_177 subtask_177_A・足軽5号・2026-08-26): doubt(a)(c)を以下のとおり解消。
+  (a) `.claude/settings.json`のPreToolUse配列へ`scripts/pretooluse_staged_ignore_guard.sh`
+  (matcher: "Bash", timeout: 5、既存`pretooluse_git_push_block.sh`と同作法)を登録し、
+  本番PreToolUse経路での実発火をDENY/ALLOW両方の実ログ
+  (`logs/staged_ignore_guard.log`session=1dc240f1-b687-4a16-8a40-e3fc5a2b392d、
+  2026-08-26T21:40:24〜27+09:00の3行)で確認した(手動piped実行ではない)。
+  (c) 13件を1件ずつ判定(機械的一括処理せず): 全13件とも「本来trackedであるべき
+  ファイル」(生成物/共有インフラスクリプト/フック本体)であり、allowlist掲載漏れと
+  判定した。`.gitignore`へ`!<path>`を個別追記して解消した。untrack候補は0件
+  (13件詳細は`queue/reports/ashigaru5_report.yaml` task_id: subtask_177_A参照)。
 
 - ID: AQ-012 | 日付: 2026-08-26 | 操作内容: 未push commit群(16件、
   `AQ_APPROVED_ID=AQ-012`を明示付与しての`git push origin main`実行)の
@@ -782,3 +792,13 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   実際には発火しない**ため、殿がpush消化を判断する際はこの点を踏まえる
   こと |
   状態: pending
+  追記(cmd_177 subtask_177_A・足軽5号・2026-08-26): **Q37 3点セットの(2)ガード成立が
+  真になった**。`.claude/settings.json`のPreToolUse配列へ`pretooluse_staged_ignore_guard.sh`
+  を登録し、本番PreToolUse経路での実発火を実ログで確認した(AQ-011 doubt(a)追記と同一の
+  実測。config値がenforceであることのみを根拠とせず、実発火のみを証拠として受理):
+  `logs/staged_ignore_guard.log`session=1dc240f1-b687-4a16-8a40-e3fc5a2b392dの
+  2026-08-26T21:40:24〜27+09:00に(a) `git add dashboard.md`→DENY実発火、(b) `git add
+  scripts/inbox_write.sh`(既存allowlist済み正常ファイル)→ALLOW実発火、(c) `git add
+  scripts/pretooluse_git_push_block.sh`(本cmdでallowlist追記した13件の1つ)→ALLOW実発火
+  (誤検知解消の実証)、の3行を記録済み。**AQ-012の状態はpendingのまま変更していない**
+  (push承認は殿の専権)。

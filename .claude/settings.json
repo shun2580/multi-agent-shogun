@@ -60,6 +60,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/pretooluse_staged_ignore_guard.sh",
+            "timeout": 5
+          }
+        ]
       }
     ]
   },
