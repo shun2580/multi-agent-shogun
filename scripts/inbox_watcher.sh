@@ -1916,6 +1916,26 @@ check_and_heal_dead_cli() {
 # dashboard.md の🚨要対応項目が created_at (HTMLコメント埋込) から
 # dashboard_staleness.hours 経過しても放置されている場合、ntfy で再通知する。
 # karo の inbox_watcher インスタンスのみが呼び出す(配線側でAGENT_ID判定)。
+
+# cmd_170: 取消線(~~...~~)で解決済みと判定するロジックを
+# check_dashboard_staleness() と build_fleet_idle_message() の両方から
+# 呼び出すため、Python関数定義をbash変数として一元化する(別ファイルへの
+# 切り出しはallowed_pathsのスコープ外のため、同一ファイル内でのDRY化)。
+read -r -d '' _DASHBOARD_RESOLVED_BLOCK_PY <<'PYEOF' || true
+def _strip_leading_comments(text):
+    # ブロック先頭の連続するHTMLコメント行(created_at直後のcarryover_approved等)
+    # を除去する。
+    return re.sub(r'^(?:\s*<!--.*?-->\s*\n?)*', '', text)
+
+def _is_resolved_block(text):
+    # アイテムブロックの本文本体(bullet prefixを除いた部分)が~~で始まり、
+    # ブロック内(複数行可)のどこかで~~が再度出現して閉じる場合、解決済みとみなす。
+    # 閉じタグが無い壊れたMarkdownは安全側(False=未解決扱い)に倒す。
+    body = _strip_leading_comments(text)
+    body = re.sub(r'^[\s\-\*\d\.]+', '', body, count=1)
+    return body.startswith('~~') and '~~' in body[2:]
+PYEOF
+
 _read_dashboard_staleness_setting() {
     local key="$1" default="$2"
     "$SCRIPT_DIR/.venv/bin/python3" -c "
@@ -1972,6 +1992,8 @@ check_dashboard_staleness() {
     TIMING_JSONL="${SCRIPT_DIR}/logs/timing_events.jsonl" \
     "$SCRIPT_DIR/.venv/bin/python3" -c "
 import datetime, json, os, re
+
+${_DASHBOARD_RESOLVED_BLOCK_PY}
 
 dashboard_path = os.environ['DASHBOARD_PATH']
 stale_hours = float(os.environ['DASHBOARD_STALE_HOURS'])
@@ -2039,8 +2061,27 @@ def stage_gap_min(prev_count):
         return 720.0
     return 1440.0
 
-for m in re.finditer(r'<!-- created_at: (\S+) -->\s*\n(.+)', scan_content):
-    created_at_raw, text = m.group(1), m.group(2)
+# cmd_170: アイテムブロックの境界を、created_atマーカー出現位置から次の
+# 同マーカー出現位置(またはセクション終端)までと定義する(1セクション1
+# マーカーではなく1アイテム1マーカーへ移行)。スライスで全文を保持する
+# ため複数行にまたがる取消線も正しく判定できる(regexのMULTILINE/DOTALL
+# 問題を構造的に回避)。
+_marker_re = re.compile(r'<!-- created_at: (\S+) -->')
+_carryover_re = re.compile(r'^\s*<!--\s*carryover_approved:\s*true\s*-->', re.IGNORECASE)
+_markers = list(_marker_re.finditer(scan_content))
+for _idx, m in enumerate(_markers):
+    created_at_raw = m.group(1)
+    block_start = m.end()
+    block_end = _markers[_idx + 1].start() if _idx + 1 < len(_markers) else len(scan_content)
+    block_text = scan_content[block_start:block_end]
+
+    # 持ち越しマーカー: 殿の明示許可による管理された保留は放置ではない。
+    if _carryover_re.match(block_text):
+        continue
+    # 取消線除外: 既に解決済みの項目は放置ではない。
+    if _is_resolved_block(block_text):
+        continue
+
     try:
         created_at = datetime.datetime.fromisoformat(created_at_raw)
     except Exception:
@@ -2057,7 +2098,9 @@ for m in re.finditer(r'<!-- created_at: (\S+) -->\s*\n(.+)', scan_content):
         next_count = prev_count + 1
     else:
         next_count = 1
-    print(f'{created_at_raw}\t{next_count}\t' + text.strip()[:50])
+    _snippet_body = _strip_leading_comments(block_text).strip()
+    _snippet = _snippet_body.splitlines()[0] if _snippet_body else ''
+    print(f'{created_at_raw}\t{next_count}\t' + _snippet[:50])
 " 2>/dev/null | while IFS=$'\t' read -r created_at_raw notify_count snippet; do
         [ -n "$created_at_raw" ] || continue
         bash "${SCRIPT_DIR}/scripts/ntfy.sh" "🚨 24時間放置: ${snippet}" >&2 || true
@@ -2349,6 +2392,9 @@ print(str(len(pending_ids)) + '\t' + ','.join(pending_ids))
     local untriaged_out
     untriaged_out=$("$SCRIPT_DIR/.venv/bin/python3" -c "
 import re
+
+${_DASHBOARD_RESOLVED_BLOCK_PY}
+
 try:
     with open('${dashboard_file}', encoding='utf-8') as f:
         text = f.read()
@@ -2368,10 +2414,20 @@ def section_body(heading_match):
     return text[start:end]
 
 # 予定事項(両見出し共通prefix): created_at件数+最古日
+# cmd_170: check_dashboard_staleness()と同じ理由(取消線除外なし)で
+# 解決済み項目のcreated_atを誤カウントしていた同族欠陥を、共通ヘルパー
+# _is_resolved_block()を呼び出す設計で是正する。
 schedule_dates = []
 for h in re.finditer(r'^## 📌 予定事項.*\$', text, re.MULTILINE):
     body = section_body(h)
-    schedule_dates.extend(re.findall(r'<!-- created_at: ([0-9T:-]+) -->', body))
+    _markers = list(re.finditer(r'<!-- created_at: ([0-9T:-]+) -->', body))
+    for _idx, _m in enumerate(_markers):
+        _block_start = _m.end()
+        _block_end = _markers[_idx + 1].start() if _idx + 1 < len(_markers) else len(body)
+        _block_text = body[_block_start:_block_end]
+        if _is_resolved_block(_block_text):
+            continue
+        schedule_dates.append(_m.group(1))
 
 # 建造キュー: 番号付き項目を段落分割し、自身の段落に✅完了を含まないものを未起票扱い
 # (罠: 完了済み項目の段落内に別件言及として'着手cmd未起票'という文言が
