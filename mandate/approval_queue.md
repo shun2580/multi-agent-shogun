@@ -661,6 +661,17 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   明示許可によりpendingのまま持ち越してよい」)。状態欄(pending)・既存本文は
   いずれも変更していない(追記専用)。
 
+  【追記・2026-08-26・subtask_178_B(足軽2号・Q42-5一次観測点名指し細則の遡及適用)】
+  **一次観測点**: doubt(a)(push安定完了)は`logs/git_push_block.log`(該当ALLOW行)・
+  `git log origin/main..HEAD --oneline | wc -l`=0で既に機械確認済み。doubt(b)
+  (backup branch中の平文旧秘匿値混入)は`git log --all -p -- mandate/approval_queue.md`
+  でのパターン走査(旧ntfy_topic値文字列)で既に機械確認済み。本エントリ自体の再開
+  (解除)条件は、doubt(a)(b)いずれかの追加観測ではなく**殿による削除可否の直接裁定**
+  であり、機械的に自動評価できる条件式ではない。ゆえに本件の一次観測点は本ファイル
+  `ID: AQ-008`エントリ直後の`状態:`行そのものである(`grep -n -A1 "^- ID: AQ-008" \
+  mandate/approval_queue.md`で機械抽出可能。`状態: pending`から変化した時点が
+  解除)。
+
 - ID: AQ-009 | 日付: 2026-08-10 | 操作内容: `config/settings.yaml`
   `features.parent_cmd_done_gate_enabled` を off→enforce へ常用化移行
   (cmd_164 subtask_164_Bで建造、cmd_167で常用化) |
@@ -706,6 +717,22 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   gunshi_qc_170_Bいずれもpass、独立再実験・独立再実行で一致確認済み)。
   doubt(b)(停止期間中の代替可視化2経路の機能継続実測)は継続確認中である。
   常用化(enabled: true)への変更の最終可否は殿の裁定を待つ。
+
+  【追記・2026-08-26・subtask_178_B(足軽2号・Q42-5一次観測点名指し細則の遡及適用)】
+  **一次観測点**:
+  (a) 充足済み。`commit 8dfa43d`・`commit 9afb384`(`git show --stat <hash>`で内容確認可能)、
+      `queue/reports/gunshi_report.yaml` task_id: gunshi_qc_170_A/gunshi_qc_170_Bのpass記録。
+  (b) `logs/timing_events.jsonl`の`"event": "dashboard_stale_notified"`エントリ
+      (`grep -c '"event": "dashboard_stale_notified"' logs/timing_events.jsonl`、
+      2026-08-26T22:20時点実測=28件)。本修正(subtask_170_A/B)後もこのイベントが
+      真の停滞に対してのみ発火し続けることが「代替可視化経路が機能し続けた」ことの
+      実測点となる。🔴手空き通知pending行・セッション開始点検スイープ自体には専用の
+      機械可読ログが存在しないため、現状ではこのイベントログが唯一の一次観測点である
+      (専用ログの新設は本サブタスクの範囲外の指摘に留める)。
+  (c) `logs/timing_events.jsonl`の`dashboard_stale_notified`イベントを、2026-08-26
+      14:54:59型の入力(取消線付き📌スキル化候補項目)で再現した際、修正後は当該時刻
+      以降に対応するイベントが記録されないこと(`grep`でタイムスタンプ以降のエントリ
+      有無を確認)。
 
 - ID: AQ-011 | 日付: 2026-08-26 | 操作内容: `config/settings.yaml`
   `features.staged_ignore_guard_enabled`(Q33(b)ガード、cmd_171
@@ -813,3 +840,20 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   scripts/pretooluse_git_push_block.sh`(本cmdでallowlist追記した13件の1つ)→ALLOW実発火
   (誤検知解消の実証)、の3行を記録済み。**AQ-012の状態はpendingのまま変更していない**
   (push承認は殿の専権)。
+
+  【追記・2026-08-26・subtask_178_B(足軽2号・Q42-5一次観測点名指し細則の遡及適用)】
+  **一次観測点**(Q37 3点セット):
+  (1) 秘匿値ゼロ: doubt(b)記載のパターン走査(`ntfy_topic`/`api[_-]?key`/`secret`/
+      `token`/`password`/`bearer`/`AKIA[0-9A-Z]{16}`/`ghp_`/`sk-`等)を
+      `git log -p origin/main..HEAD | grep -iE '...'`で再実行可能。
+  (2) ガード成立: `logs/staged_ignore_guard.log`
+      (session=1dc240f1-b687-4a16-8a40-e3fc5a2b392d、2026-08-26T21:40:24〜27+09:00の
+      DENY/ALLOW実発火3行、`grep 1dc240f1-b687-4a16-8a40-e3fc5a2b392d
+      logs/staged_ignore_guard.log`)。
+  (3) ブロッカー実害: `git log origin/main..HEAD --oneline | wc -l`(doubt(a)実測=16件、
+      殿がpush消化前に自ら再実測可能)。
+  本エントリ自体の再開(承認/却下)条件は上記3点セットの機械観測ではなく**殿による
+  push実行可否の直接裁定**であり、一次観測点は本ファイル`ID: AQ-012`エントリ直後の
+  `状態:`行そのものである(`grep -n -A1 "^- ID: AQ-012" mandate/approval_queue.md`で
+  機械抽出可能)。裁可後の実行確認は`logs/git_push_block.log`の`AQ_APPROVED_ID=AQ-012`
+  に対応するsession記録で事後確認できる。

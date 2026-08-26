@@ -129,6 +129,11 @@ QC結果自身（`gunshi_report.yaml` task_id: gunshi_qc_155_AB、issue説明文
 --phase-breakdown`実測(cmd_155時点)。件数条件(約10cmd分)を満たすまでは本値を初期
 サンプル1件として保持する。
 
+**一次観測点(Q42-5遡及適用・cmd_178)**: `logs/timing_events.jsonl`の`cmd_id`フィールドの
+ユニーク件数(`grep -oE '"cmd_id": *"[^"]+"' logs/timing_events.jsonl | sort -u | wc -l`。
+`scripts/analyze_timing.py --phase-breakdown`内部の`by_cmd`グルーピングと同一キー)が
+約10件に達したことをもって評価条件充足とする。
+
 ## ntfyトピックローテーション完全手順（cmd_150）
 
 **選定理由**: 本ファイル冒頭の運用規則（機械的な手順は判断原則ではなく具体項目として
@@ -161,6 +166,33 @@ ntfyトピック名（殿への通知購読先）をローテーションする�
 **cmd_149での欠陥（将軍の自己申告・decisions_journal.md該当CORRECTエントリ参照）**:
 cmd_149で将軍が設計・実施した手順には⑤（旧購読解除）の指定が欠けていた。本手順は
 その是正としてcmd_150で成文化した完全版である。
+
+## 一次観測点名指し細則(Q42-5・cmd_178)
+
+**caveat・条件式は、その解除/評価の一次観測点(ファイルパスと機械判定可能なパターン)を
+名指しして書く。**
+
+**根拠**: cmd_140のcaveat(stall検知機構の本番初発火の観測)は、条件式が観測対象の
+イベント種別を名指ししていなかった。評価者(2026-08-09時点)は起動ログ
+(`logs/stall_watcher.log`)を見て「イベントが無い」と判じたが、実イベント
+(`event: nudge_sent`)は検知ロジック自体が書く`logs/stall_events.jsonl`に記録される
+設計であり、そちらは一度も参照されなかった。結果、本番初発火(2026-08-01T00:29:50)から
+約1ヶ月、事実に反する「初発火0件」がcaveatとして維持され、将軍はそれを第12報・第13報で
+Fableへ誤報告した。**条件式が一次観測点(ファイルパス＋パターン)を名指ししていれば、
+セッション開始点検スイープでのgrep一発により1ヶ月前に解除されていた**(出典: Fable裁定
+Q42-5、`queue/shogun_to_karo.yaml` cmd_178)。
+
+**適用**: 新設・既存を問わず、caveat・条件式には必ず以下2点を明記する。
+1. 一次観測点となるファイルパス(例: `logs/stall_events.jsonl`)
+2. 機械判定可能なパターン(例: `event: nudge_sent`の出現件数を数える`grep`/`jq`コマンド)
+
+**全件遡及適用(subtask_178_B・全件洗い出し実測)**: 制定時点で存在した既存の未解除
+caveat・条件式**全件**(`dashboard.md`「📋未解除caveat追跡」欄1件〈cmd_147〉、
+`mandate/approval_queue.md`のpending状態3件〈AQ-008・AQ-010・AQ-012〉、本ファイル内の
+条件式1件〈cmd_156 phase-breakdown評価条件、直下の「一次観測点(Q42-5遡及適用)」参照〉、
+計5件)へ本細則を遡及適用し、各所在に一次観測点を追記した。対象件数・所在の洗い出し
+方法(`grep -n`実行結果を含む)の全文は`queue/reports/ashigaru2_report.yaml`
+task_id: subtask_178_Bを参照のこと。
 
 ## 期日を持つ約束の起票禁止則(Q35・cmd_168)
 
@@ -205,6 +237,26 @@ flag新設→常用化AQ起票、機構新設→本番経路反映確認を建�
 - **flag新設**: subtask_168_Aが新設した`dashboard_staleness.enabled`が実例である
   (flag新設→常用化AQ起票の適用対象)。
 - **機構新設**: 既存のQ23型未解除caveat事例(subtask_168_Bのcmd_164)を参照する。
+
+### 実装細則(Q44・cmd_178)
+
+**建造サブタスクのallowed_pathsと受け入れ条件には、接続先(フック登録ファイル・設定ファイル
+等)を含める。接続先が権限上付与できない場合(Tier2等)は、接続未了をdone_with_caveatで
+明示し、doneと呼ぶことを禁ずる。**
+
+出典: Fable裁定Q44(2026-08-26)。cmd_177がAQ-011 doubt(a)として発見した実例(検出と是正
+権限の不一致)を教訓とする——Q33(b)ガード(`scripts/pretooluse_staged_ignore_guard.sh`)は
+建造されたが、`.claude/settings.json`PreToolUse配列への接続はsubtask_171_Aの
+allowed_pathsが`scripts`ディレクトリのみを含み`.claude/settings.json`を含んでいなかった
+ため、同一サブタスク内で完了できなかった(「則は働いたが、権限が伴わなかった」)。
+
+本細則は`mandate/decisions_journal.md`(2026-08-26付RULEエントリ「新設接続則の実装細則:
+建造サブタスクのallowed_pathsには接続先を含めよ(cmd_177)」、`grep -n "新設接続則の実装細則"
+mandate/decisions_journal.md`で確認可能)と同趣旨だが、(1)受け入れ条件への明記義務、
+(2)接続先が権限上付与できない場合(Tier2等)のdone_with_caveat明示義務、の2点を追加した
+正式版として本節へ制定する(重複回避の作法はQ27統合時と同じ)。journal側のエントリは
+履歴記録としてそのまま残し、変更しない。本節が正式版であり、journal記帳と併記させない
+(`grep -n "接続先" mandate/verifiers.md`で本節1箇所のみに存在することを確認済み)。
 
 ## 持ち越しマーカー(carryover_approved)の記法(cmd_170)
 
