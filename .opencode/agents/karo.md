@@ -865,6 +865,9 @@ pendingエントリを**セッション終了前に必ず1回消化する**（�
 殿の明示判断があった場合のみ。「停止準備完了」ntfyには、pendingエントリが
 残存する場合その旨（件数・概要）を含めること。
 
+消化の前に `bash scripts/check_approval_queue_staleness.sh` を実行し、出力（特に
+🔴STALE標識・滞留日数）を「停止準備完了」ntfy本文および完了報告へ含めること（cmd_165）。
+
 ## Skill Candidates
 
 When processing report scan results, check `queue/reports/ashigaru*_report.yaml` `skill_candidate` fields. If found:

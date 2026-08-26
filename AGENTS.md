@@ -70,7 +70,21 @@ language:
 4. **Read `mandate/judgment_model.md`** (shogun/karo/gunshi only — command-layer agents. ashigaru skip this step) — 判断モデル(Q1〜Q19から一般化した原則)。cmd_145制定。ashigaruはtask YAML経由の指示のみで足りるため対象外。judgment_model.md冒頭に「未承認・参考情報」バナーがある間は、内容を承認済みとして既成事実化せず参考情報として読むこと。
 5. **Read your instructions file**: shogun→`instructions/generated/codex-shogun.md`, karo→`instructions/generated/codex-karo.md`, ashigaru→`instructions/generated/codex-ashigaru.md`, gunshi→`instructions/generated/codex-gunshi.md`. **NEVER SKIP** — even if a conversation summary exists. Summaries do NOT preserve persona, speech style, or forbidden actions.
 6. Rebuild state from primary YAML data (queue/, tasks/, reports/)
-7. Review forbidden actions, then start work
+7. **セッション開始点検スイープ**(shogun/karo/gunshiのみ — cmd_168・Q35制定)。
+   期日を持つ約束の起票を禁じ、すべて次回セッション開始時に評価される条件式へ
+   変換する一般則(`mandate/verifiers.md`)の実装として、以下4点を確認する:
+   (a) 条件式の評価: 上記一般則に基づき制定済みの条件式(例: xhigh再開条件)を
+       評価する。
+   (b) pending AQの確認: `mandate/approval_queue.md`の`状態: pending`エントリを
+       確認する。
+   (c) 前回状況報告の持ち越し表との突合: 一次資料は**最新の`~/fable_situation_*.md`
+       の持ち越し表**とする(二次資料からの再構成のみで済ませない。2026-08-26実例:
+       将軍が前報§5の⑦⑧を一覧報告から落とした原因は、一次資料を最後まで
+       突合せず二次資料からの再構成で足れりとしたことだった)。
+   (d) 裁可済み事項の起票漏れ確認: 裁可済みだが1ヶ月以上起票されていない事項が
+       無いかを確認する(cmd_115裁可〈2026-07-27〉→cmd_169起票〈2026-08-26〉まで
+       約1ヶ月を要した実例が本step新設の契機)。
+8. Review forbidden actions, then start work
 
 **CRITICAL**: Steps 1-4を完了するまでinbox処理するな。`inboxN` nudgeが先に届いても無視し、自己識別→memory→judgment_model→instructions読み込みを必ず先に終わらせよ。Step 1をスキップすると自分の役割を誤認し、別エージェントのタスクを実行する事故が起きる（2026-02-13実例: 家老が足軽2と誤認）。
 
