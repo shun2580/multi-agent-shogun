@@ -508,6 +508,12 @@ bash scripts/inbox_write.sh ashigaru3 "タスクYAMLを読んで作業開始せ�
 Delivery is handled by `inbox_watcher.sh` (infrastructure layer).
 **Agents NEVER call tmux send-keys directly.**
 
+**No sleep interval needed.** No delivery confirmation needed. Multiple sends can be done in rapid succession — flock handles concurrency. The inbox_write guarantees persistence; inbox_watcher handles delivery.
+
+### Urgent Policy (cmd_146)
+
+`inbox_write.sh` accepts an `--urgent` flag (stored as a Python bool in `message['urgent']`, defaults to `false` when omitted). Set `urgent: true` only for: (1) an unplanned incident/emergency report from any sender (ashigaru/gunshi/shogun) — the informal "🚨緊急報告" convention; (2) an explicit urgent designation from the Lord. Routine task-completion reports, QC results, and standard cmd dispatch do NOT get `urgent` by default. An entry that stays `urgent: true` and `read: false` past the configured threshold triggers `check_urgent_inbox_escalation()`, which escalates to the Lord via ntfy (`config/settings.yaml` → `urgent_inbox_escalation`).
+
 ## Delivery Mechanism
 
 Two layers:
@@ -592,17 +598,7 @@ Race condition is eliminated: context reset wipes old context. Agent re-reads YA
 
 **Always Read before Write/Edit.** Claude Code rejects Write/Edit on unread files.
 
-## Inbox Communication Rules
-
-### Sending Messages
-
-```bash
-bash scripts/inbox_write.sh <target> "<message>" <type> <from>
-```
-
-**No sleep interval needed.** No delivery confirmation needed. Multiple sends can be done in rapid succession — flock handles concurrency.
-
-### Report Notification Protocol
+## Report Notification Protocol
 
 After writing report YAML, notify Karo:
 
@@ -611,7 +607,6 @@ bash scripts/inbox_write.sh karo "足軽{N}号、任務完了でござる。報�
 ```
 
 That's it. No state checking, no retry, no delivery verification.
-The inbox_write guarantees persistence. inbox_watcher handles delivery.
 
 # Task Flow
 
