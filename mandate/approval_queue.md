@@ -809,7 +809,7 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   全3716行を`ntfy_topic`/`api[_-]?key`/`secret`/`token`/`password`/
   `bearer`/`AKIA[0-9A-Z]{16}`/`ghp_`/`sk-`等のパターンで走査、加えて
   20文字以上の英数トークンを機械的に列挙し目視確認): 現行ntfy_topic値
-  (`shogun_notify_bapnw74qz8b8`)およびそのプレフィックスの一致なし。
+  (`<ntfy_topic旧値>`)およびそのプレフィックスの一致なし。
   「ntfy_topic」という語自体はdecisions_journal.md記帳文中に複数出現するが、
   いずれも「過去にbackup branchで平文混入が発覚し除去した」という記述内の
   言及であり、平文の秘匿値そのものではない。20文字以上トークンの機械列挙
@@ -884,7 +884,7 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   24行。うち23行はdecisions_journal.md/approval_queue.md自身の記帳文中における
   「過去にntfy_topic平文混入が発覚し除去した」等の**言及**であり、平文の秘匿値
   そのものではない。🔴残り1行(本ファイル内、subtask_171_A起票のdoubt(b)自身の文中)に
-  現行ntfy_topic値`shogun_notify_bapnw74qz8b8`が実際にプレーンテキストで出現する
+  現行ntfy_topic値`<ntfy_topic旧値>`が実際にプレーンテキストで出現する
   (doubt(b)が「この値の一致なし」を示す目的で値自体を引用したため、皮肉にも引用行
   自体が新たな出現箇所になっていた)。
   **クロスチェック**: `git grep`でorigin/main全体を独立走査した結果、この同一値は
@@ -894,11 +894,18 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   公開済みの値の再掲である。**push可否の判断への影響**: 本AQ-012の33件push自体が
   この値を新たに公開するものではない(既に2026-08-09時点でpush済み・公開済み)ため、
   Q37 3点セット(1)秘匿値ゼロの結論(0件=新規混入なし)は維持できる。
-  **ただし別建てで重大**: 現行ntfy_topic値(`shogun_notify_bapnw74qz8b8`、
+  **ただし別建てで重大**: 現行ntfy_topic値(`<ntfy_topic旧値>`、当時の
   `config/settings.yaml`の現在値と一致)が既に`origin/main`上で公開済みであるという
   事実は、本cmd_171の範囲外ではあるが、ntfy通知チャンネルの実質的アクセストークンが
   既に漏洩状態にあることを意味する。ローテーション要否の判断を殿・軍師へ別途仰ぐ
   ことを推奨する(本doubtでは対応事項に含めず、発見事実のみを記録)。
+
+  【cmd_180工程2注記(2026-08-26)】本doubt(b)内に平文出現していたntfy_topic旧値
+  (本注記直前の2箇所、および上記doubt(b)冒頭付近の1箇所、計3箇所)は、殿裁定による
+  トピックローテーション(cmd_180)に伴い`<ntfy_topic旧値>`へ置換除去した(理由:
+  秘匿値を記帳本文へ平文で書かない規律の遡及適用。値の置換のみで記録の趣旨・
+  発見事実・判断根拠に変更なし)。「ローテーション要否の判断を殿・軍師へ別途仰ぐ
+  ことを推奨する」という本doubtの提言は、本cmd_180によって実行された。
 
   ③`4a27ad7`のblob包含確認: 再実測した33件のcmd別内訳中、cmd_166×3件の1つとして
   `4a27ad7 feat(cmd_166 subtask_166_B): add Skill documentation for
