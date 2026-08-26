@@ -205,3 +205,47 @@ flag新設→常用化AQ起票、機構新設→本番経路反映確認を建�
 - **flag新設**: subtask_168_Aが新設した`dashboard_staleness.enabled`が実例である
   (flag新設→常用化AQ起票の適用対象)。
 - **機構新設**: 既存のQ23型未解除caveat事例(subtask_168_Bのcmd_164)を参照する。
+
+## 持ち越しマーカー(carryover_approved)の記法(cmd_170)
+
+殿の明示許可による持ち越し項目を、24時間放置通知(`scripts/inbox_watcher.sh`
+`check_dashboard_staleness()`)の検出対象から除外するための機械可読マーカー。
+
+**記法**: `dashboard.md`の各項目ブロックにおいて、`created_at`コメントの
+**直後**(1行空けず)に以下を置く。
+
+```
+<!-- created_at: YYYY-MM-DDTHH:MM:SS -->
+<!-- carryover_approved: true -->
+- **項目本文...**
+```
+
+**用途**: `created_at`が古くても、殿が明示的に「持ち越してよい」と判断した項目は
+「放置」ではなく「管理された保留」である。両者を機械が区別できねば、正しい運用が
+警報を鳴らし続ける(是正の背景はcmd_170 north_star参照)。検出ロジックは
+`_carryover_re = re.compile(r'^\s*<!--\s*carryover_approved:\s*true\s*-->', re.IGNORECASE)`
+でブロック先頭(`created_at`直後)にのみ照合し、マッチすればhours超過であっても
+通知対象から除外(`continue`)する(`scripts/inbox_watcher.sh`
+`check_dashboard_staleness()`、subtask_170_A実装)。
+
+**実使用例**(`dashboard.md`、subtask_170_Aが実際に付与した箇所。
+`grep -n "carryover_approved" -B2 dashboard.md`で確認可能):
+
+```
+192:  <!-- created_at: 2026-08-10T00:34:36 -->
+193:  <!-- carryover_approved: true -->
+194:  🚨**別件・新規未push分がpending持ち越し中**: AQ-005本来のpush後、
+```
+(AQ-005新規未push分。殿の明示許可による持ち越し、cmd_167acceptance_criteria)
+
+```
+200:<!-- created_at: 2026-08-10T00:45:00 -->
+201:<!-- carryover_approved: true -->
+202:- **AQ-008: backup branch削除可否**: pendingのまま。殿の明示許可により
+```
+(AQ-008。殿の明示許可による持ち越し、cmd_167)
+
+対照として、AQ-004・AQ-007は同じく殿裁定待ちの項目だが`carryover_approved`が
+**意図的に付与されていない**(=通常の放置検出対象のまま)。マーカーの
+「あり/なし」両パターンが本番データに実在する(dashboard.md 205行目・209行目、
+`created_at`のみでcarryover_approvedコメントなし)。
