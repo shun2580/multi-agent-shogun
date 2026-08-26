@@ -886,6 +886,78 @@ NINJA_EOF
     fi
 
     # ═══════════════════════════════════════════════════════════════════
+    # STEP 6.55: 出陣後ログイン状態チェック（cmd_176）
+    # ───────────────────────────────────────────────────────────────────
+    # 実事象根拠(2026-08-26): ~/.claude/.credentials.json の mtime=14:59:45 に対し
+    # 9体の起動が14:53:51〜53:5x——認証情報が書き込まれる6分前に全員が起動し、
+    # 未認証(Not logged in)のまま固着した。将軍はD006により他プロセスを
+    # 再起動できず、殿の手元実行を要した。本stepはこの状態を機械的に検知し、
+    # 次の者が手作業で気づく前に警告する(原則6: 機構へ埋めれば忘れられない)。
+    #
+    # 🔴三値判定(原則1): 起動直後は画面がまだ描画されていない可能性があるため、
+    # 「Not logged in」が見つからないことを即座に「認証済み」と断定しない。
+    #   (a) authenticated: 既知の正常起動パターン("bypass permissions"、上記
+    #       将軍起動確認ループ(872〜878行目付近)と同一マーカー)を検出
+    #   (b) unauthenticated: 「Not logged in」を検出
+    #   (c) unknown: 複数回リトライしても(a)(b)いずれの判定材料も出現しない
+    #       (観測失敗をunauthenticated側へ断定しない)
+    #
+    # 🔴破壊的動作は行わない(D006絶対禁止・原則2): unauthenticated/unknown
+    # いずれの場合も、該当pane・状態を標準出力へ警告表示するに留め、kill等の
+    # 停止操作は一切行わない(起動プロセスは継続させる。安全側=警告のみ)。
+    # ═══════════════════════════════════════════════════════════════════
+    log_info "🔑 全pane出陣後のログイン状態を確認中..."
+
+    check_pane_login_status() {
+        # 引数: $1=tmux target（例: shogun:main / multiagent:agents.0）
+        # 標準出力: authenticated / unauthenticated / unknown のいずれか
+        local target="$1"
+        local max_retries=5
+        local retry_interval=2
+        local status="unknown"
+        local pane_output
+
+        for ((_try=1; _try<=max_retries; _try++)); do
+            pane_output=$(tmux capture-pane -t "$target" -p 2>/dev/null || echo "")
+            if echo "$pane_output" | grep -q "Not logged in"; then
+                status="unauthenticated"
+                break
+            elif echo "$pane_output" | grep -q "bypass permissions"; then
+                status="authenticated"
+                break
+            fi
+            sleep "$retry_interval"
+        done
+        echo "$status"
+    }
+
+    _login_warn_count=0
+
+    # 将軍
+    _shogun_login_status=$(check_pane_login_status "shogun:main")
+    if [ "$_shogun_login_status" != "authenticated" ]; then
+        echo -e "\033[1;31m【警告】\033[0m 将軍(shogun:main)のログイン状態: ${_shogun_login_status}（未認証または判定不能。手動確認を推奨。プロセスは継続させます）"
+        _login_warn_count=$((_login_warn_count + 1))
+    fi
+
+    # 家老・足軽・軍師（AGENT_IDS配列は610〜621行目付近で構築済み。起動ループと同一のpane対応）
+    for i in "${!AGENT_IDS[@]}"; do
+        p=$((PANE_BASE + i))
+        _agent_login_status=$(check_pane_login_status "multiagent:agents.${p}")
+        if [ "$_agent_login_status" != "authenticated" ]; then
+            echo -e "\033[1;31m【警告】\033[0m ${AGENT_IDS[$i]}(multiagent:agents.${p})のログイン状態: ${_agent_login_status}（未認証または判定不能。手動確認を推奨。プロセスは継続させます）"
+            _login_warn_count=$((_login_warn_count + 1))
+        fi
+    done
+
+    if [ "$_login_warn_count" -eq 0 ]; then
+        log_success "  └─ 全9paneログイン状態チェック完了（異常なし）"
+    else
+        log_info "  └─ ${_login_warn_count}件のpaneで未認証/判定不能を検出（上記警告参照・起動プロセスは継続）"
+    fi
+    echo ""
+
+    # ═══════════════════════════════════════════════════════════════════
     # STEP 6.6: inbox_watcher起動（全エージェント）
     # ═══════════════════════════════════════════════════════════════════
     log_info "📬 メールボックス監視を起動中..."
