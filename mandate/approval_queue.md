@@ -695,6 +695,17 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   (c) 本修正後の再発試験(偽陽性が解消されたことの実機確認)——確認できる
       までは`enabled: false`(止血継続)を維持し、安易にtrueへ戻さないこと |
   状態: pending
+  【追記・2026-08-26・cmd_170】doubt(a)充足: 修正3点(取消線除外/項目単位
+  created_at/持ち越しマーカー)実装完了(subtask_170_A、commit 8dfa43d)、
+  同族横展開点検で発見した2件目の同族欠陥(`build_fleet_idle_message()`
+  未起票残タスク集計、取消線除外未適用)も是正済み、敵対的回帰テスト9件
+  全PASS(subtask_170_B、commit 9afb384、既存16件と合わせ25/25 PASS)、
+  実物データ(2026-08-26 14:54:59偽陽性事例——cmd_166で解決済み・取消線
+  付きの📌スキル化候補項目)による再現実験で修正前(通知発火)→修正後
+  (通知なし)の判定結果を実出力で確認した(軍師QC gunshi_qc_170_A・
+  gunshi_qc_170_Bいずれもpass、独立再実験・独立再実行で一致確認済み)。
+  doubt(b)(停止期間中の代替可視化2経路の機能継続実測)は継続確認中である。
+  常用化(enabled: true)への変更の最終可否は殿の裁定を待つ。
 
 - ID: AQ-011 | 日付: 2026-08-26 | 操作内容: `config/settings.yaml`
   `features.staged_ignore_guard_enabled`(Q33(b)ガード、cmd_171
