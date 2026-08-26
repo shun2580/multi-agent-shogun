@@ -857,3 +857,52 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   `状態:`行そのものである(`grep -n -A1 "^- ID: AQ-012" mandate/approval_queue.md`で
   機械抽出可能)。裁可後の実行確認は`logs/git_push_block.log`の`AQ_APPROVED_ID=AQ-012`
   に対応するsession記録で事後確認できる。
+
+  【追記・2026-08-26・subtask_171_B(足軽5号・doubtの陳腐化解消——本夜の大量作業
+  〈cmd_170〜179〉により未push件数が16件から増加した件の再実測)】
+  ①再実測した未push件数(将軍実測33件は援用せず、貴殿自身が`git fetch origin main`後
+  `git log origin/main..HEAD --oneline | wc -l`を独立実行): **33件**。将軍実測値と一致
+  したが、本doubtは援用ではなく独立再実測である(原則3)。
+  cmd別内訳(`git log origin/main..HEAD --oneline | grep -oE '\(cmd_[0-9]+ ' | sort |
+  uniq -c`で機械抽出、括弧付きプレフィックス一致でカウント。タグなし1件は個別確認):
+  cmd_179×4(4b3b104・9d6c9f8・1c28901・e07e5f4)、cmd_170×4(fa2e30e・9afb384・
+  fc67413・8dfa43d)、cmd_168×4(c6e543d・8489d87・f20575b・a20fca0)、cmd_165×4
+  (f7697ff・72fda48・36e063c・d6eabfe)、cmd_166×3(b9c4974・4a27ad7・3c472fa)、
+  cmd_164×3(f768123・629a3cf・c575056)、cmd_178×2(d7e23d6・5510b62)、cmd_167×2
+  (4203de1・67c3021)、cmd_177×1(1794a55)、cmd_176×1(2f8ac70)、cmd_175×1
+  (97093b0)、cmd_174×1(6ebe88c)、cmd_173×1(43c2c8f)、cmd_171×1(4f79655)、
+  cmdタグなし×1(e696a70 "chore: regenerate stale derived instruction files")。
+  合計33件で内訳と一致。**整合性検算**: 既存doubt(a)の16件内訳(cmd_164×3・
+  cmd_165×4・cmd_166×3・cmd_167×2・cmd_168×4=16)は今回も完全一致(この5cmdへの
+  新規commit追加なし)。増分17件はすべてcmd_170以降(cmd_170×4+cmd_171×1+cmd_173×1
+  +cmd_174×1+cmd_175×1+cmd_176×1+cmd_177×1+cmd_178×2+cmd_179×4+タグなし×1=17)。
+  33=16+17で算数整合。
+
+  ②秘匿値走査(`git log -p origin/main..HEAD`全6542行〈`git diff`形式、doubt(a)の
+  「全3716行」から件数増に伴い増加〉を`ntfy_topic`/`api[_-]?key`/`secret`/`token`/
+  `password`/`bearer`/`AKIA[0-9A-Z]{16}`/`ghp_`/`sk-ant`で機械走査): パターン一致
+  24行。うち23行はdecisions_journal.md/approval_queue.md自身の記帳文中における
+  「過去にntfy_topic平文混入が発覚し除去した」等の**言及**であり、平文の秘匿値
+  そのものではない。🔴残り1行(本ファイル内、subtask_171_A起票のdoubt(b)自身の文中)に
+  現行ntfy_topic値`shogun_notify_bapnw74qz8b8`が実際にプレーンテキストで出現する
+  (doubt(b)が「この値の一致なし」を示す目的で値自体を引用したため、皮肉にも引用行
+  自体が新たな出現箇所になっていた)。
+  **クロスチェック**: `git grep`でorigin/main全体を独立走査した結果、この同一値は
+  `mandate/decisions_journal.md:136`(commit `2059325`, cmd_160 subtask_160_C、
+  2026-08-09、既にpush済み)に既に存在することを確認した。したがって本doubt(b)
+  1行は「今回の未push分で新規に晒される秘匿値」ではなく、既に`origin/main`上で
+  公開済みの値の再掲である。**push可否の判断への影響**: 本AQ-012の33件push自体が
+  この値を新たに公開するものではない(既に2026-08-09時点でpush済み・公開済み)ため、
+  Q37 3点セット(1)秘匿値ゼロの結論(0件=新規混入なし)は維持できる。
+  **ただし別建てで重大**: 現行ntfy_topic値(`shogun_notify_bapnw74qz8b8`、
+  `config/settings.yaml`の現在値と一致)が既に`origin/main`上で公開済みであるという
+  事実は、本cmd_171の範囲外ではあるが、ntfy通知チャンネルの実質的アクセストークンが
+  既に漏洩状態にあることを意味する。ローテーション要否の判断を殿・軍師へ別途仰ぐ
+  ことを推奨する(本doubtでは対応事項に含めず、発見事実のみを記録)。
+
+  ③`4a27ad7`のblob包含確認: 再実測した33件のcmd別内訳中、cmd_166×3件の1つとして
+  `4a27ad7 feat(cmd_166 subtask_166_B): add Skill documentation for
+  check_runtime_reflection`が引き続き含まれることを確認した(上記①のリスト参照)。
+  Q37裁定での許容経緯は既存doubt(c)記載のとおり変更なし。
+
+  **AQ-012の状態は`pending`のまま変更していない**(push承認は殿の専権)。
