@@ -166,6 +166,12 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   subtask_161_Dで記帳済みの1件目)のみであり、上記(2)の閾値(3件)には未達。
   よってcmd_162時点でも(1)(2)いずれの再開トリガーも未成立であり、据置を継続する。
 
+  【追記・2026-08-26・subtask_180_D(足軽3号・cmd_180陣仕舞い・pending持ち越し記帳)】
+  cmd_180陣仕舞い時点での持ち越し確認: 条件付き据置(再開トリガー未充足・PREVENT1件/3件)を
+  維持する。将軍が本夜(2026-08-26)殿へ諮ったが、殿は陣仕舞いの御下知をもって応じられ、
+  裁可は下っていない。次回へ持ち越す。既存doubt・備考・再開トリガー(実害2例目の観測、
+  またはPREVENT3件の蓄積)はいずれも無変更。
+
 - ID: AQ-005 | 日付: 2026-08-08 | 操作内容: 未push commit群(3件、提示直前に
   `git fetch origin main`実行後`git log origin/main..HEAD --oneline | wc -l`で
   再実測、2026-08-08)のリモート(origin https://github.com/shun2580/multi-agent-shogun.git)
@@ -672,6 +678,12 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   mandate/approval_queue.md`で機械抽出可能。`状態: pending`から変化した時点が
   解除)。
 
+  【追記・2026-08-26・subtask_180_D(足軽3号・cmd_180陣仕舞い・pending持ち越し記帳)】
+  cmd_180陣仕舞い時点での持ち越し確認: 引き続きpendingのまま持ち越す。将軍が本夜
+  (2026-08-26)殿へ諮ったが、殿は陣仕舞いの御下知をもって応じられ、裁可は下って
+  いない。戻せない操作のため承認なきまま実行せず、次回へ持ち越す。AQ-008(旧backup
+  branch削除)の実行は本サブタスクでも一切行っていない。
+
 - ID: AQ-009 | 日付: 2026-08-10 | 操作内容: `config/settings.yaml`
   `features.parent_cmd_done_gate_enabled` を off→enforce へ常用化移行
   (cmd_164 subtask_164_Bで建造、cmd_167で常用化) |
@@ -733,6 +745,12 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
       14:54:59型の入力(取消線付き📌スキル化候補項目)で再現した際、修正後は当該時刻
       以降に対応するイベントが記録されないこと(`grep`でタイムスタンプ以降のエントリ
       有無を確認)。
+
+  【追記・2026-08-26・subtask_180_D(足軽3号・cmd_180陣仕舞い・pending持ち越し記帳)】
+  cmd_180陣仕舞い時点での持ち越し確認: 引き続きpendingのまま持ち越す。
+  cmd_170完了によりゲートは解放済み・裁定可能な状態。将軍が本夜(2026-08-26)殿へ
+  有効化を具申したが、殿は陣仕舞いの御下知をもって応じられ、裁可は下っていない。
+  次回へ持ち越す。
 
 - ID: AQ-011 | 日付: 2026-08-26 | 操作内容: `config/settings.yaml`
   `features.staged_ignore_guard_enabled`(Q33(b)ガード、cmd_171
@@ -913,3 +931,13 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   Q37裁定での許容経緯は既存doubt(c)記載のとおり変更なし。
 
   **AQ-012の状態は`pending`のまま変更していない**(push承認は殿の専権)。
+
+  【追記・2026-08-26・subtask_180_D(足軽3号・cmd_180陣仕舞い・pending持ち越し記帳)】
+  殿は2026-08-26 23:27に条件付き承認(残存ゼロ確認が条件)。subtask_180_Cが改訂
+  走査を実施したところ、未push3commit(4f79655/56f120c/b1775d7)のpatch自体に
+  旧値が計6箇所残存することを発見し送出を再停止(軍師QC PASS済み)。現行ファイル
+  内容はクリーンだが、解消には当該3commitの履歴書換(amend/squash)が必要——これは
+  D003および本cmd自身の禁止事項によりcmd_180の射程外の統治判断であり、通常手段
+  では解消不能なジレンマである(軍師評価)。将軍が殿裁定を仰ぐべき最重要案件として
+  持ち越す。本追記自体は`状態: pending`を変更するものではなく、持ち越し事由の
+  記帳のみである。
