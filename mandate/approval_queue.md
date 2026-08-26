@@ -558,9 +558,14 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   +off復元後確認×1)にとどまり、AQ-006が指摘したような「複数セッション・
   複数エージェントに跨る実測」は未実施である点に留意されたい。最終的な
   移行閾値・件数条件は将軍・殿の裁定に委ねる |
-  状態: observeへ移行済み・AQ-005 push(cmd_163・2026-08-09)にて承認済み経路
-  (`AQ_APPROVED_ID=AQ-005`指定)の`ALLOW`実測を1件追加取得済み・enforce昇格の
-  可否は殿の判断待ち(昇格自体は本エントリ更新時点で未実施)
+  状態: approved(承認者: 殿・Fable裁定〈2026-08-26 ~/fable_ruling_20260826_q38q41.md
+  項目9〉経由・2026-08-26)。承認根拠: 「push互換はcmd_163のAQ_APPROVED_ID経路で
+  実証済み」を、cmd_171 subtask_171_A(足軽1号)が`logs/git_push_block.log`を
+  実読して確認した(65行目 `[2026-08-09T21:59:33+09:00] ALLOW mode=observe
+  session=d9735ace-e152-4881-92b9-84d9b4b3e0da tool=Bash` — AQ-005 push
+  〈commit 543666a〉に対応するsession IDと一致、DENY/WOULD-DENYではなくALLOW)。
+  `config/settings.yaml` `features.git_push_block_enabled`を`observe`→
+  `enforce`へ変更済み(2026-08-26)
   備考: 【追記・2026-08-09・subtask_160_C(足軽4号・Fable裁定Q24によるobserve
   移行)】Fable裁定Q24(cmd_158実発火観測をもって実証優先の見送り理由は消滅)
   に基づき、`config/settings.yaml` `features.git_push_block_enabled`を
@@ -689,4 +694,91 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
       発生していないか)
   (c) 本修正後の再発試験(偽陽性が解消されたことの実機確認)——確認できる
       までは`enabled: false`(止血継続)を維持し、安易にtrueへ戻さないこと |
+  状態: pending
+
+- ID: AQ-011 | 日付: 2026-08-26 | 操作内容: `config/settings.yaml`
+  `features.staged_ignore_guard_enabled`(Q33(b)ガード、cmd_171
+  subtask_171_Aで新設)の常用化判断(off/observe/enforce) |
+  理由: 新設接続則(Q30(b)/Q37・cmd_168、`mandate/verifiers.md`)により、
+  新設flagは常用化判断がAQへ起票されるまで完了とみなさない。本flagは
+  「staging中に`git check-ignore`陽性のパスがあればdeny」する新規ガード
+  (`scripts/pretooluse_staged_ignore_guard.sh`)の有効化フラグであり、
+  dashboard.md誤追跡(cmd_166・commit 4a27ad7)・config/settings.yaml
+  誤追跡(cmd_158-B)の再発防止を目的とする。通常の新規flag既定off運用
+  (cmd_144議題5・cmd_147制定)とは異なり、本cmd_171の command「工程2
+  ガードの性格」節がenforce直行を明示指示している——Q37裁定が
+  `4a27ad7`のblobを許容した根拠3点セットの1本(ガード成立)がこの
+  enforce化自体であるため、通常の段階昇格(off→observe→enforce)を
+  待たずに直接enforceとした |
+  doubt: (a) `config/settings.yaml`の値は本サブタスクでenforceへ設定済み
+  だが、フックとして実際に発火させるための`.claude/settings.json`
+  PreToolUse配列への登録が2026-08-26時点で未実施(本サブタスクの
+  allowed_pathsが`scripts`ディレクトリのみでconfig/settings.jsonを
+  含まないため、登録は別サブタスクの担当となる。登録が済むまでconfig値を
+  enforceにしても実際には評価されず無防備のままである点に留意)
+  (b) 実機検証(足軽1号・2026-08-26): dashboard.md/config/settings.yaml
+  各々への`git add`明示指定を2例ともDENYで捕捉、正常staging(`git add
+  scripts/inbox_write.sh`等、.gitignoreで明示許可済みの既存tracked
+  ファイル)はALLOWで通過することを確認(誤検知試験)。加えて隔離
+  テストリポジトリでの検証により、`git add .`・`git commit -am`
+  (ワイルドカードstaging)経路でも「既にtrackedだがignore陽性」の
+  ファイルを正しく捕捉することを確認した
+  (c) 🔴重大な副作用の発見: 本リポジトリには現在13件、tracked済みだが
+  `git check-ignore -q --no-index`陽性(=.gitignoreのwhitelist方式
+  allowlistに未掲載)のファイルが既に存在する
+  (`scripts/pretooluse_git_push_block.sh`・`scripts/pretooluse_yaml_guard.sh`
+  等、本ガード自身が依拠する既存PreToolUseフック本体を含む13件——足軽1号が
+  `git ls-files`全298件を`git check-ignore -q --no-index`で走査し実測)。
+  これらは事故ではなく.gitignoreのallowlist更新漏れ(新規スクリプト追加時に
+  `!scripts/<file>`行の追記が徹底されていなかった)と見られる。本ガードを
+  ワイルドカード(`git add .`/`-A`/`git commit -a`系)経路も含めて有効化
+  すると、これら13件を含む`git add .`/`git commit -a`が今後すべてdeny
+  されるため、フック登録(a)に先立って.gitignoreのallowlistへこの13件を
+  追記するか、殿がこの副作用を許容のうえ登録を進めるかの判断が必要 |
+  状態: pending
+
+- ID: AQ-012 | 日付: 2026-08-26 | 操作内容: 未push commit群(16件、
+  `AQ_APPROVED_ID=AQ-012`を明示付与しての`git push origin main`実行)の
+  承認可否(cmd_171 subtask_171_A起票・工程5=push実行自体は殿承認後の
+  別サブタスクが担当) |
+  理由: Q37裁定(cmd_168制定)は、dashboard.mdの意図せぬ再追跡commit
+  `4a27ad7`のblobを非除去のまま(b)許容してpushすることを、(1)秘匿値ゼロの
+  独立確定 (2)Q33(b)再追跡拒否ガードの成立 (3)ブロッカー実害(未push蓄積)
+  の3点セットを条件に認めた。cmd_171 subtask_171_Aにより(2)のガード
+  (`scripts/pretooluse_staged_ignore_guard.sh`)を本日新規建造しconfig値を
+  enforceへ設定(接続=`.claude/settings.json`登録は別途要、AQ-011参照)。
+  本AQは、上記3点セットが実際に揃った状態で殿がpushを消化するための
+  起票である |
+  doubt: (a) 未push件数の自己再実測(足軽1号・2026-08-26、`git fetch
+  origin main`後`git log origin/main..HEAD --oneline | wc -l`実行、
+  将軍の値〈16件〉を援用せず自ら独立測定): 16件。cmd別内訳: cmd_164系3件
+  (c575056・629a3cf・f768123)、cmd_165系4件(d6eabfe・36e063c・72fda48・
+  f7697ff)、cmd_166系3件(3c472fa・4a27ad7・b9c4974)、cmd_167系2件
+  (67c3021・4203de1)、cmd_168系4件(a20fca0・f20575b・8489d87・c6e543d)。
+  合計16件で将軍実測値と一致した(が本doubtは援用ではなく独立再実測で
+  ある。原則3)
+  (b) 秘匿値走査結果(足軽1号・2026-08-26、`git log -p origin/main..HEAD`
+  全3716行を`ntfy_topic`/`api[_-]?key`/`secret`/`token`/`password`/
+  `bearer`/`AKIA[0-9A-Z]{16}`/`ghp_`/`sk-`等のパターンで走査、加えて
+  20文字以上の英数トークンを機械的に列挙し目視確認): 現行ntfy_topic値
+  (`shogun_notify_bapnw74qz8b8`)およびそのプレフィックスの一致なし。
+  「ntfy_topic」という語自体はdecisions_journal.md記帳文中に複数出現するが、
+  いずれも「過去にbackup branchで平文混入が発覚し除去した」という記述内の
+  言及であり、平文の秘匿値そのものではない。20文字以上トークンの機械列挙
+  (93件)も目視確認したが、全て識別子・関数名・ファイル名であり秘匿値には
+  該当しない。**平文秘匿値の混入は確認されなかった(0件)**
+  (c) `4a27ad7`のblobを含む旨: 16件中に`4a27ad7 feat(cmd_166
+  subtask_166_B): add Skill documentation for check_runtime_reflection`
+  (dashboard.md誤追跡分1171行を含む)が含まれる。Q37裁定でこれが許容された
+  経緯(`mandate/decisions_journal.md`168〜172行目を実読して引用):
+  「本許容の根拠は無害確認(秘匿値ゼロの独立確定)+ガード成立(Q33(b)
+  再追跡拒否ガード建造)+ブロッカー実害(未push12件、記帳時点15件)の
+  3点セットであり、いずれか欠く場合は除去を原則とする。本許容は個別事案
+  限りであり、『意図的除外は破ってよい』という一般運用への転化を禁ずる」
+  (168行目)。「前例化防止則」として「本許容は前例としない」旨も明記
+  されている(170行目)。🔴上記3点セットのうち(2)ガード成立は本サブタスクで
+  スクリプト自体は建造・実機検証済みだが、`.claude/settings.json`への
+  接続が別途必要(AQ-011 doubt(a)参照)——**接続未完了の間はガードは
+  実際には発火しない**ため、殿がpush消化を判断する際はこの点を踏まえる
+  こと |
   状態: pending
