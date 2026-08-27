@@ -650,7 +650,9 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   続ける。これはbackup branch削除の是非判断における新たな検討材料であり、
   削除する場合は「可逆性の担保」という保持理由と「平文の旧秘匿値の残存」
   という削除理由が対立する形になる点に留意されたい |
-  状態: pending
+  状態: approved(2026-08-27・承認者: 殿)
+  出典: 殿の直接裁定(2026-08-27・端末上の応答、将軍が3件を諮り3件とも承認。AQ-008は
+  「削除する(ただしAQ-012次第)」——AQ-012送出完了により条件充足)
   🔴STALE(自動再実測不一致・2026-08-09T22:55:23+0900・軍師/家老が要再確認): 記載値=1件、実測値=4件
   🔴訂正(cmd_165 subtask_165_D・2026-08-09T23:17:18+0900): 上記STALE標識は誤検知である。
   `scripts/check_approval_queue_staleness.sh`のキーワード限定ヒューリスティックが、
@@ -683,6 +685,20 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   (2026-08-26)殿へ諮ったが、殿は陣仕舞いの御下知をもって応じられ、裁可は下って
   いない。戻せない操作のため承認なきまま実行せず、次回へ持ち越す。AQ-008(旧backup
   branch削除)の実行は本サブタスクでも一切行っていない。
+
+  【追記・2026-08-27・subtask_182_2(足軽5号・殿裁定執行=削除実行結果)】
+  AQ-012送出完了(本ファイル同日付AQ-012追記参照)により「AQ-012次第」の条件が
+  充足したため、削除前に当該branchが`origin`へ一度もpushされていないローカル
+  専用refであることを確認した:
+  削除前 `git branch -a | grep backup-cmd158-pre-history-purge-20260808-222447` →
+  `  backup-cmd158-pre-history-purge-20260808-222447`(ローカルにのみ存在、
+  `remotes/origin/...`形式のリモート追跡ブランチとしては非存在)。
+  加えて`git ls-remote origin | grep backup-cmd158-pre-history-purge-20260808-222447` →
+  ヒットなし(origin側に同名refが実在しないことを直接確認)。
+  ローカル専用と確認できたため`git branch -D backup-cmd158-pre-history-purge-20260808-222447`
+  を実行(出力: `Deleted branch backup-cmd158-pre-history-purge-20260808-222447
+  (was be8e3c6).`)。
+  削除後 `git branch -a | grep -i backup-cmd158` → ヒットなし(存在しないことを確認)。
 
 - ID: AQ-009 | 日付: 2026-08-10 | 操作内容: `config/settings.yaml`
   `features.parent_cmd_done_gate_enabled` を off→enforce へ常用化移行
@@ -717,7 +733,8 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
       発生していないか)
   (c) 本修正後の再発試験(偽陽性が解消されたことの実機確認)——確認できる
       までは`enabled: false`(止血継続)を維持し、安易にtrueへ戻さないこと |
-  状態: pending
+  状態: approved(2026-08-27・承認者: 殿)
+  出典: 殿の直接裁定(2026-08-27・端末上の応答、将軍が3件を諮り3件とも承認)
   【追記・2026-08-26・cmd_170】doubt(a)充足: 修正3点(取消線除外/項目単位
   created_at/持ち越しマーカー)実装完了(subtask_170_A、commit 8dfa43d)、
   同族横展開点検で発見した2件目の同族欠陥(`build_fleet_idle_message()`
@@ -751,6 +768,30 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   cmd_170完了によりゲートは解放済み・裁定可能な状態。将軍が本夜(2026-08-26)殿へ
   有効化を具申したが、殿は陣仕舞いの御下知をもって応じられ、裁可は下っていない。
   次回へ持ち越す。
+
+  【追記・2026-08-27・subtask_182_2(足軽5号・殿裁定執行=有効化+実機確認結果)】
+  `config/settings.yaml`の`dashboard_staleness.enabled`を`false`→`true`へ変更
+  (既存の他フィールド・コメントは無変更)。
+
+  実機確認(`scripts/inbox_watcher.sh`の`check_dashboard_staleness()`を
+  `__INBOX_WATCHER_TESTING__=1`テストガード経由で本番コードそのまま実行、
+  モック実装ではない):
+  ①**現行dashboard.md(既存エントリ)に対する実行**——実行前
+  `logs/timing_events.jsonl`(2669行)・`logs/ntfy.log`(293行)、実行後
+  いずれも行数無変化(新規`dashboard_stale_notified`イベント0件)。現行
+  🚨要対応欄には取消線付き(解決済み)の18日超放置項目2件(2026-08-09付・
+  📌スキル化候補/AQ-005)と持ち越しマーカー付きの17日超放置項目1件
+  (AQ-008、`<!-- carryover_approved: true -->`)が存在し、いずれもcmd_170の
+  3修正(取消線除外・項目単位created_at・持ち越しマーカー)により正しく
+  除外され名指しされないことを確認した。
+  ②**陽性対照(機構自体が実際に発火することの確認)**——本番コードを改変
+  せず、隔離した一時ディレクトリ(実dashboard.mdは一切変更・接触せず)に
+  取消線なし・持ち越しマーカーなしの模擬stale項目(created_at:
+  2026-01-01T00:00:00)を追加した複製ファイルに対して同じ関数を実行した
+  ところ、`🚨 24時間放置: - POSITIVE CONTROL TEST ITEM...`という通知
+  相当の出力と`dashboard_stale_notified`イベント1件が正しく発火した
+  (関数が常にno-opなのではなく、除外条件に合致しない場合は確実に機能する
+  ことを確認)。
 
 - ID: AQ-011 | 日付: 2026-08-26 | 操作内容: `config/settings.yaml`
   `features.staged_ignore_guard_enabled`(Q33(b)ガード、cmd_171
@@ -847,7 +888,8 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   接続が別途必要(AQ-011 doubt(a)参照)——**接続未完了の間はガードは
   実際には発火しない**ため、殿がpush消化を判断する際はこの点を踏まえる
   こと |
-  状態: pending
+  状態: approved(2026-08-27・承認者: 殿)
+  出典: 殿の直接裁定(2026-08-27・端末上の応答、将軍が3件を諮り3件とも承認)
   追記(cmd_177 subtask_177_A・足軽5号・2026-08-26): **Q37 3点セットの(2)ガード成立が
   真になった**。`.claude/settings.json`のPreToolUse配列へ`pretooluse_staged_ignore_guard.sh`
   を登録し、本番PreToolUse経路での実発火を実ログで確認した(AQ-011 doubt(a)追記と同一の
@@ -941,3 +983,35 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   では解消不能なジレンマである(軍師評価)。将軍が殿裁定を仰ぐべき最重要案件として
   持ち越す。本追記自体は`状態: pending`を変更するものではなく、持ち越し事由の
   記帳のみである。
+
+  【追記・2026-08-27・subtask_182_2(足軽5号・殿裁定執行=送出実行結果)】
+  殿は2026-08-27 20:22頃、端末上の応答でAQ-012含む3件すべてを承認された
+  (出典: `queue/shogun_to_karo.yaml` id: cmd_182 ruling_source)。本追記の
+  直前で状態欄を`approved(2026-08-27・承認者: 殿)`へ先行更新(技術ガード
+  `pretooluse_git_push_block.sh`がpush成立の事前条件として本ファイルの状態欄を
+  要求するため)したうえで、以下を実行した。
+
+  ①再実測件数(`git fetch origin main`後`git log origin/main..HEAD --oneline |
+  wc -l`、将軍実測・前回report実測いずれも援用せず独立再実測): **42件**
+  (subtask_182の前回実測42件と一致・値・走査手法とも変更なし)。cmd別内訳:
+  cmd_181×4・cmd_179×4・cmd_170×4・cmd_168×4・cmd_165×4・cmd_180×3・
+  cmd_166×3・cmd_164×3・cmd_178×2・cmd_171×2・cmd_167×2・cmd_177×1・
+  cmd_176×1・cmd_175×1・cmd_174×1・cmd_173×1・cmd_172×1・no_cmd_tag×1
+  (詳細は`queue/reports/ashigaru5_report.yaml task_id: subtask_182`参照)。
+
+  ②push実行結果: `AQ_APPROVED_ID=AQ-012 git push origin main`実行、
+  `543666a..a04af3d main -> main`でリモート反映。実行後
+  `git log origin/main..HEAD --oneline | wc -l` = **0**、
+  `logs/git_push_block.log`に対応する`ALLOW`行(`[2026-08-27T20:48:05+09:00]
+  ALLOW mode=enforce session=8023a98f-07fa-48a9-a328-31d4e08653ef tool=Bash`)
+  を実出力で確認。
+
+  ③旧ntfy_topic値の公開ツリーからの消失確認(値そのものは平文で書かない・
+  cmd_180制定則遵守、ファイル名変数へ一時格納した機械照合のみで実施):
+  送出前=`git grep -c "$OLDVAL" origin/main -- . | wc -l` = **1**
+  (該当ファイル: `mandate/decisions_journal.md`)、送出後=同コマンド再実行
+  で**0**。北極星が述べた「旧値は`origin/main`の現行ツリーに今この瞬間も
+  存在し、`b1775d7`送出で初めて消える」という主張と実測が一致した。
+
+  本cmd_182の真の成果(件数ではなく公開ツリーからの旧値消失)を機械照合で
+  達成した。
