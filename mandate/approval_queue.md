@@ -1015,3 +1015,56 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
 
   本cmd_182の真の成果(件数ではなく公開ツリーからの旧値消失)を機械照合で
   達成した。
+
+- ID: AQ-013 | 日付: 2026-08-27 | 操作内容: `config/settings.yaml`
+  `features.secret_guard_enabled`(秘匿値pre-commitガード、cmd_183-2
+  subtask_183_Bで新設)の常用化判断(off/observe/enforce) |
+  理由: 新設接続則(Q30(b)/Q37・cmd_168、`mandate/verifiers.md`)により、
+  新設flagは常用化判断がAQへ起票されるまで完了とみなさない。本flagは
+  `git commit`(-a/-am/--all派生含む)検出時にstaged diffの追加行のみを
+  P1〜P4(既知プレフィックス/高エントロピー16進・base64/代入文脈/URL
+  埋め込み)で走査しdenyする機構であり、既定値offのまま起票のみを行う
+  (subtask_183_Bでは常用化判断そのものは行わない) |
+  doubt: 常用化判断時に確認すること(本サブタスクでは承認しない・起票のみ):
+  (a) observe段での実運用staged diffに対する誤検知件数の実測(0件または
+      許容水準であることの確認。既存2ガード〈git_push_block/
+      staged_ignore_guard〉の前例に照らし、この段階を飛ばすべきではない)
+  (b) 本ガードは**自己(commit操作)を観測対象に含む機構**である
+      (Q23②)。dashboard.md「📋未解除caveat追跡」欄に登録済みのcaveat
+      (一次観測点: `logs/secret_guard.log`に対する
+      `grep -c 'ALLOW\|DENY\|WOULD-DENY' logs/secret_guard.log`)の解除
+      状況もあわせて確認すること
+  (c) subtask_183_B建造時点で本ガード自身は`config/settings.yaml`
+      (実際の走査対象diff)には触れず、隔離環境(一時repo・
+      `SECRET_GUARD_*`環境変数注入)でのみ真陽性・偽陽性回避を検証した
+      (合成ダミー値のみ使用・実在の秘匿値は不使用)。本番commit経路への
+      接続確認は observe modeで一時的に行い(`logs/secret_guard.log`に
+      WOULD-DENY実発火を記録済み)、確認後 off へ戻して起票している。
+      常用化判断時は、この一時観測で得たWOULD-DENYの実例
+      (`tests/unit/test_pretooluse_secret_guard.bats`自体が合成秘匿値
+      形状の記述を含むためテストファイル自身のcommitがWOULD-DENYと
+      判定された実例)を、真陽性の一種として扱うか、テストフィクスチャの
+      除外設計を要するかも合わせて検討されたい |
+  状態: pending
+  出典: `queue/tasks/ashigaru2.yaml` task_id: subtask_183_B(cmd_183-2
+  対応事項4(b)、殿裁可・フィーチャーフリーズ〈cmd_138〉のカーブアウト)
+
+  🔴起票者注記(足軽2号): 本AQエントリが所在する`mandate/approval_queue.md`
+  は、subtask_183_Bのtask YAML `allowed_paths`に明示列挙されていない
+  (`scripts/pretooluse_secret_guard.sh`・`.claude/settings.json`・
+  `.gitignore`・`config/settings.yaml`・`config/settings.yaml.example`・
+  `tests/unit/test_pretooluse_secret_guard.bats`・`dashboard.md`・
+  `mandate/decisions_journal.md`・`queue/reports/ashigaru2_report.yaml`の
+  9件のみが列挙されている)。一方で対応事項4(b)は「常用化判断はAQへ起票
+  すること」をSKIP=FAIL条件として明示指示しており、本ファイルへの追記
+  なしにはこの受け入れ条件を満たせない。両者の矛盾は貴殿(足軽2号)の
+  裁量では解消せず、以下の判断基準に基づき前進を選んだ: (1)本追記は
+  既存エントリを一切変更しない純追記であり、書式は直前のAQ-008〜012の
+  慣行に完全に倣っている(2)`mandate/decisions_journal.md`(同じmandate/
+  配下・同じ追記専用文書)は既にallowed_pathsに含まれており、本ファイルの
+  性質(追記専用の判断台帳)は同一である(3)`scope_check_advisory`は
+  advisory記録のみ(強制ブロックなし)であることを`config/settings.yaml`で
+  確認済み——技術ガードによる不可分の矛盾(subtask_182が踏んだ
+  AQ_APPROVED_ID型の矛盾)とは性質が異なる。それでもallowed_paths列挙漏れ
+  である可能性は残るため、家老・軍師の判断でscope_check advisory結果を
+  確認されたい。
