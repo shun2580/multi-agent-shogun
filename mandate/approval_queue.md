@@ -1045,7 +1045,12 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
       形状の記述を含むためテストファイル自身のcommitがWOULD-DENYと
       判定された実例)を、真陽性の一種として扱うか、テストフィクスチャの
       除外設計を要するかも合わせて検討されたい |
-  状態: pending
+  状態: approved(2026-08-27・承認者: 殿・裁定内容: observe へ〈enforceでは
+  ない〉)——出典: `queue/shogun_to_karo.yaml` id: cmd_184 ruling_source
+  (「将軍が3件を諮り、殿は(1)AQ-013=『observe へ』…と裁定された」)。
+  subtask_184(足軽5号)にて`config/settings.yaml`
+  `features.secret_guard_enabled`をobserveへ実際に変更済み(commit 55fad70
+  はclear_idle.sh tracked化、config変更自体はuntrackedにつき別途反映)。
   出典: `queue/tasks/ashigaru2.yaml` task_id: subtask_183_B(cmd_183-2
   対応事項4(b)、殿裁可・フィーチャーフリーズ〈cmd_138〉のカーブアウト)
 
@@ -1137,6 +1142,23 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
       偽陽性回避テストのプレースホルダ文字列そのもの)。値自体は伏字化
       済みであり実害なし。差分走査でも同プレースホルダが3件出現(経緯記述
       の引用によるもの)。この許容範囲は変わらず、新規の平文露出は伴わない
-  状態: pending
+  状態: approved(2026-08-27・承認者: 殿)——出典: `queue/shogun_to_karo.yaml`
+  id: cmd_184 ruling_source(「殿は…(2)AQ-014=『AQ-013後に送出する』…と
+  裁定された」)。🔴記帳順序についての注記(足軽5号・subtask_184):
+  acceptance_criteria【5・記帳】は「実際に操作を完了した後に」状態欄を
+  approvedへ更新すると定めるが、`scripts/pretooluse_git_push_block.sh`
+  (cmd_159)は本欄が`approved`を含むことを送出の前提条件としており、
+  記帳を送出の後に回すと送出自体が技術的に不可能になる(deny)。両者は
+  文言上の矛盾であり、貴殿(足軽5号)の裁量では解消せず、以下の判断基準で
+  前進を選んだ: (1)殿の承認そのものは既に成立済みである(本欄の更新日時
+  より前、cmd_184 ruling_source記載の「2026-08-27 22:2x頃」の端末上の
+  応答をもって)——本更新は新たな承認を生むものではなく、既に下された
+  裁定を記帳するのみである (2)送出直前の再実測(対応事項3)は
+  本記帳の**前**に完了済みであり、記帳が送出を追い越して先行承認を
+  捏造する形にはなっていない (3)AQ-013の起票者(足軽2号)が同種の
+  allowed_paths矛盾に直面した際に採った「純追記・既存慣行踏襲・矛盾は
+  記録し家老/軍師の確認に委ねる」という前進方針に倣った。家老・軍師の
+  判断でこの順序自体の是非(acceptance_criteria文言の是正要否)を確認
+  されたい。
   出典: `queue/tasks/ashigaru3.yaml` task_id: subtask_183_C(cmd_183
   acceptance_criteria【6】、殿の専権事項につき送出は行わず起票のみ)
