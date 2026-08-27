@@ -129,13 +129,65 @@ if tool_name != "Bash":
 
 command = tool_input.get("command") or ""
 
+# ─── heredoc本体マスキング(cmd_181-A): heredocの受け側コマンドが
+# `bash`/`sh`/`zsh`等のシェル実行系でない場合(`cat`/`tee`/リダイレクト等)、
+# heredoc本体は実行されない単なるデータである。そこに「git push」という
+# 文字列が(バッククォートによるMarkdown引用等の形で)リテラルに現れても、
+# 下記SPLIT_REがバッククォートを分割境界として扱うため誤って独立断片化され
+# 実コマンドと誤認DENYされる(実例: cmd_180下達コマンドの
+# `` `git push --force`はD003で絶対禁止 `` というheredoc内の地の文)。
+# 受け側がシェル実行系の場合(`bash <<'EOF' ... EOF`)はheredoc本体が実際に
+# 実行されるため、その場合は本体を保持しマスクしない。
+HEREDOC_START_RE = re.compile(r"<<(-|~)?[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")
+SHELL_EXEC_BASENAMES = {"bash", "sh", "zsh", "dash", "ksh", "eval"}
+CMD_BOUNDARY_RE = re.compile(r"[;\n]|&&|\|\|?")
+
+
+def mask_non_shell_heredoc_bodies(cmd):
+    out = []
+    pos = 0
+    search_start = 0
+    while True:
+        m = HEREDOC_START_RE.search(cmd, search_start)
+        if m is None:
+            out.append(cmd[pos:])
+            break
+        prefix = cmd[pos:m.start()]
+        segs = CMD_BOUNDARY_RE.split(prefix)
+        words = segs[-1].strip().split()
+        sink = words[0].rsplit("/", 1)[-1] if words else ""
+        delim = m.group(3)
+        strip_tabs = m.group(1) == "-"
+        nl = cmd.find("\n", m.end())
+        if nl == -1:
+            out.append(cmd[pos:])
+            break
+        body_start = nl + 1
+        term_pattern = (r"^\t*" if strip_tabs else r"^") + re.escape(delim) + r"[ \t]*$"
+        term_m = re.compile(term_pattern, re.MULTILINE).search(cmd, body_start)
+        if term_m is None:
+            out.append(cmd[pos:])
+            break
+        body_end = term_m.start()
+        out.append(cmd[pos:body_start])
+        if sink not in SHELL_EXEC_BASENAMES:
+            out.append("\n" * cmd.count("\n", body_start, body_end))
+        else:
+            out.append(cmd[body_start:body_end])
+        pos = body_end
+        search_start = term_m.end()
+    return "".join(out)
+
+
+command_for_detection = mask_non_shell_heredoc_bodies(command)
+
 # ─── 複合コマンド分割(pretooluse_reversibility_check.shの_DANGER_CHARS_RE型
 # 分割ロジックを一般化): 改行・`;`・`&&`・`||`・コマンド置換($( ) とバック
 # クォート)の境界で分割し、各断片に対し\bgit\s+push\bを適用する。分割自体は
 # 単純な字句分割であり、クォート内文字列の除外等の高度な構文解析は行わない
 # (既存reversibility_check.shと同水準、過剰な精緻化はscope超過と判断)。
 SPLIT_RE = re.compile(r"\n|;|&&|\|\||\$\(|\)|`")
-segments = SPLIT_RE.split(command)
+segments = SPLIT_RE.split(command_for_detection)
 
 GIT_PUSH_RE = re.compile(r"\bgit\s+push\b")
 
