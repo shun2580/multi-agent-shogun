@@ -196,6 +196,22 @@ scope_check_fastlane_eligible() {
     local cmd_yaml="$1"
     local git_baseline="${2:-HEAD}"
 
+    # 条件0(cmd_181-C): features.fastlane_enabledをkillスイッチとして接続。
+    # instructions/karo.mdの手順(誤判定1件でfalseへ変更し通常フローへrevert)が
+    # 実際に効くよう、pretooluse_git_push_block.sh/pretooluse_staged_ignore_guard.sh
+    # と同じgrep-based早期リターン方式を用いる。未知値・空値・欠落は全てfail-safe
+    # (通常フローへrevert=不適格)。
+    local settings_file raw_line raw_value
+    settings_file="${SCOPE_CHECK_FASTLANE_SETTINGS:-$SCRIPT_DIR/../config/settings.yaml}"
+    raw_line=$(grep -E '^[[:space:]]*fastlane_enabled:' "$settings_file" 2>/dev/null | head -1)
+    raw_value=$(printf '%s' "$raw_line" | sed -E \
+        -e 's/^[[:space:]]*fastlane_enabled:[[:space:]]*//' \
+        -e 's/[[:space:]]*#.*$//' \
+        -e 's/[[:space:]]*$//' \
+        -e 's/^"(.*)"$/\1/' \
+        -e "s/^'(.*)'\$/\1/")
+    [ "$raw_value" != "true" ] && return 1
+
     # 条件3: 既存scope_check.shのパス許可ロジックをそのまま再利用
     bash "${SCRIPT_DIR}/scope_check.sh" "$cmd_yaml" "$git_baseline"
     local scope_rc=$?
