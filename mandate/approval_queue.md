@@ -1180,3 +1180,54 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   されたい。
   出典: `queue/tasks/ashigaru3.yaml` task_id: subtask_183_C(cmd_183
   acceptance_criteria【6】、殿の専権事項につき送出は行わず起票のみ)
+
+- ID: AQ-015 | 日付: 2026-08-27 | 操作内容: 未push commit群
+  (`AQ_APPROVED_ID=AQ-015`を明示付与しての`git push origin main`実行) |
+  理由: cmd_187(陣仕舞い)の殿裁定「未push3件は送出する」(2026-08-27・
+  端末上の応答「送出する」)を執行する |
+  doubt: 🔴**(1) 送出直前の再実測(subtask_187・本エントリ起票時点で自ら
+  再実測、将軍の「3件」を援用せず独立測定)**: `git fetch origin main`
+  実行後`git log origin/main..HEAD --oneline | wc -l` = **4件**。
+  内訳(`git log origin/main..HEAD --oneline | grep -oE '\(cmd_[0-9]+' |
+  sort | uniq -c`): cmd_184×1(e7cb1f1)・cmd_186×2(df9392a, edc1180)・
+  cmd_187×1(5e6c58c、本サブタスクのAQ-013ブロッカー条項追記commit)。
+  合計検算: 1+2+1=4件、総数4件と一致。🔴本件数は本AQ-015起票commit自体を
+  含まない(AQ-013/AQ-014起票時と同一の測定方法。起票commitが加わることで
+  push直前の実件数は5件となる)。
+  🔴**(2) 秘匿値走査・両手法**:
+  (a) 差分走査(`git log -p origin/main..HEAD`、パターン
+  `(ntfy_topic|api[_-]?key|secret|token|password|bearer|
+  AKIA[0-9A-Z]{16}|ghp_|sk-ant|-----BEGIN)`大小文字区別無し): 23件
+  ヒット。追加行のみ(`grep -E '^\+'`)に絞った値保持形状パターン
+  (`AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|
+  ntfy_topic[:=][^<# ]`)での再走査は**0件**。広域ヒット23件を1件ずつ
+  実出力確認した結果、残り4件を除く19件は`secret_guard`/`SECRET_GUARD`
+  等の変数名・関数名一致であり、残り4件は(i)本サブタスク自身のcommit
+  メッセージ中の"secret-detection"という語句1件、(ii)コード変数名
+  `seg_tokens`/`staged_paths`が偶然"token"を部分一致した1件、(iii)
+  `mandate/decisions_journal.md`のcmd_182 CORRECTエントリ中でntfy_topic
+  ローテーション経緯を説明する散文1件——いずれも実秘匿値ではないことを
+  確認した(**ゼロ確認**)。
+  (b) 全tracked file現行内容走査(`git ls-files`列挙、同パターン):
+  広域96件ヒット。値保持形状パターンへ絞った再走査では9件ヒットし、
+  内訳は`.gitleaks.toml`のgitleaks検知規則定義2件(実値ではなく検知用
+  正規表現・プレースホルダ"your-topic"等)、
+  `mandate/approval_queue.md`のAQ-002本文中の経緯記述1件(値自体は
+  伏字化済み・cmd_149でローテーション済みの既承認既知事項)、
+  `tests/unit/test_pretooluse_secret_guard.bats`の合成ダミー値6件
+  (`sk-ant-AAAA...`・`ghp_AAAA...`、いずれも全A連続の既知ダミー形状、
+  AQ-013/AQ-014で既に真陽性〈実害なし〉と判定済みの同一フィクスチャ)
+  であり、新規の実秘匿値は0件。`git ls-files | grep -E
+  'settings\.yaml$|ntfy_auth\.env$'`は空——実値ファイル
+  (`config/settings.yaml`・`config/ntfy_auth.env`)は引き続き
+  未trackedであることを確認した。
+  状態: approved(2026-08-27・承認者: 殿)——出典:
+  `queue/shogun_to_karo.yaml` id: cmd_187 ruling_source(「殿の直接下命
+  (2026-08-27 23:5x)『本日はこれで陣仕舞い可能か』+将軍の諮問への裁定
+  2件: …(2)未push3件=『送出する』」)。cmd_182/cmd_184の教訓(push系AQは
+  技術ガード`pretooluse_git_push_block.sh`の事前条件として状態欄の
+  approved化をpushより先に要求する)に倣い、本状態欄は送出実行前に
+  approvedとして記帳する(記帳順序の是非についてはAQ-014起票者〈足軽5号〉
+  の注記と同一の判断基準に倣う)。
+  備考: 実際のpush・`AQ_APPROVED_ID=AQ-015`付与・`ALLOW`ログ確認は
+  本エントリ起票直後に本サブタスク(subtask_187)自身が引き続き実施する。
