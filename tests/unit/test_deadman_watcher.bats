@@ -13,6 +13,8 @@ setup() {
     ALERTS_LOG="$TEST_TMP/deadman_alerts.log"
     INCIDENTS_DIR="$TEST_TMP/incidents"
     SETTINGS="$TEST_TMP/settings.yaml"
+    QUEUE_TASKS_DIR="$TEST_TMP/queue_tasks"
+    mkdir -p "$QUEUE_TASKS_DIR"
     : > "$ALERTS_LOG"
     : > "$STALL_LOG"
     # 固定の"現在時刻"(DEADMAN_TEST_NOWオーバーライド)でelapsed計算を決定的にする。
@@ -33,6 +35,16 @@ deadman:
 EOF
 }
 
+# cmd_181-E: queue/tasks/{agent}.yaml 相当のfixtureを書く(第二の完了シグナル用)。
+write_task_yaml() {
+    local agent="$1" task_id="$2" status="$3"
+    cat > "$QUEUE_TASKS_DIR/${agent}.yaml" <<EOF
+task:
+  task_id: $task_id
+  status: $status
+EOF
+}
+
 # スタブ: capture_pane_snapshots(実tmux非依存)・bash(ntfy.sh実送信を防止)を
 # source後に差し替えた上で、与えられたsnippetを実行する。
 run_deadman() {
@@ -44,6 +56,7 @@ run_deadman() {
         DEADMAN_INCIDENTS_DIR="$INCIDENTS_DIR" \
         DEADMAN_SETTINGS="$SETTINGS" \
         DEADMAN_TEST_NOW="$NOW_ISO" \
+        QUEUE_TASKS_DIR="$QUEUE_TASKS_DIR" \
         TEST_TMP="$TEST_TMP" \
         bash -c '
             source "'"$DEADMAN_SCRIPT"'" >/dev/null 2>&1
@@ -249,4 +262,67 @@ EOF
     run grep '"event": "deadman_fired"' "$ALERTS_LOG"
     [[ "$output" == *'"last_event_type": "assigned"'* ]]
     [[ "$output" == *'"last_event_ts": "2026-07-17T11:00:00+09:00"'* ]]
+}
+
+# ─── cmd_181-E: 第二の完了シグナル(queue/tasks/ashigaru*.yaml・gunshi.yamlの
+# status)による入力衛生の安全網。subtask_170_D実例(report_submitted記録漏れで
+# 完了済みtask_idが出陣を跨いで誤鳴りし続けた)の再発防止を対象とする。
+
+# --- (i) 相当: timing側はreport_submitted欠落で未完了判定のまま(誤鳴り条件)だが、
+#     task YAML側がstatus:done → 除外(誤鳴り解消) ---
+
+@test "(k) cmd_181-E: task YAML status=done excludes task_id despite timing-side incomplete record" {
+    cat > "$TIMING_LOG" <<'EOF'
+{"ts": "2026-07-17T11:00:00+09:00", "event": "assigned", "cmd_id": "cmd_k", "task_id": "task_k", "agent": "ashigaru1", "redo_of": null, "qc_result": null, "source": "test", "extra": null}
+EOF
+    write_task_yaml "ashigaru1" "task_k" "done"
+    write_settings true 20
+
+    run_deadman "check_stalls"
+    [ "$status" -eq 0 ]
+    [ ! -s "$ALERTS_LOG" ]
+    [ ! -f "$TEST_TMP/ntfy.log" ]
+}
+
+# --- (ii) 相当: 真陽性側。task YAMLが存在しstatus:assignedの場合は、安全網が
+#     除外せず、timing側の判定どおり依然in-flightとして発火する(検知力を
+#     後退させないことの担保・失報側を守る) ---
+
+@test "(l) cmd_181-E: task YAML status=assigned does not suppress a real stall (true positive preserved)" {
+    cat > "$TIMING_LOG" <<'EOF'
+{"ts": "2026-07-17T11:00:00+09:00", "event": "assigned", "cmd_id": "cmd_l", "task_id": "task_l", "agent": "ashigaru1", "redo_of": null, "qc_result": null, "source": "test", "extra": null}
+EOF
+    write_task_yaml "ashigaru1" "task_l" "assigned"
+    write_settings true 20
+
+    run_deadman "check_stalls"
+    [ "$status" -eq 0 ]
+
+    run grep -c '"event": "deadman_fired"' "$ALERTS_LOG"
+    [ "$output" -eq 1 ]
+
+    run cat "$TEST_TMP/ntfy.log"
+    [[ "$output" == *"NOTIFIED"* ]]
+    [[ "$output" == *"task_l"* ]]
+}
+
+# --- fail-safe既定: 対象task_idがどのtask YAMLにも見つからない(他task_idの
+#     エントリがdoneでもマッチしない)場合はtiming側の判定のまま発火する ---
+
+@test "(m) cmd_181-E: task_id absent from any task YAML falls back to timing-side judgment (fail-safe default)" {
+    cat > "$TIMING_LOG" <<'EOF'
+{"ts": "2026-07-17T11:00:00+09:00", "event": "assigned", "cmd_id": "cmd_m", "task_id": "task_m", "agent": "ashigaru1", "redo_of": null, "qc_result": null, "source": "test", "extra": null}
+EOF
+    write_task_yaml "ashigaru2" "task_other" "done"
+    write_settings true 20
+
+    run_deadman "check_stalls"
+    [ "$status" -eq 0 ]
+
+    run grep -c '"event": "deadman_fired"' "$ALERTS_LOG"
+    [ "$output" -eq 1 ]
+
+    run cat "$TEST_TMP/ntfy.log"
+    [[ "$output" == *"NOTIFIED"* ]]
+    [[ "$output" == *"task_m"* ]]
 }

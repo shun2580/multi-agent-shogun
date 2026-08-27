@@ -53,6 +53,7 @@ DEADMAN_ALERTS_LOG="${DEADMAN_ALERTS_LOG:-${SCRIPT_DIR}/logs/deadman_alerts.log}
 DEADMAN_INCIDENTS_DIR="${DEADMAN_INCIDENTS_DIR:-${SCRIPT_DIR}/logs/incidents}"
 DEADMAN_SETTINGS="${DEADMAN_SETTINGS:-${SCRIPT_DIR}/config/settings.yaml}"
 DEADMAN_NTFY_SCRIPT="${DEADMAN_NTFY_SCRIPT:-${SCRIPT_DIR}/scripts/ntfy.sh}"
+QUEUE_TASKS_DIR="${QUEUE_TASKS_DIR:-${SCRIPT_DIR}/queue/tasks}"
 # Test-only override: fixes "now" for elapsed-time computation (ISO8601 w/ offset).
 DEADMAN_TEST_NOW="${DEADMAN_TEST_NOW:-}"
 
@@ -133,16 +134,27 @@ _deadman_pane_base() {
 # logs/stall_events.jsonl の output_changed イベント最新ts(同一task_id・cmd_id
 # 一致時のみ、誤結合防止の二重キー)の**より新しい方**を採用する(和集合)。
 # 出力: JSON配列 [{"cmd_id","task_id","last_event_type","last_event_ts"}, ...]
+#
+# cmd_181-E 第二の完了シグナル(入力衛生の安全網): timing_events.jsonlの
+# report_submittedイベント記録漏れ(subtask_170_D実例)により完了済みtask_idが
+# 出陣を跨いでin-flightのまま残る誤鳴りを防ぐため、queue/tasks/ashigaru*.yaml・
+# queue/tasks/gunshi.yamlのstatusを独立した第二の完了シグナルとして参照する。
+# 🔴除外方向にのみ働かせる(status: done/failedの場合のみ除外)。status:
+# assigned/blocked、またはtask_idがどのtask YAMLにも見つからない場合は
+# timing側の判定をそのまま尊重し、in-flightから除外しない(失報側を守る)。
 get_in_flight_tasks() {
     TIMING_EVENTS_JSONL="$TIMING_EVENTS_JSONL" STALL_EVENTS_LOG="$STALL_EVENTS_LOG" \
+        QUEUE_TASKS_DIR="$QUEUE_TASKS_DIR" \
         "$SCRIPT_DIR/.venv/bin/python3" - <<'PY'
 import datetime
+import glob
 import json
 import os
 from collections import defaultdict
 
 path = os.environ.get("TIMING_EVENTS_JSONL", "")
 stall_path = os.environ.get("STALL_EVENTS_LOG", "")
+queue_tasks_dir = os.environ.get("QUEUE_TASKS_DIR", "")
 
 
 def parse_ts(s):
@@ -242,6 +254,35 @@ for tid, events in tasks.items():
             "last_event_ts": best_ts,
         }
     )
+
+# --- cmd_181-E: 第二の完了シグナル(queue/tasks/*.yaml status)による除外専用フィルタ ---
+task_status_by_id = {}
+if queue_tasks_dir:
+    try:
+        import yaml
+    except Exception:
+        yaml = None
+    if yaml is not None:
+        patterns = ["ashigaru*.yaml", "gunshi.yaml"]
+        files = []
+        for pat in patterns:
+            files.extend(glob.glob(os.path.join(queue_tasks_dir, pat)))
+        for fp in sorted(set(files)):
+            try:
+                with open(fp, encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {}
+            except Exception:
+                continue
+            t = (data or {}).get("task") or {}
+            tid = t.get("task_id")
+            status = t.get("status")
+            if tid:
+                task_status_by_id[tid] = status
+
+results = [
+    r for r in results
+    if task_status_by_id.get(r["task_id"]) not in ("done", "failed")
+]
 
 print(json.dumps(results, ensure_ascii=False))
 PY
