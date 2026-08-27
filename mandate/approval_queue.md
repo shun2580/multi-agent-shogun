@@ -1101,6 +1101,24 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
      yaml_guard)がenforce昇格時に用いた前例条件——評価母数が一定件数以上
      確保されていること・複数稼働セッションに跨っていること——も参考に
      すること(具体的な数値基準は常用化判断時に家老・軍師が個別に定める)。
+  4. 🔴🔴**ブロッカー条項(subtask_187・cmd_187殿裁定〈2026-08-27・
+     「持ち越す」〉)**: `scripts/pretooluse_secret_guard.sh`のcwd誤判定
+     (subtask_186_2発見・2026-08-27)が根治されるまで、上記1・2・3が
+     形式上充足していても本ガードをenforceへ昇格してはならない。
+     理由: 現在observeゆえ実害は無いが、enforceへ昇格した瞬間に
+     「対象リポジトリの解決を`SCRIPT_DIR`固定(=常に本リポジトリ自身)で
+     行っている」欠陥が、外部リポジトリでのcommit時に秘匿値検知漏れとして
+     実害化する(`pretooluse_staged_ignore_guard.sh`がcmd_186で踏んだ欠陥1
+     〈cwd誤判定〉と同型)。🔴一次観測点(本サブタスクで実読・特定):
+     `scripts/pretooluse_secret_guard.sh`27行目
+     `REPO_DIR="${SECRET_GUARD_REPO_DIR:-$SCRIPT_DIR}"`が、
+     `pretooluse_staged_ignore_guard.sh`のcmd_186是正(REPO_DIR解決を
+     hook入力cwdからの`git rev-parse --show-toplevel`によるpython側動的
+     解決へ置き換え、解決失敗時はfail-safeで`exit 0`)と同型の実装へ
+     置き換わっていることが充足基準である。機械判定コマンド:
+     `grep -n 'REPO_DIR=\"\${SECRET_GUARD_REPO_DIR:-\$SCRIPT_DIR}\"'
+     scripts/pretooluse_secret_guard.sh`の出力が**0件**になっていること
+     (=固定パス代入行が消滅し、動的解決に置換済みであること)。
 
 - ID: AQ-014 | 日付: 2026-08-27 | 操作内容: 未push commit群(5件、
   `AQ_APPROVED_ID=AQ-014`を明示付与しての`git push origin main`実行)の
