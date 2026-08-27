@@ -91,6 +91,35 @@ run_guard_cwd() {
         bash -c "printf '%s' '$payload' | bash '$GUARD_SCRIPT'"
 }
 
+# cmd_186_2根治検証用(欠陥2・欠陥3): payloadにシェル引用符の衝突を起こしうる
+# 文字(二重引用符・改行を含むheredoc本体等)が含まれるケースは、bats単一行
+# 文字列へのエスケープ埋め込みでは事故りやすいため、python3のjson.dumpsで
+# JSONファイルへ正規に書き出してから読み込ませる。
+run_guard_command_file() {
+    local settings_file="$1"
+    local command="$2"
+    local session_id="$3"
+    local extra_cwd="${4:-}"
+    local payload_file="$TEST_TMP/payload_$session_id.json"
+    COMMAND="$command" SESSION_ID="$session_id" EXTRA_CWD="$extra_cwd" "$PYTHON_BIN" -c '
+import json, os
+payload = {
+    "session_id": os.environ["SESSION_ID"],
+    "tool_name": "Bash",
+    "tool_input": {"command": os.environ["COMMAND"]},
+}
+if os.environ.get("EXTRA_CWD"):
+    payload["cwd"] = os.environ["EXTRA_CWD"]
+print(json.dumps(payload))
+' > "$payload_file"
+    run env \
+        STAGED_IGNORE_GUARD_SETTINGS="$settings_file" \
+        STAGED_IGNORE_GUARD_LOG="$LOG_FILE" \
+        STAGED_IGNORE_GUARD_REPO_DIR="$REPO_DIR" \
+        STAGED_IGNORE_GUARD_PYTHON="$PYTHON_BIN" \
+        bash -c "cat '$payload_file' | bash '$GUARD_SCRIPT'"
+}
+
 # --- 早期リターン ---
 
 @test "feature flag off: exits 0 with no output, no log written" {
@@ -230,6 +259,57 @@ run_guard_cwd() {
     [ -z "$output" ]
     run grep -c "ALLOW(unresolved-repo).*session=cmd186-failsafe" "$LOG_FILE"
     [ "$output" -eq 1 ]
+}
+
+# --- cmd_186_2根治(欠陥2): heredoc/散文誤検知 ---
+# 実インシデント(logs/staged_ignore_guard.log 2026-08-27T23:07:57/23:10:45):
+# `MSG=$(cat <<'EOF' ... EOF)` のような非シェル実行sink(cat)向けheredoc本体
+# 中の地の文(インシデント説明文等)に「git add」という文字列がリテラルに
+# 現れただけで誤ってdenyされていた。
+
+@test "cmd_186_2 fix (defect2): heredoc body piped to non-shell sink (cat) containing literal 'git add' prose text is allowed (regression: 2026-08-27 23:07/23:10 false-DENY)" {
+    local cmd
+    cmd=$'MSG=$(cat <<\'EOF\'\nincident notes: running \'git add somefile.txt\' failed with a permission error, see log.\nEOF\n)\nbash scripts/inbox_write.sh karo "$MSG" cmd_new shogun'
+    run_guard_command_file "$SETTINGS_ENFORCE" "$cmd" "defect2-allow"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    run grep -c "ALLOW.*session=defect2-allow" "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "cmd_186_2 fix (defect2 regression guard): heredoc body actually executed by a shell sink (bash <<EOF) still triggers real 'git add' detection and denies" {
+    local cmd
+    cmd=$'bash <<\'EOF\'\ncd '"$REPO_DIR"$'\ngit add ignored.md\nEOF'
+    run_guard_command_file "$SETTINGS_ENFORCE" "$cmd" "defect2-deny"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+    [[ "$output" == *"ignored.md"* ]]
+}
+
+# --- cmd_186_2根治(欠陥3): JSON非エスケープによるfail-open ---
+# 是正前は理由文字列をシェルのheredocで手組み展開していたため、staged path
+# 名に二重引用符が混入するとJSON構文が壊れ、hookの出力パーサがdeny決定を
+# 読み取れず黙ってfail-openする経路があった(denyの意思が消える)。
+
+@test "cmd_186_2 fix (defect3): staged path containing a double-quote still denies AND produces valid, parseable JSON (no silent fail-open)" {
+    run_guard_command_file "$SETTINGS_ENFORCE" 'git add '"'"'weird"quote.md'"'"'' "defect3"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+    # $outputをpythonソースへ文字列リテラルとして埋め込むと二重エスケープ
+    # 事故(バックスラッシュがpython側の文字列リテラル解釈で先に剥がれ、JSON
+    # パーサに渡る前にエスケープが壊れる)を起こすため、stdin経由の
+    # json.load(生バイト読み込み)で渡す。
+    printf '%s' "$output" > "$TEST_TMP/defect3_output.json"
+    run "$PYTHON_BIN" -c "
+import json, sys
+with open('$TEST_TMP/defect3_output.json') as f:
+    d = json.load(f)
+assert d['hookSpecificOutput']['permissionDecision'] == 'deny'
+assert 'weird\"quote.md' in d['hookSpecificOutput']['permissionDecisionReason']
+print('PARSE_OK')
+"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"PARSE_OK"* ]]
 }
 
 # --- 実配線の確認(cmd_091標準) ---
