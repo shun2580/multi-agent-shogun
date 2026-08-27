@@ -21,8 +21,10 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SETTINGS="${STAGED_IGNORE_GUARD_SETTINGS:-$SCRIPT_DIR/config/settings.yaml}"
 LOG_FILE="${STAGED_IGNORE_GUARD_LOG:-$SCRIPT_DIR/logs/staged_ignore_guard.log}"
-REPO_DIR="${STAGED_IGNORE_GUARD_REPO_DIR:-$SCRIPT_DIR}"
 PYTHON_BIN="${STAGED_IGNORE_GUARD_PYTHON:-$SCRIPT_DIR/.venv/bin/python3}"
+# REPO_DIR(check-ignore評価対象のリポジトリ)はcwd抽出後に解決する
+# (cmd_186根治: 従来はSCRIPT_DIR固定=常にmulti-agent-shogunの.gitignoreで
+# 判定していたため、本機の他リポジトリでのgit addが無条件denyされていた)。
 
 INPUT="$(cat)"
 
@@ -144,6 +146,35 @@ fi
 # (`git add .`/`-A`/`git commit -a` は新規untracked-ignoredファイルを暗黙に
 # 拾わないが、tracked済みignoreファイルの変更は暗黙に再stagingするため)。
 HIT_PATHS=()
+
+# ─── cmd_186根治: REPO_DIR解決 ───
+# STAGED_IGNORE_GUARD_REPO_DIR(テスト隔離用の明示上書き)が設定されていれば
+# 最優先で尊重する。未設定の場合、hook入力JSONのcwd(Claude Codeのhook契約で
+# 実行時作業ディレクトリとして渡される)から`git rev-parse --show-toplevel`で
+# 実際にgitコマンドが走ったリポジトリを解決する。
+if [ -n "${STAGED_IGNORE_GUARD_REPO_DIR:-}" ]; then
+    REPO_DIR="$STAGED_IGNORE_GUARD_REPO_DIR"
+else
+    CWD=$(printf '%s' "$INPUT" | "$PYTHON_BIN" -c '
+import json, sys
+try:
+    payload = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+sys.stdout.write(payload.get("cwd") or "")
+' 2>/dev/null) || true
+    REPO_DIR=""
+    if [ -n "$CWD" ]; then
+        REPO_DIR=$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null) || true
+    fi
+    if [ -z "$REPO_DIR" ]; then
+        # fail-safe(原則2・stagingは非破壊): 対象リポジトリを解決できない
+        # 場合はdenyせず通す。誤検知で正当な作業を止める損失の方が、この
+        # 経路での見逃しより大きい。
+        echo "[$(date -Iseconds)] ALLOW(unresolved-repo) mode=$MODE session=$SESSION_ID tool=$TOOL_NAME cwd=$CWD" >> "$LOG_FILE"
+        exit 0
+    fi
+fi
 
 cd "$REPO_DIR" || exit 0
 

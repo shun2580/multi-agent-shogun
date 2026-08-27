@@ -45,6 +45,23 @@ EOF
     echo "allowed" > "$REPO_DIR/allowed.md"
     echo "ignored" > "$REPO_DIR/ignored.md"
     git -C "$REPO_DIR" add -f .gitignore allowed.md ignored.md
+
+    # cmd_186根治検証用: 「他リポジトリ」を模した第2の隔離git repo。
+    # whitelist型ではなく通常型(ignoreパスのみ列挙)の.gitignoreを持つ点が
+    # REPO_DIR(shogun模擬)との違い。
+    OTHER_REPO_DIR="$TEST_TMP/other_repo"
+    mkdir -p "$OTHER_REPO_DIR/docs"
+    git -C "$OTHER_REPO_DIR" init -q
+    cat > "$OTHER_REPO_DIR/.gitignore" <<'EOF'
+docs/
+EOF
+    echo "own-ignored" > "$OTHER_REPO_DIR/docs/notes.md"
+    echo "own-allowed" > "$OTHER_REPO_DIR/allowed_other.md"
+    git -C "$OTHER_REPO_DIR" add -f .gitignore allowed_other.md
+    git -C "$OTHER_REPO_DIR" add -f docs/notes.md
+
+    NOT_A_REPO_DIR="$TEST_TMP/not_a_repo"
+    mkdir -p "$NOT_A_REPO_DIR"
 }
 
 teardown() {
@@ -58,6 +75,18 @@ run_guard() {
         STAGED_IGNORE_GUARD_SETTINGS="$settings_file" \
         STAGED_IGNORE_GUARD_LOG="$LOG_FILE" \
         STAGED_IGNORE_GUARD_REPO_DIR="$REPO_DIR" \
+        STAGED_IGNORE_GUARD_PYTHON="$PYTHON_BIN" \
+        bash -c "printf '%s' '$payload' | bash '$GUARD_SCRIPT'"
+}
+
+# cmd_186根治検証用: STAGED_IGNORE_GUARD_REPO_DIRを設定せず、payloadのcwdから
+# 実リポジトリを解決させる経路を通す(本番のhook呼び出しを模す)。
+run_guard_cwd() {
+    local settings_file="$1"
+    local payload="$2"
+    run env \
+        STAGED_IGNORE_GUARD_SETTINGS="$settings_file" \
+        STAGED_IGNORE_GUARD_LOG="$LOG_FILE" \
         STAGED_IGNORE_GUARD_PYTHON="$PYTHON_BIN" \
         bash -c "printf '%s' '$payload' | bash '$GUARD_SCRIPT'"
 }
@@ -163,6 +192,43 @@ run_guard() {
     [ "$status" -eq 0 ]
     [ -z "$output" ]
     run grep -c "WOULD-DENY.*session=s8.*ignored.md" "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+# --- cmd_186根治: cwdからのREPO_DIR解決(常にmulti-agent-shogunの.gitignoreで
+# 判定していた欠陥の回帰防止) ---
+
+@test "cmd_186 fix (i): cwd-resolved 'home' repo still denies its own intentionally-ignored tracked path (no regression)" {
+    local payload="{\"session_id\":\"cmd186-i\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git add ignored.md\"},\"cwd\":\"$REPO_DIR\"}"
+    run_guard_cwd "$SETTINGS_ENFORCE" "$payload"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+    [[ "$output" == *"ignored.md"* ]]
+}
+
+@test "cmd_186 fix (ii): cwd-resolved other repo allows its own legitimate staging (previously false-DENY via shogun .gitignore)" {
+    local payload="{\"session_id\":\"cmd186-ii\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git add allowed_other.md\"},\"cwd\":\"$OTHER_REPO_DIR\"}"
+    run_guard_cwd "$SETTINGS_ENFORCE" "$payload"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    run grep -c "ALLOW.*session=cmd186-ii" "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "cmd_186 fix (iii): cwd-resolved other repo denies a path ignored by ITS OWN .gitignore (not shogun's)" {
+    local payload="{\"session_id\":\"cmd186-iii\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git add docs/notes.md\"},\"cwd\":\"$OTHER_REPO_DIR\"}"
+    run_guard_cwd "$SETTINGS_ENFORCE" "$payload"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+    [[ "$output" == *"docs/notes.md"* ]]
+}
+
+@test "cmd_186 fix: unresolvable repo (cwd not inside any git repo) fails safe and allows (does not deny)" {
+    local payload="{\"session_id\":\"cmd186-failsafe\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git add whatever.md\"},\"cwd\":\"$NOT_A_REPO_DIR\"}"
+    run_guard_cwd "$SETTINGS_ENFORCE" "$payload"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    run grep -c "ALLOW(unresolved-repo).*session=cmd186-failsafe" "$LOG_FILE"
     [ "$output" -eq 1 ]
 }
 
