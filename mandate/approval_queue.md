@@ -1069,6 +1069,34 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   である可能性は残るため、家老・軍師の判断でscope_check advisory結果を
   確認されたい。
 
+  🔴追記(足軽5号・subtask_184・cmd_184、殿裁定によりoffからobserveへ移行
+  実施後): enforce昇格判断のための**条件式**(Q35期日禁止則につき暦日では
+  書かない)を以下のとおり定める。常用化判断はこの条件式の充足を機械確認
+  してから行うこと:
+  1. **observe段でのWOULD-DENY実測件数と真陽性/偽陽性内訳が確認できること**。
+     一次観測点: `logs/secret_guard.log`。機械判定コマンド:
+     `grep -c 'WOULD-DENY' logs/secret_guard.log`(総件数)、
+     `grep 'WOULD-DENY' logs/secret_guard.log | grep -oE '[a-z_./]+\.(bats|sh|yaml|md):[0-9]+' | sort | uniq -c`
+     (ファイル別内訳、テストフィクスチャ由来か本番commit由来かの切り分け用)。
+     observe化直後(2026-08-27 22:26時点)の基準値: 総件数1件(observe化前の
+     subtask_183_B隔離検証時の記録、`tests/unit/test_pretooluse_secret_guard.bats`
+     自身の合成ダミー値によるもの=真陽性〈パターンとしては該当〉かつ実害なし
+     〈実在の秘匿値ではない〉のテストフィクスチャ起因)。これ以外に新規の
+     WOULD-DENYが本番commit経路(config/journal/approval_queue/dashboard等の
+     実務ファイル)から観測され、かつそれが真の秘匿値混入(誤検知でない)で
+     あった場合は、直ちに家老・軍師へ報告し常用化判断を待たず個別に対処
+     すること。
+  2. **テストフィクスチャ(`tests/unit/test_pretooluse_secret_guard.bats`等、
+     合成ダミー値を含むファイル)の除外設計の要否について結論が出ている
+     こと**。🔴この問いが未解決のままではenforce昇格の条件を満たさない
+     (結論の中身は「除外設計を導入する」「導入しない(誤検知として許容
+     する)」のいずれでもよいが、いずれかの結論に到達していることが条件
+     そのものである)。
+  3. 上記1・2に加え、既存の姉妹ガード(git_push_block/staged_ignore_guard/
+     yaml_guard)がenforce昇格時に用いた前例条件——評価母数が一定件数以上
+     確保されていること・複数稼働セッションに跨っていること——も参考に
+     すること(具体的な数値基準は常用化判断時に家老・軍師が個別に定める)。
+
 - ID: AQ-014 | 日付: 2026-08-27 | 操作内容: 未push commit群(5件、
   `AQ_APPROVED_ID=AQ-014`を明示付与しての`git push origin main`実行)の
   承認可否 |
