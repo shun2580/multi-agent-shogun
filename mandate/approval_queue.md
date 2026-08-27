@@ -1068,3 +1068,47 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   AQ_APPROVED_ID型の矛盾)とは性質が異なる。それでもallowed_paths列挙漏れ
   である可能性は残るため、家老・軍師の判断でscope_check advisory結果を
   確認されたい。
+
+- ID: AQ-014 | 日付: 2026-08-27 | 操作内容: 未push commit群(5件、
+  `AQ_APPROVED_ID=AQ-014`を明示付与しての`git push origin main`実行)の
+  承認可否 |
+  理由: cmd_183(Q33(b)ガード本体〈`scripts/pretooluse_staged_ignore_guard.sh`〉
+  のtracked化+秘匿値pre-commitガード〈`scripts/pretooluse_secret_guard.sh`〉
+  建造)完了時点の帳簿締めとして起票する |
+  doubt:
+  (a) 未push件数の再実測(subtask_183_C独立測定): `git fetch origin main &&
+      git log origin/main..HEAD --oneline | wc -l` = **5件**。cmd別内訳
+      (`git log origin/main..HEAD --oneline | grep -oE '\(cmd_[0-9]+' |
+      sort | uniq -c`): cmd_182×1(71d7165)・cmd_183×4(7ff45e1/5c6d9df/
+      08c9f2e/4116aca)。🔴本件数は本AQ-014起票commit自体を含まない
+      (起票時点の実測値であり、起票commit自体が加わることでpush直前の
+      実件数は6件となる。この扱いはAQ-013起票時と同一の測定方法)
+  (b) 秘匿値走査(a)差分走査: `git log -p origin/main..HEAD`への
+      パターン走査(`ntfy_topic|api[_-]?key|secret|token|password|bearer|
+      AKIA[0-9A-Z]{16}|ghp_|sk-ant`)で70件ヒット。実出力を確認したところ
+      いずれも(i)変数名・関数名・設定キー名(`secret_guard_enabled`・
+      `SECRET_GUARD_*`環境変数名等)への語句マッチ、(ii)journal/AQ本文中の
+      経緯記述(プレースホルダ`<ntfy_topic旧値>`への言及、本件を含め3件)、
+      (iii)テストファイル(`tests/unit/test_pretooluse_secret_guard.bats`)
+      内の合成ダミー値(`sk-ant-AAAA...`・`ghp_AAAA...`等、全てA連続や
+      既知のダミー形状であり実在の秘匿値ではない)であり、新規の実秘匿値は
+      検出されなかった
+  (c) 秘匿値走査(b)全tracked file現行内容走査: `git ls-files`列挙の
+      全trackedファイルに対する同パターン走査で436行(83ファイル)が
+      マッチしたが、大半は(a)と同様の語句一致(変数名・ドキュメント中の
+      語彙)。値保持形状(`AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}|
+      sk-ant-[A-Za-z0-9_-]{20,}|ntfy_topic[:=]値`)に絞った再走査では、
+      テストファイル内の合成ダミー値6件のみがヒットし、実秘匿値は0件。
+      `config/settings.yaml`・`config/ntfy_auth.env`(実値ファイル)は
+      いずれもtracked化されておらず(`.example`/`.sample`版のみtracked)、
+      現行ツリーに実秘匿値ファイルの追跡混入なし
+  (d) 🔴旧ntfy_topic値のプレースホルダ`<ntfy_topic旧値>`の残存(cmd_180で
+      置換除去済み・既承認の既知残存事項): 全trackedファイル現行内容中に
+      8箇所(`mandate/approval_queue.md`×4・`mandate/decisions_journal.md`
+      ×2・`tests/unit/test_pretooluse_secret_guard.bats`×2、うち後者2件は
+      偽陽性回避テストのプレースホルダ文字列そのもの)。値自体は伏字化
+      済みであり実害なし。差分走査でも同プレースホルダが3件出現(経緯記述
+      の引用によるもの)。この許容範囲は変わらず、新規の平文露出は伴わない
+  状態: pending
+  出典: `queue/tasks/ashigaru3.yaml` task_id: subtask_183_C(cmd_183
+  acceptance_criteria【6】、殿の専権事項につき送出は行わず起票のみ)
