@@ -22,6 +22,7 @@ features:
   fleet_idle_notify_enabled: <off|observe|enforce>
   fleet_idle_notify_stable_sec: <integer>
   parent_cmd_done_gate_enabled: <off|observe|enforce>
+  secret_guard_enabled: <off|observe|enforce>
 deadman:
   stall_threshold_min: <integer>
 stall_detection:
