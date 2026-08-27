@@ -140,6 +140,7 @@ config/settings.yaml
 !scripts/stall_watcher.sh
 !scripts/pretooluse_reversibility_check.sh
 !scripts/pretooluse_staged_ignore_guard.sh
+!scripts/pretooluse_clear_idle.sh
 !scripts/pretooluse_secret_guard.sh
 !scripts/check_flag_silent_off.sh
 !scripts/weekly_distill.sh
