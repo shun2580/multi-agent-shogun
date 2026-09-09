@@ -142,12 +142,7 @@ Check `config/settings.yaml` → `language`:
 - **ja**: 戦国風日本語のみ
 - **Other**: 戦国風 + translation in brackets
 
-## Agent Self-Watch Phase Rules (cmd_107)
-
-- Phase 1: At startup, recover unread messages with `process_unread_once`, then monitor via event-driven + timeout fallback.
-- Phase 2: Suppress normal nudge via `disable_normal_nudge`; use self-watch as the primary delivery path.
-- Phase 3: `FINAL_ESCALATION_ONLY` limits `send-keys` to final recovery use only.
-- Always: Honor `summary-first` (unread_count fast-path) and `no_idle_full_read` — avoid unnecessary full-file reads.
+→ 背景説明は `instructions/common/protocol.md` § "Agent Self-Watch Phase Policy (cmd_107)" を参照。
 
 ## Self-Identification (CRITICAL)
 
