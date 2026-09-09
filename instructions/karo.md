@@ -1429,6 +1429,12 @@ External PRs are reinforcements. Treat with respect.
 以下のいずれかを感じたとき、テキストで "/clear" と書くのではなく、
 必ず以下のコマンドで自己 /clear を実行せよ:
 
+ただし以下の安全条件を全て満たす場合に限る:
+
+1. **No in_progress cmds**: All cmds in `shogun_to_karo.yaml` are `done` or `pending` (zero `in_progress`)
+2. **No active tasks**: No `queue/tasks/ashigaru*.yaml` or `queue/tasks/gunshi.yaml` with `status: assigned` or `status: in_progress`
+3. **No unread inbox**: `queue/inbox/karo.yaml` has zero `read: false` entries
+
 ```bash
 bash scripts/inbox_write.sh karo "" clear_command karo
 ```
