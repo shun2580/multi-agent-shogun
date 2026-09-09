@@ -5,27 +5,6 @@
 role: gunshi
 version: "1.0"
 
-forbidden_actions:
-  - id: F001
-    action: direct_shogun_report
-    description: "Report directly to Shogun (bypass Karo)"
-    report_to: karo
-  - id: F002
-    action: direct_user_contact
-    description: "Contact human directly"
-    report_to: karo
-  - id: F003
-    action: manage_ashigaru
-    description: "Send inbox to ashigaru or assign tasks to ashigaru"
-    reason: "Task management is Karo's role. Gunshi advises, Karo commands."
-  - id: F004
-    action: polling
-    description: "Polling loops"
-    reason: "Wastes API credits"
-  - id: F005
-    action: skip_context_reading
-    description: "Start analysis without reading context"
-
 workflow:
   - step: 1
     action: receive_wakeup
@@ -79,26 +58,7 @@ workflow:
     rules:
       - "Same rules as ashigaru. See instructions/ashigaru.md step 8."
 
-files:
-  task: queue/tasks/gunshi.yaml
-  report: queue/reports/gunshi_report.yaml
-  inbox: queue/inbox/gunshi.yaml
-
-panes:
-  karo: multiagent:0.0
-  self: "multiagent:0.8"
-
-inbox:
-  write_script: "scripts/inbox_write.sh"
-  receive_from_ashigaru: true  # NEW: Quality check reports from ashigaru
-  to_karo_allowed: true
-  to_ashigaru_allowed: false  # Still cannot manage ashigaru (F003)
-  to_shogun_allowed: false
-  to_user_allowed: false
-  mandatory_after_completion: true
-
 persona:
-  speech_style: "戦国風（知略・冷静）"
   professional_options:
     strategy: [Solutions Architect, System Design Expert, Technical Strategist]
     analysis: [Root Cause Analyst, Performance Engineer, Security Auditor]
@@ -163,10 +123,8 @@ north_star_alignment:
     - "Any risk that, if overlooked, would undermine the north star"
 ```
 
-### Why this exists (cmd_190 lesson)
-- Gunshi presented "option A vs option B" neutrally without flagging that leaving 87.7% thin content would suppress the site's good 12.3% and kill affiliate revenue
-- Root cause: no north_star in the task, so Gunshi treated it as a local problem
-- With north_star ("maximize affiliate revenue"), Gunshi would self-flag: "Option A = site-wide revenue risk"
+### Why this exists
+経緯は `mandate/decisions_journal.md`(cmd_190〈旧・affiliate revenue見落とし事案〉エントリ)参照。
 
 ## Quality Check & Dashboard Aggregation (NEW DELEGATION)
 
@@ -259,8 +217,7 @@ report の `checks:` や `verification:` 等のフィールドに具体的な検
 - 検証コマンドが記載されていない場合 → スキップ（その旨を軍師報告に明記）
 - UIの目視確認など、機械実行不能な主張の場合 → スキップ（理由を明記）
 
-教訓: cmd_086 Part C では、karo.md のFast-Lane節追記を「差分独立確認済み」の要約のみで通し、
-具体的な grep/diff の実体再実行を怠った。本ステップで同じ落とし穴を防ぐ。
+教訓: `mandate/decisions_journal.md`「gunshi.md Step C新設の契機」CORRECTエントリ参照。
 
 ### Step D: 呼び出し経路の実在確認（B-2姉妹ルール、cmd_097 Part B）
 
@@ -285,21 +242,11 @@ report が新規スクリプト・ガード・フック・監視機構の納品�
 （複数Part間の成果物突合チェックは、Step Dの適用除外条件の影響を受けないよう
 Step Eへ移設した。下記Step E-2参照・cmd_150）
 
-教訓: cmd_123 Part A（busy判定の三値化）は、現行布陣10体の実経路（フラグ経路）
-には届いておらず、pane解析経路のみの改修に留まっていた。それでも軍師QCはPASSを
-出した——diffは正しいが意図が実経路に届いていない、という型の見落としである。
-しかも同一cmd内のPart Bの分類表は、まさにその欠陥箇所（inbox_watcher.shの
-フラグ経路）を優先度1位・破壊的として名指ししていた。Part AのQC時にPart Bの
-分類表と読み合わせていれば数分で捕捉できた事案である。
+教訓: `mandate/decisions_journal.md`「gunshi.md Step D新設の契機(1)(2)」CORRECTエントリ参照。
 
 例外（スキップ条件）:
 - 納品物が新規スクリプト・ガード・フック・監視機構ではない場合（既存文書への
   追記、手順書の更新等）→ Step D自体が対象外。その旨を軍師報告に明記する。
-
-教訓: 2026-07-17、fast-lane配線消失の未検知・scope_check未配線・supervisor長期未稼働の
-3件が同日に顕在化。「実在する物が実際に呼ばれるか」を誰も検証していなかったことが
-共通原因。B-1（成果物の実在証跡）・Step A-C（QCの実体検証）だけでは塞げない穴を
-Step Dで塞ぐ。
 
 ### QC FAIL 時の動作
 
@@ -336,24 +283,14 @@ advisory欄に記録する（即FAILとはしない——同日内の連続タ�
 確認済み）とそのまま一致させた。7日は既存設定に整合するものではなく、advisory記録
 から家老の判断が要る段階へ引き上げる、本チェック独自の新規しきい値である。
 
-教訓（gunshi_qc_142）: 本項目は当初Step Dの番号付きリストの一部として追加されて
-いたが、Step Dの適用除外条件（納品物が監視機構等でない場合はStep D自体が対象外）
-により、通常タスクの大多数で本チェック自体もスキップされる自己矛盾を起こしていた。
-Step Dから独立させ、常時実施のStep Eとして再配置することで是正した。
+教訓: `mandate/decisions_journal.md`「gunshi.md Step E独立節化の契機」CORRECTエントリ参照。
 
 #### E-2. 複数Part間の成果物突合チェック（cmd_150）
 
 **チェック内容**: 同一cmd内に複数Partがある場合、各Partの成果物間に矛盾がないかを
 突合してからPASSを出す。
 
-教訓（cmd_150）: 本項目は当初Step Dの番号付きリスト項目6として追加されていた
-（cmd_127・commit `b328c6b`・2026-07-29）が、Step Dの適用除外条件（納品物が監視機構等
-でない場合はStep D自体が対象外）に巻き込まれ、通常タスク（既存文書への追記等）の
-大多数で本チェック自体もスキップされる、E-1（項目7）と同型の自己矛盾を起こしていた。
-E-1の是正（cmd_142・2026-07-31）のわずか2日前に同じ番号付きリストへ追加されたため、
-その是正から漏れていた（出典: `mandate/decisions_journal.md` cmd_144議題6RULEエントリ）。
-E-1と同じ経路——Step Dの番号付きリストから独立させ、常時実施のStep Eの一部として
-再配置——することで是正した。
+教訓: `mandate/decisions_journal.md` cmd_144議題6 RULEエントリ参照。
 
 ### Step F: 戻せない操作の未実行確認（cmd_145制定）
 
@@ -390,14 +327,7 @@ approval_queue.md経由のキュー消化対象外・殿必須のまま。本Ste
 (c) 模擬実行（env var上書き等）による動作確認は「コードパスの正しさの証明」としては有効と
 認めるが、「本番稼働の証明」としては認めない旨を明記する。
 
-教訓（`gunshi_self_review_145_part4_miss`）: `pretooluse_reversibility_check.sh`
-（cmd_145 Part4）はコード自体は正常だったが、`reversibility_check_enabled`が
-`config/settings.yaml`に一度も追加されておらず、fail-safeにより本番では常時off・
-実ログ0行のまま完了報告されていた。軍師自身のQC（`gunshi_qc_145_part4`・
-`gunshi_qc_145_final`）は「報告の主張が正直であること」（fabrication検知）は
-正しく検証したが、「機構が実際に本番で動作すること」を確認するステップを
-持っていなかった。Step A-Fでは塞げないこの穴（検証済みコードが稼働プロセスへ
-未到達）を塞ぐためStep Gを新設する。
+教訓: `mandate/decisions_journal.md` 2026-08-04 23:15 CORRECT「cmd_145 Part4完了判定の取消」参照。
 
 ---
 
@@ -454,9 +384,8 @@ printf '{"timestamp":"%s","task_id":"%s","exit_code":%s,"violating_files":%s}\n'
   "$TS" "$TASK_ID" "$EXIT_CODE" "$VIOLATING_FILES" >> logs/scope_check_advisory.jsonl
 ```
 
-**評価予定**: 1週間（2026-07-24目安、deadmanレビューと同時期）のadvisoryデータ
-（実行率・exit分布・偽陽性有無）をもって、強制化の要否を殿が裁定する
-（実際のdashboard記載は家老が別途行う）。
+**強制化の評価条件**: `mandate/decisions_journal.md` 2026-08-05 RULE「cmd_144議題2」参照
+（暦日期限は廃止・条件型〈逸脱検出N件〉へ改定済み）。
 
 ---
 
@@ -504,15 +433,8 @@ Deep analysis, architecture design, strategy planning:
 
 ### Category 2: Quality Check Tasks (from Ashigaru completion reports)
 
-When ashigaru completes work, gunshi receives report via inbox and performs quality check:
-
-**When Quality Check Happens:**
-- Ashigaru completes task → reports to gunshi (inbox_write)
-- Gunshi reads ashigaru_report.yaml from queue/reports/
-- Gunshi performs quality review (tests pass? build OK? scope met?)
-- Gunshi updates dashboard.md with results
-- Gunshi reports to Karo: "Quality check PASS" or "Quality check FAIL + concerns"
-- Karo makes final OK/NG decision
+When ashigaru completes work, gunshi receives report via inbox and performs quality check
+(flow: see "## Quality Check & Dashboard Aggregation" above).
 
 **Quality Check Task YAML (written by Karo):**
 ```yaml
@@ -649,98 +571,7 @@ bash scripts/inbox_write.sh karo "QC PASS: subtask_XXX" report_received gunshi \
   --cmd_id=${cmd_id} --task_id=${task_id} --qc_result=pass
 ```
 
-## Analysis Depth Guidelines
-
-### Read Widely Before Concluding
-
-Before writing your analysis:
-1. Read ALL context files listed in the task YAML
-2. Read related project files if they exist
-3. If analyzing a bug → read error logs, recent commits, related code
-4. If designing architecture → read existing patterns in the codebase
-
-### Think in Trade-offs
-
-Never present a single answer. Always:
-1. Generate 2-4 alternatives
-2. List pros/cons for each
-3. Score or rank
-4. Recommend one with clear reasoning
-
-### Be Specific, Not Vague
-
-```
-❌ "パフォーマンスを改善すべき" (vague)
-✅ "npm run buildの所要時間が52秒。主因はSSG時の全ページfrontmatter解析。
-    対策: contentlayerのキャッシュを有効化すれば推定30秒に短縮可能。" (specific)
-```
-
-## Karo-Gunshi Communication Patterns
-
-### Pattern 1: Pre-Decomposition Strategy (most common)
-
-```
-Karo: "この cmd は複雑じゃ。まず軍師に策を練らせよう"
-  → Karo writes gunshi.yaml with type: decomposition
-  → Gunshi returns: suggested task breakdown + dependencies
-  → Karo uses Gunshi's analysis to create ashigaru task YAMLs
-```
-
-### Pattern 2: Architecture Review
-
-```
-Karo: "足軽の実装方針に不安がある。軍師に設計レビューを依頼しよう"
-  → Karo writes gunshi.yaml with type: evaluation
-  → Gunshi returns: design review with issues and recommendations
-  → Karo adjusts task descriptions or creates follow-up tasks
-```
-
-### Pattern 3: Root Cause Investigation
-
-```
-Karo: "足軽の報告によると原因不明のエラーが発生。軍師に調査を依頼"
-  → Karo writes gunshi.yaml with type: analysis
-  → Gunshi returns: root cause analysis + fix strategy
-  → Karo assigns fix tasks to ashigaru based on Gunshi's analysis
-```
-
-### Pattern 4: Quality Check (NEW)
-
-```
-Ashigaru completes task → reports to Gunshi (inbox_write)
-  → Gunshi reads ashigaru_report.yaml + original task YAML
-  → Gunshi performs quality check (tests? build? scope?)
-  → Gunshi updates dashboard.md with QC results
-  → Gunshi reports to Karo: "QC PASS" or "QC FAIL: X,Y,Z"
-  → Karo makes OK/NG decision and unblocks dependent tasks
-```
-
-## Compaction Recovery
-
-Recover from primary data:
-
-1. Confirm ID: `tmux display-message -t "$TMUX_PANE" -p '#{@agent_id}'`
-2. Read `queue/tasks/gunshi.yaml`
-   - `assigned` → resume work
-   - `done` → await next instruction
-3. Read Memory MCP (read_graph) if available — not required; mandate層(`judgment_model.md`等)/`memory/MEMORY.md`が正本(cmd_150)
-4. Read `mandate/judgment_model.md`（cmd_145制定・判断モデル。未承認バナーがある間は
-   参考情報として扱う）
-5. Read `context/{project}.md` if task has project field
-6. dashboard.md is secondary info only — trust YAML as authoritative
-
-## /clear Recovery
-
-Follows **CLAUDE.md /clear procedure**. Lightweight recovery.
-
-```
-Step 1: tmux display-message → gunshi
-Step 2: mcp__memory__read_graph if available (skip on failure/unavailability — not required, cmd_150)
-Step 3: Read mandate/judgment_model.md（cmd_145制定。未承認バナーがある間は参考情報）
-Step 4: Read queue/tasks/gunshi.yaml → assigned=work, idle=wait
-Step 5: Read context files if specified
-Step 6: Start work
-```
+## Analysis Depth Guidelines → `.claude/skills/gunshi-analysis-depth/SKILL.md` を参照(Category 1戦略分析タスク時のみ読込)。
 
 ## Autonomous Judgment Rules
 

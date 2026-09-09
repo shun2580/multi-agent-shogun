@@ -1,84 +1,30 @@
 task:
-  task_id: gunshi_decompose_146
-  parent_cmd: cmd_146
-  type: decomposition
-  bloom_level: L6
+  task_id: gunshi_qc_192_ongoing
+  parent_cmd: cmd_192
+  type: qc
+  bloom_level: L5
   assigned_to: gunshi
-  status: done
-  timestamp: "2026-08-04T22:30:00"
+  status: idle  # 継続的QC役割。直近完了: gunshi_qc_192_7_3(2026-09-09T20:36:23)。家老が2026-09-09T20:46に入力衛生是正で更新(将軍指摘・stall誤報対応)
+  timestamp: "2026-09-09T20:46:29"
   description: |
-    【cmd_146: 通知機構の是正＋stall再発防止 — 実行分解プラン設計】
+    【cmd_192 継続QC — ashigaru発の各サブタスク完了報告への品質チェック】
 
-    cmd_145完了により着手可となった殿直接下命cmd。queue/shogun_to_karo.yaml の
-    cmd_146全文(purpose・acceptance_criteria8項・command・lord_ruling)を必ず
-    自分でRead-before-Editせよ。
+    軍師は本cmdを通じ、各ashigaruが完了報告時にinbox_write経由で
+    直接依頼するQCを継続的にこなしている(Ashigaru→Gunshi直接通知フロー、
+    CLAUDE.md Report Flow表準拠)。個々のQC対象は各ashigaruの
+    inbox_write本文・queue/reports/gunshi_report.yamlを参照せよ。
 
-    🔴本タスクは**分解設計のみ**。コード・設定・instructionsの変更・commitは
-    一切行うな。成果物は「家老が実際にashigaru task YAMLを書くための実行
-    プラン」である。
+    🔴2026-09-09T20:45将軍指摘により是正: 本ファイルが2026-09-09T18:35以降
+    (task_id: gunshi_qc_192_2_karo_fix、status: done)一度も更新されて
+    いなかったため、stall/deadman監視機構が実在しないtask_id
+    (subtask_192_2_memory_karo_fix)を掴んだまま正常稼働中の軍師へ
+    誤nudge(nudge_sent×3・escalated_to_ntfy・deadman_fired)を送り続けて
+    いた。以後、軍師へQC作業が生じる都度、家老は本ファイルを実態に
+    合わせて更新する運用とする。
 
-    ■ 背景(一次資料)
-    2026-08-04 20:55、dashboard.mdの24時間放置通知ロジック
-    (`scripts/inbox_watcher.sh`付近、1929行目)が全文から
-    `<!-- created_at: -->`マーカーを拾う設計のため、9通中7通が記録・背景文・
-    HTMLコメントへの誤発火だった(logs/ntfy.log参照)。加えて2026-08-01、
-    軍師の緊急報告がinboxでread:falseのまま3日間滞留した経路も未是正。
-
-    ■ 依頼事項1: ①24時間放置通知のセクション限定・実装方針
-    `scripts/inbox_watcher.sh`の該当ロジックを実際に読み、
-    dashboard.mdの`## 🚨 要対応`セクション内のマーカーのみを対象とする
-    実装方針を示せ。見出しの表記ゆれ(絵文字有無等)で取りこぼさない
-    パース方法(正規表現かMarkdownセクション境界検出か)を具体的に提案せよ。
-    是正前(9件)/是正後の件数を実測できる検証コマンドも設計すること。
-
-    ■ 依頼事項2: ②緊急エスカレーション通知の設計
-    inboxエントリに緊急標識(既存typeの活用か新規フィールド追加か、
-    貴殿の判断で設計)を持たせ、read:falseのまま閾値時間を超えたら
-    殿へntfyエスカレーションする経路を設計せよ。**閾値の根拠を必ず示せ**
-    (cmd_142で閾値根拠欠落がQC FAILとなった前例——
-    instructions/gunshi.md「Step E」節等を参照し、同種の欠陥を再発させるな)。
-    実装箇所(新規スクリプトか既存inbox_watcher.shへの追記か)の方針も示せ。
-
-    ■ 依頼事項3: ③再通知抑止の設計(抑止と黙殺の分離)
-    既知項目の再通知を抑止しつつ、未対応項目が静かに風化しない担保
-    (頻度を落として継続する・dashboard側で可視のまま残す等)を具体的に
-    設計せよ。「通知済みマーカー」の保存場所・形式を提案すること。
-
-    ■ 依頼事項4: ④合成データ混入ガードの実装方針(将軍設計・二重の網)
-    (a)明示スイッチ(環境変数等で合成実行を宣言した場合、sinkを試験用ログへ
-    振替)と(b)接頭辞ヒューリスティクス(task_idがテスト由来と判る命名の場合も
-    試験用sinkへ振替、かつfail-loudで警告)の2経路を、
-    `scripts/log_timing_event.sh`のどこに実装するのが適切か方針を示せ。
-    stall_watcher_incidentで実際に見つかった11件の汚染task_id命名パターン
-    (`queue/reports/ashigaru5_report.yaml task_id:
-    subtask_stallincident_backfill`参照)から、(b)の命名ヒューリスティクスの
-    具体的なパターン候補を抽出せよ。
-
-    ■ 依頼事項5: 承認フロー(cmd_145新設)との整合確認
-    cmd_146のacceptance_criteria「非破壊」項目は「mandate層の承認フロー
-    (戻せない操作はapproval_queueへ)が既に発効していれば、本cmdもそれに
-    従うこと」と定める。mandate/approval_queue.md・instructions/karo.mdの
-    完了時手順(cmd_145で新設済み)を実際に読み、本cmdの各サブタスクが
-    「戻せる操作」(ローカル編集・commit・テスト実行)に該当し自動進行してよいか、
-    それとも「戻せない操作」に該当するものが含まれるか判定せよ。
-
-    ■ 依頼事項6: 具体的ashigaru割当プラン
-    4つの依頼事項(①②③④)を何個のサブタスクに分割し、どのashigaru
-    (モデル特性はinstructions/karo.md「Implementタスクのモデル選択
-    ポリシー」参照)に割り当てるべきか、並列実行可能な組と直列にすべき組を
-    示せ。①〜④は基本的に独立したファイル・ロジックのため並列化しやすいと
-    予想されるが、実際に触るファイルの重複有無を`grep`等で確認してから
-    結論を出すこと。QC区切り(全体1回か項目ごとか)もProportional
-    Decomposition Ruleに照らして推奨せよ。
-
-    ■ 成果物の形式
-    依頼事項1〜6それぞれについて「現状(調査結果)・推奨(具体プラン)」を
-    明記。根拠は実際にRead/grepした結果を貼ること(未確認の援用禁止)。
-
-    ■ 完了報告
-    queue/reports/gunshi_report.yaml に task_id: gunshi_decompose_146 で記録し、
-    以下で家老へ直接通知せよ:
-
-    bash /home/nishikawa/projects/multi-agent-shogun/scripts/inbox_write.sh karo \
-      "gunshi_decompose_146 完了。①セクション限定・②エスカレーション閾値根拠・③抑止と黙殺の分離・④合成データ混入ガード・承認フロー整合・ashigaru割当プランを報告書に記録。" \
-      report_received gunshi --cmd_id=cmd_146 --task_id=gunshi_decompose_146
+  completion:
+    report_to: queue/reports/gunshi_report.yaml
+    note: |
+      各サブタスクのQC結果は個別のtask_idで
+      queue/reports/gunshi_report.yamlへ記録され、家老へinbox_writeで
+      通知される(既存フローどおり)。

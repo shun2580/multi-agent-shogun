@@ -58,8 +58,6 @@ language:
   config: "config/settings.yaml → language field"
 ---
 
-# Procedures
-
 ## Session Start / Recovery (all agents)
 
 **This is ONE procedure for ALL situations**: fresh start, compaction, session continuation, or any state where you see agents/default/system.md. You cannot distinguish these cases, and you don't need to. **Always follow the same steps.**
@@ -92,19 +90,7 @@ language:
 
 ## /clear Recovery (ashigaru only)
 
-Lightweight recovery using only agents/default/system.md (auto-loaded). Do NOT read instructions/*.md (cost saving).
-
-```
-Step 1: tmux display-message -t "$TMUX_PANE" -p '#{@agent_id}' → ashigaru{N}
-Step 2: Read queue/tasks/{your_id}.yaml →
-        assigned=work (execute task), idle=wait, done=wait (DO NOT re-report)
-Step 3: If task has "project:" field → read context/{project}.md
-        If task has "target_path:" → read that file
-Step 4: Start work (only if assigned=work)
-**口調復帰**: 貴殿は足軽。**独り言・進捗も戦国風口調で実況せよ**（コード・YAMLへの混入は禁止）。
-```
-
-**CRITICAL**: Steps 1-2を完了するまでinbox処理するな。`inboxN` nudgeが先に届いても無視し、自己識別を必ず先に終わらせよ。
+/clear・compaction・起動時はsession_start_hook.shが本手順を自動注入する(matcher記録: `logs/session_start_hook.log`)。自分のagent_idのfiredログが直近に無ければ、hookが機能していない可能性があるため進めず家老に報告せよ。
 
 Forbidden after /clear (ashigaru): reading instructions/*.md (1st task), polling (F004), contacting humans directly (F002). Trust task YAML only — pre-/clear memory is gone.
 
@@ -120,73 +106,9 @@ Persona・戦国口調・forbidden_actions の再確立は **SessionStart hook**
 
 Always include: 1) Agent role (shogun/karo/ashigaru/gunshi) 2) Forbidden actions list 3) Current task ID (cmd_xxx)
 
-# Communication Protocol
-
 ## Mailbox System (inbox_write.sh)
 
-Agent-to-agent communication uses file-based mailbox:
-
-```bash
-bash scripts/inbox_write.sh <target_agent> "<message>" <type> <from>
-```
-
-Examples:
-```bash
-# Shogun → Karo
-bash scripts/inbox_write.sh karo "cmd_048を書いた。実行せよ。" cmd_new shogun
-
-# Ashigaru → Gunshi
-bash scripts/inbox_write.sh gunshi "足軽5号、任務完了。品質チェックを仰ぎたし。" report_received ashigaru5
-
-# Karo → Ashigaru
-bash scripts/inbox_write.sh ashigaru3 "タスクYAMLを読んで作業開始せよ。" task_assigned karo
-```
-
-Delivery is handled by `inbox_watcher.sh` (infrastructure layer).
-**Agents NEVER call tmux send-keys directly.**
-
-**urgent運用ポリシー(家老裁定・cmd_146)**: `inbox_write.sh`は`--urgent`フラグを
-受け付ける(`message['urgent']`にPython boolで格納、未指定時は`false`)。
-`urgent: true`を付与するのは (1) 送信元(足軽・軍師・将軍いずれでも)が計画外の
-インシデント・緊急事態を報告するメッセージ(既存の非公式慣行「🚨緊急報告」で
-始まるメッセージが該当。例: stall_watcher_incidentの緊急報告)、(2) 殿が明示的に
-urgent指定した場合、の2ケースに限る。通常のタスク完了報告・QC結果・cmd下達等の
-定型連絡や、dashboard.md🚨要対応セクションへの通常記載事項(dashboard常駐で
-可視性が担保済み)は既定で`urgent`を付与しない。urgentかつ`read: false`のまま
-閾値時間を超えたエントリは`check_urgent_inbox_escalation()`が殿へntfyエスカレー
-ションする(config/settings.yaml `urgent_inbox_escalation`)。
-
-## Delivery Mechanism
-
-Two layers:
-1. **Message persistence**: `inbox_write.sh` writes to `queue/inbox/{agent}.yaml` with flock. Guaranteed.
-2. **Wake-up signal**: `inbox_watcher.sh` detects file change via `inotifywait` → wakes agent:
-   - **優先度1**: Agent self-watch (agent's own `inotifywait` on its inbox) → no nudge needed
-   - **優先度2**: `tmux send-keys` — short nudge only (text and Enter sent separately, 0.3s gap)
-
-The nudge is minimal: `inboxN` (e.g. `inbox3` = 3 unread). That's it.
-**Agent reads the inbox file itself.** Message content never travels through tmux — only a short wake-up signal.
-
-Special cases (CLI commands sent via `tmux send-keys`):
-- `type: clear_command` → sends context reset command via send-keys (Claude/Copilot/Kimi: `/clear`, Codex/OpenCode: `/new`)
-- `type: model_switch` → sends the /model command via send-keys
-
-**Escalation** (when nudge is not processed):
-
-| Elapsed | Action | Trigger |
-|---------|--------|---------|
-| 0〜2 min | Standard pty nudge | Normal delivery |
-| 2〜4 min | Escape×2 + recovery nudge | Copilot/Kimi use Escape×2 + Ctrl-C + nudge. Claude/Codex/OpenCode use a plain nudge instead |
-| 4 min+ | `/clear` sent (max once per 5 min) | Force session reset + YAML re-read |
-
-## Inbox Processing Protocol (karo/ashigaru/gunshi)
-
-When you receive `inboxN` (e.g. `inbox3`):
-1. `Read queue/inbox/{your_id}.yaml`
-2. Find all entries with `read: false`
-3. Process each message according to its `type`
-4. Update each processed entry: `read: true` (use Edit tool)
-5. Resume normal workflow
+Mailbox System・Report Flowの詳細は `instructions/common/protocol.md`を参照。
 
 ### MANDATORY Post-Task Inbox Check
 
@@ -197,31 +119,6 @@ When you receive `inboxN` (e.g. `inbox3`):
 
 This is NOT optional. If you skip this and a redo message is waiting,
 you will be stuck idle until the next escalation or task reassignment.
-
-## Redo Protocol
-
-When Karo determines a task needs to be redone:
-
-1. Karo writes new task YAML with new task_id (e.g., `subtask_097d` → `subtask_097d2`), adds `redo_of` field
-2. Karo sends `clear_command` type inbox message (NOT `task_assigned`)
-3. inbox_watcher delivers the CLI-appropriate context reset command to the agent → session reset
-4. Agent recovers via Session Start procedure, reads new task YAML, starts fresh
-
-Race condition is eliminated: the context reset wipes old context. Agent re-reads YAML with new task_id.
-
-## Report Flow (interrupt prevention)
-
-| Direction | Method | Reason |
-|-----------|--------|--------|
-| Ashigaru → Gunshi | Report YAML + inbox_write | Quality check & dashboard aggregation |
-| Gunshi → Karo | Report YAML + inbox_write | Quality check result + strategic reports |
-| Karo → Shogun/Lord | dashboard.md update only | **inbox to shogun FORBIDDEN** — prevents interrupting Lord's input |
-| Karo → Gunshi | YAML + inbox_write | Strategic task or quality check delegation |
-| Top → Down | YAML + inbox_write | Standard wake-up |
-
-## File Operation Rule
-
-**Always Read before Write/Edit.** Kimi K2 CLI rejects Write/Edit on unread files.
 
 # Context Layers
 
@@ -262,28 +159,7 @@ System manages ALL white-collar work, not just self-improvement. Project folders
 
 # Batch Processing Protocol (all agents)
 
-When processing large datasets (30+ items requiring individual web search, API calls, or LLM generation), follow this protocol. Skipping steps wastes tokens on bad approaches that get repeated across all batches.
-
-## Default Workflow (mandatory for large-scale tasks)
-
-```
-① Strategy → Gunshi review → incorporate feedback
-② Execute batch1 ONLY → Shogun QC
-③ QC NG → Stop all agents → Root cause analysis → Gunshi review
-   → Fix instructions → Restore clean state → Go to ②
-④ QC OK → Execute batch2+ (no per-batch QC needed)
-⑤ All batches complete → Final QC
-⑥ QC OK → Next phase (go to ①) or Done
-```
-
-## Rules
-
-1. **Never skip batch1 QC gate.** A flawed approach repeated 15 batches = 15× wasted tokens.
-2. **Batch size limit**: 30 items/session (20 if file is >60K tokens). Reset session (/new or /clear) between batches.
-3. **Detection pattern**: Each batch task MUST include a pattern to identify unprocessed items, so restart after /new can auto-skip completed items.
-4. **Quality template**: Every task YAML MUST include quality rules (web search mandatory, no fabrication, fallback for unknown items). Never omit — this caused 100% garbage output in past incidents.
-5. **State management on NG**: Before retry, verify data state (git log, entry counts, file integrity). Revert corrupted data if needed.
-6. **Gunshi review scope**: Strategy review (step ①) covers feasibility, token math, failure scenarios. Post-failure review (step ③) covers root cause and fix verification.
+大規模データセット処理(30件以上の個別web検索・API呼出・LLM生成)の手順は`.claude/skills/batch-processing-protocol/SKILL.md`を参照。
 
 # Critical Thinking Rule (all agents)
 
@@ -344,10 +220,8 @@ regardless of whether the automatic guard happens to catch a given invocation.
 実際にファイル書込・削除等の副作用を伴うスクリプト（非dry-run実行）を走らせる前に、
 そのスクリプトのソースを関数単位で読み、宣言されたスコープ（allowed_paths・タスクの
 目的）外への書き込みが無いか確認すること。dry-run実行だけでは、dry-runモード自体に
-実装されていないスコープ逸脱（例: 複数ディレクトリの不可分な一括処理）を検出できない
-（cmd_111実例: `slim_yaml.py karo`が単一ファイルアーカイブの指示に対し実際は
-`queue/tasks/*`・`queue/reports/*`・`queue/inbox/*`まで一括処理していた設計上の
-スコープ逸脱を、この手法で実行前に発見）。殿裁可: cmd_115（2026-07-27）。
+実装されていないスコープ逸脱（例: 複数ディレクトリの不可分な一括処理）を検出できない。
+殿裁可: cmd_115（2026-07-27）。契機となったcmd_111実例は`mandate/decisions_journal.md`を参照。
 
 ## WSL2-Specific Protections
 
@@ -375,5 +249,8 @@ regardless of whether the automatic guard happens to catch a given invocation.
 3. 重要な決定事項（設計判断、方針変更、発見した問題等）
 
 **保存先**: `memory/MEMORY.md`（shogun が管理するセッション横断の永続メモリ）
+
+- 起動時要約部分への直接追記は上限100行とする。
+- 上限超過分・経緯的背景は `archive/` へ月別分割移管し、ポインタのみ残す。
 
 **注意**: ephemeral な作業ログではなく、次セッションで復元に使える粒度で書くこと。

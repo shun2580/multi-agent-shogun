@@ -172,6 +172,14 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   裁可は下っていない。次回へ持ち越す。既存doubt・備考・再開トリガー(実害2例目の観測、
   またはPREVENT3件の蓄積)はいずれも無変更。
 
+  【追記・2026-09-09・cmd_193(家老・陣仕舞い・pending持ち越し記帳)】
+  `bash scripts/check_approval_queue_staleness.sh`実行(22:37:52)——STALE行の追記なし
+  (全pendingエントリが実測と一致、または再実測対象外)。PREVENT件数を
+  `grep -c "| PREVENT |" mandate/decisions_journal.md`で再実測した結果、現在も1件
+  のまま(2026-08-08付1件目から変化なし)であり、閾値3件に未達。実害2例目の観測も
+  無し。ゆえに再開トリガー(1)(2)いずれも未成立であり、据置を継続する。既存doubt・
+  備考は無変更。
+
 - ID: AQ-005 | 日付: 2026-08-08 | 操作内容: 未push commit群(3件、提示直前に
   `git fetch origin main`実行後`git log origin/main..HEAD --oneline | wc -l`で
   再実測、2026-08-08)のリモート(origin https://github.com/shun2580/multi-agent-shogun.git)
@@ -1310,3 +1318,29 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   詳細は`mandate/verifiers.md`「解決済みマーカー(resolved)の記法
   (cmd_190)」節・`queue/reports/ashigaru4_report.yaml`
   task_id: subtask_190_A参照。
+
+- ID: AQ-017 | 日付: 2026-09-09 | 操作内容: 未pushコミット群(39件、
+  `git fetch origin main && git log origin/main..HEAD --oneline | wc -l`で
+  22:46:16実測。範囲: 最古`613f240`〈cmd_187 subtask_187〉〜最新`9bef6ac`
+  〈cmd_192 工程11a〉)のリモート(origin
+  https://github.com/shun2580/multi-agent-shogun.git、branch=main)への push |
+  理由: 将軍が殿へ送出可否を諮ったところ、殿は「お願いする」と裁定された
+  (2026-09-09 22:4x・端末上、将軍inbox追送msg_20260909_224015_c447ae8c経由で
+  家老が受領)。F007の明示承認が成立。`scripts/pretooluse_git_push_block.sh`
+  (198-225行)がAQ_APPROVED_ID環境変数+本エントリの状態:approvedの両方を
+  要求する設計のため、cmd_159ガード要件充足のため本エントリを起票する |
+  doubt: (a) 対象ブランチ: `main`(`git branch --show-current`実測)。
+  (b) commit範囲: 上記のとおり39件(送出直前に再実測し、本文記載値と
+  一致することを確認してから送出する——将軍の22:3x時点の数字をそのまま
+  援用しない)。(c) 公開されて困る内容の有無: 送出直前にcmd_180/187で
+  確立した両手法(パターンgrep+diff全文目視)で秘匿値走査を実施し、
+  1件でも検出したら送出を中止し止めて報告する(未走査のまま本エントリを
+  approvedとするが、実際の送出条件としては秘匿値走査PASSを必須とする) |
+  状態: approved(承認者: 殿・日付: 2026-09-09・出典: 殿の直接裁定
+  「お願いする」〈2026-09-09 22:4x・端末上〉、将軍inbox追送
+  msg_20260909_224015_c447ae8c「F007の殿の明示承認が成立した」)
+  備考: cmd_193【2】の「pushするな」を本裁定が上書きする(将軍inbox追送
+  明記)。送出はcmd_193【1】〜【7】(安全停止・帳簿整理)完了後に実施する
+  (将軍の明示指定「先に押して後から書くな」)。送出後は
+  `origin/main..HEAD`に構造的残滓1件(本送出結果を記帳するcommit自身)が
+  必ず残る——欠陥ではない、追って再送出を試みるな。
