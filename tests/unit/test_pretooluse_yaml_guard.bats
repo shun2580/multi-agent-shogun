@@ -41,6 +41,36 @@ EOF
 echo "NOTIFIED \$1" >> "$NTFY_LOG"
 EOF
     chmod +x "$NTFY_STUB"
+
+    # --- cmd_192 工程7-guard: notify_on_done_required_enabled fixtures ---
+    # 外側yaml_guard_enabled=enforce固定・副flag notify_on_done_required_enabled
+    # のみ3値+未設定+実settings.yamlの計5パターンを用意する
+    # (parent_cmd_done_gate_enabled系テストのfixture隔離パターンに倣う)。
+    SETTINGS_NDR_OFF="$TEST_TMP/settings_ndr_off.yaml"
+    cat > "$SETTINGS_NDR_OFF" <<'EOF'
+features:
+  yaml_guard_enabled: enforce
+  notify_on_done_required_enabled: off
+EOF
+    SETTINGS_NDR_OBSERVE="$TEST_TMP/settings_ndr_observe.yaml"
+    cat > "$SETTINGS_NDR_OBSERVE" <<'EOF'
+features:
+  yaml_guard_enabled: enforce
+  notify_on_done_required_enabled: observe
+EOF
+    SETTINGS_NDR_ENFORCE="$TEST_TMP/settings_ndr_enforce.yaml"
+    cat > "$SETTINGS_NDR_ENFORCE" <<'EOF'
+features:
+  yaml_guard_enabled: enforce
+  notify_on_done_required_enabled: enforce
+EOF
+    # notify_on_done_required_enabled行そのものが無い(未設定)fixture。
+    # 未知値・空値・欠落は必ずoffへ倒すfail-safe設計の実証用。
+    SETTINGS_NDR_UNSET="$TEST_TMP/settings_ndr_unset.yaml"
+    cat > "$SETTINGS_NDR_UNSET" <<'EOF'
+features:
+  yaml_guard_enabled: enforce
+EOF
 }
 
 teardown() {
@@ -70,6 +100,19 @@ run_guard_with_settings() {
         YAML_GUARD_REPO_ROOT="$TEST_TMP" \
         YAML_GUARD_LOG="$LOG_FILE" \
         YAML_GUARD_TIMING_LOG="$timing_log" \
+        YAML_GUARD_PYTHON="$PROJECT_ROOT/.venv/bin/python3" \
+        YAML_GUARD_NTFY_SCRIPT="$NTFY_STUB" \
+        bash -c "printf '%s' '$payload' | bash '$GUARD_SCRIPT'"
+}
+
+run_guard_ndr() {
+    local settings_file="$1"
+    local payload="$2"
+    run env \
+        YAML_GUARD_SETTINGS="$settings_file" \
+        YAML_GUARD_REPO_ROOT="$TEST_TMP" \
+        YAML_GUARD_LOG="$LOG_FILE" \
+        YAML_GUARD_TIMING_LOG="$TIMING_LOG" \
         YAML_GUARD_PYTHON="$PROJECT_ROOT/.venv/bin/python3" \
         YAML_GUARD_NTFY_SCRIPT="$NTFY_STUB" \
         bash -c "printf '%s' '$payload' | bash '$GUARD_SCRIPT'"
@@ -485,6 +528,89 @@ EOF
     [ -z "$output" ]
     run cat "$NTFY_LOG"
     [[ "$output" == *"NOTIFIED"* ]]
+}
+
+# --- cmd_192 工程7-guard: notify_on_done_required_enabled ---
+# queue/shogun_to_karo.yamlへ新規追記されるcmdエントリのnotify_on_done欠落を
+# fail-loudに検知する副flag(off|observe|enforce・PARENT_GATE_MODEと同型)。
+# 🔴既定値補完はしない——値が無ければ「無い」と検知するのが設計であり、
+# 既存エントリ(追記前から存在するid)には一切作用しない。
+
+@test "notify_on_done_required=enforce: newly appended cmd entry missing notify_on_done → denied with new id in reason" {
+    printf 'commands:\n- id: cmd_999\n  status: in_progress\n' > "$TEST_TMP/queue/shogun_to_karo.yaml"
+    local payload='{"tool_name":"Edit","tool_input":{"file_path":"'"$TEST_TMP"'/queue/shogun_to_karo.yaml","old_string":"  status: in_progress\n","new_string":"  status: in_progress\n- id: cmd_1000\n  status: assigned\n","replace_all":false}}'
+    run_guard_ndr "$SETTINGS_NDR_ENFORCE" "$payload"
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+    [[ "$output" == *"cmd_1000"* ]]
+    [[ "$output" == *"notify_on_done"* ]]
+}
+
+@test "notify_on_done_required=observe: newly appended cmd entry missing notify_on_done → WOULD-DENY-NOTIFY-REQUIRED logged only, not denied" {
+    printf 'commands:\n- id: cmd_999\n  status: in_progress\n' > "$TEST_TMP/queue/shogun_to_karo.yaml"
+    local payload='{"tool_name":"Edit","tool_input":{"file_path":"'"$TEST_TMP"'/queue/shogun_to_karo.yaml","old_string":"  status: in_progress\n","new_string":"  status: in_progress\n- id: cmd_1000\n  status: assigned\n","replace_all":false}}'
+    run_guard_ndr "$SETTINGS_NDR_OBSERVE" "$payload"
+
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    run grep -c "WOULD-DENY-NOTIFY-REQUIRED" "$LOG_FILE"
+    [ "$output" -eq 1 ]
+    run grep "WOULD-DENY-NOTIFY-REQUIRED" "$LOG_FILE"
+    [[ "$output" == *"mode=observe"* ]]
+    [[ "$output" == *"cmd_1000"* ]]
+    # 通常のDENY行(実deny)は出現しない
+    run grep -c "^\[.*\] DENY mode=" "$LOG_FILE"
+    [ "$status" -ne 0 ]
+}
+
+@test "notify_on_done_required=off (explicit): validation logic is never entered, no gate log tag" {
+    printf 'commands:\n- id: cmd_999\n  status: in_progress\n' > "$TEST_TMP/queue/shogun_to_karo.yaml"
+    local payload='{"tool_name":"Edit","tool_input":{"file_path":"'"$TEST_TMP"'/queue/shogun_to_karo.yaml","old_string":"  status: in_progress\n","new_string":"  status: in_progress\n- id: cmd_1000\n  status: assigned\n","replace_all":false}}'
+    run_guard_ndr "$SETTINGS_NDR_OFF" "$payload"
+
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    run grep -c "NOTIFY-REQUIRED" "$LOG_FILE"
+    [ "$status" -ne 0 ]
+    # 外側yaml_guard_enabled=enforceは働くのでALLOW行自体は記録される
+    run grep -c "^\[.*\] ALLOW mode=enforce" "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "notify_on_done_required unset (line absent from settings): fail-safe defaults to off, same as explicit off" {
+    printf 'commands:\n- id: cmd_999\n  status: in_progress\n' > "$TEST_TMP/queue/shogun_to_karo.yaml"
+    local payload='{"tool_name":"Edit","tool_input":{"file_path":"'"$TEST_TMP"'/queue/shogun_to_karo.yaml","old_string":"  status: in_progress\n","new_string":"  status: in_progress\n- id: cmd_1000\n  status: assigned\n","replace_all":false}}'
+    run_guard_ndr "$SETTINGS_NDR_UNSET" "$payload"
+
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    run grep -c "NOTIFY-REQUIRED" "$LOG_FILE"
+    [ "$status" -ne 0 ]
+}
+
+@test "notify_on_done_required: real project config/settings.yaml default (observe) flags a missing-field new entry" {
+    printf 'commands:\n- id: cmd_999\n  status: in_progress\n' > "$TEST_TMP/queue/shogun_to_karo.yaml"
+    local payload='{"tool_name":"Edit","tool_input":{"file_path":"'"$TEST_TMP"'/queue/shogun_to_karo.yaml","old_string":"  status: in_progress\n","new_string":"  status: in_progress\n- id: cmd_1000\n  status: assigned\n","replace_all":false}}'
+    run_guard_ndr "$PROJECT_ROOT/config/settings.yaml" "$payload"
+
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    run grep -c "WOULD-DENY-NOTIFY-REQUIRED" "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "notify_on_done_required=enforce: existing cmd entry (id present before edit, no notify_on_done) status update is unaffected (regression)" {
+    printf 'commands:\n- id: cmd_999\n  status: in_progress\n' > "$TEST_TMP/queue/shogun_to_karo.yaml"
+    local payload='{"tool_name":"Edit","tool_input":{"file_path":"'"$TEST_TMP"'/queue/shogun_to_karo.yaml","old_string":"status: in_progress","new_string":"status: done","replace_all":false}}'
+    run_guard_ndr "$SETTINGS_NDR_ENFORCE" "$payload"
+
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    run grep -c "NOTIFY-REQUIRED" "$LOG_FILE"
+    [ "$status" -ne 0 ]
+    run grep -c "^\[.*\] ALLOW mode=enforce" "$LOG_FILE"
+    [ "$output" -eq 1 ]
 }
 
 # --- cmd_091標準: 実配線の確認(実settings.jsonへの登録実在) ---

@@ -136,6 +136,26 @@ case "$RAW_VALUE_PG" in
     *) PARENT_GATE_MODE="off" ;;  # off/空/未知値はすべてfail-safeでoff
 esac
 
+# ─── 副flag: notify_on_done_required_enabled (cmd_192 工程7-guard) ───
+# PARENT_GATE_MODEと同型の独立副flag。yaml_guard_enabledがoff以外(=ここに
+# 到達した時点で確定)のときのみ評価される。off|observe|enforceの3値、
+# 未知値・空値は必ずoffへ倒すfail-safe。queue/shogun_to_karo.yamlへ新規
+# 追記されるcmdエントリに`notify_on_done`が無い場合を検知する(既存
+# エントリの読み取り・status更新には一切影響しない)。
+RAW_LINE_NDR=$(grep -E '^[[:space:]]*notify_on_done_required_enabled:' "$SETTINGS" 2>/dev/null | head -1)
+RAW_VALUE_NDR=$(printf '%s' "$RAW_LINE_NDR" | sed -E \
+    -e 's/^[[:space:]]*notify_on_done_required_enabled:[[:space:]]*//' \
+    -e 's/[[:space:]]*#.*$//' \
+    -e 's/[[:space:]]*$//' \
+    -e 's/^"(.*)"$/\1/' \
+    -e "s/^'(.*)'\$/\1/")
+
+case "$RAW_VALUE_NDR" in
+    enforce) NOTIFY_REQUIRED_MODE="enforce" ;;
+    observe) NOTIFY_REQUIRED_MODE="observe" ;;
+    *) NOTIFY_REQUIRED_MODE="off" ;;  # off/空/未知値はすべてfail-safeでoff
+esac
+
 # ─── 早期リターン2: tool_name/file_pathの軽量抽出(python起動なし) ───
 # 抽出はここでは「対象パスか否か」の判定のみに使う。実際の検証はpython側で
 # stdinのJSONを正規にパースし直して行うため、ここでの抽出精度が甘くても
@@ -195,6 +215,10 @@ RUNTIME_REFLECTION_SCRIPT = sys.argv[1] if len(sys.argv) > 1 else None
 PARENT_GATE_MODE = sys.argv[2] if len(sys.argv) > 2 else "off"
 PARENT_GATE_REPO_ROOT = sys.argv[3] if len(sys.argv) > 3 else None
 PARENT_GATE_LOG_FILE = sys.argv[4] if len(sys.argv) > 4 else None
+
+# cmd_192 工程7-guard: check_notify_on_done_required()用の副flag値
+# (PARENT_GATE_LOG_FILEと同一ファイルへ別タグで直接ログ追記する)。
+NOTIFY_REQUIRED_MODE = sys.argv[5] if len(sys.argv) > 5 else "off"
 
 
 def deny(reason):
@@ -387,6 +411,83 @@ def check_parent_cmd_done_gate(docs, file_path):
                     _emit_would_deny_parent_gate(reason, file_path)
 
 
+def _emit_would_deny_notify_required(reason, file_path):
+    """副flag NOTIFY_REQUIRED_MODE=observe時、既存deny()を呼ばずに
+    LOG_FILEへ識別可能なタグ(WOULD-DENY-NOTIFY-REQUIRED)を付けて直接1行
+    追記する(cmd_192 工程7-guard、_emit_would_deny_parent_gateと同型)。
+    終了コード・標準出力には一切影響させない。書込失敗は握り潰す。"""
+    if not PARENT_GATE_LOG_FILE:
+        return
+    try:
+        import os
+        os.makedirs(os.path.dirname(PARENT_GATE_LOG_FILE), exist_ok=True)
+        ts_result = subprocess.run(
+            ["date", "-Iseconds"], capture_output=True, text=True, timeout=2,
+        )
+        ts = ts_result.stdout.strip() or "unknown-time"
+        with open(PARENT_GATE_LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(
+                f"[{ts}] WOULD-DENY-NOTIFY-REQUIRED mode={NOTIFY_REQUIRED_MODE} "
+                f"file={file_path} reason={reason}\n"
+            )
+    except Exception:
+        pass
+
+
+def check_notify_on_done_required(docs, file_path):
+    """queue/shogun_to_karo.yamlへ新規追記されるcmdエントリに
+    notify_on_doneフィールドが無い場合を検知する(cmd_192 工程7-guard、
+    工程7(d))。🔴殿の明示指定: observeから開始・既定値補完はしない
+    ——値が無ければ書けない、でfail-loudにする(推測でtrue等を補わない)。
+    独立副flag NOTIFY_REQUIRED_MODE(off|observe|enforce)、既定off
+    (PARENT_GATE_MODEと同型のfail-safe設計)。
+    🔴既存cmdエントリ(追記前から存在するid)のstatus更新等には一切影響
+    しない——変更前のファイル内容をここで読み直し、そこに無かったidのみ
+    を『新規追記』として扱う。変更前内容を読めない/パースできない場合は
+    新規判定が不能なため何もしない(fail-open、既存動作を壊さない)。"""
+    if NOTIFY_REQUIRED_MODE == "off":
+        return
+    if "/queue/shogun_to_karo.yaml" not in file_path.replace("\\", "/"):
+        return
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            before_docs = list(yaml.safe_load_all(f))
+    except Exception:
+        return
+
+    existing_ids = set()
+    for doc in before_docs:
+        for d in find_dicts(doc):
+            if not isinstance(d, dict):
+                continue
+            cmd_id = d.get("id")
+            if isinstance(cmd_id, str) and cmd_id.startswith("cmd_"):
+                existing_ids.add(cmd_id)
+
+    for doc in docs:
+        for d in find_dicts(doc):
+            if not isinstance(d, dict):
+                continue
+            cmd_id = d.get("id")
+            if not isinstance(cmd_id, str) or not cmd_id.startswith("cmd_"):
+                continue
+            if cmd_id in existing_ids:
+                continue  # 既存エントリ(新規追記ではない)は対象外
+            if "notify_on_done" in d:
+                continue  # フィールドは存在する(値の真偽は問わない)
+
+            reason = (
+                f"新規cmdエントリ(id={cmd_id})にnotify_on_doneフィールドが"
+                "ありません。既定値の自動補完はせずfail-loudに検知します"
+                "(cmd_192 工程7-guard)"
+            )
+            if NOTIFY_REQUIRED_MODE == "enforce":
+                deny(reason)
+            else:
+                _emit_would_deny_notify_required(reason, file_path)
+
+
 def fail_open(msg):
     print(msg, file=sys.stderr)
     sys.exit(1)
@@ -457,6 +558,10 @@ try:
     # 遷移時に配下subtaskの全status doneを機械確認するゲートを実施
     # (副flag PARENT_GATE_MODE=off時は関数内で即return)。
     check_parent_cmd_done_gate(docs, file_path)
+    # cmd_192 工程7-guard: queue/shogun_to_karo.yamlに限り、新規追記される
+    # cmdエントリのnotify_on_done欠落を検知する(副flag
+    # NOTIFY_REQUIRED_MODE=off時は関数内で即return)。
+    check_notify_on_done_required(docs, file_path)
     sys.exit(0)
 except SystemExit:
     raise
@@ -467,7 +572,7 @@ PYEOF
 ERR_TMP="$(mktemp)"
 trap 'rm -f "$ERR_TMP"' EXIT
 
-OUTPUT="$(printf '%s' "$INPUT" | timeout 8 "$PYTHON_BIN" -c "$PYCODE" "$RUNTIME_REFLECTION_SCRIPT" "$PARENT_GATE_MODE" "$REPO_ROOT" "$LOG_FILE" 2>"$ERR_TMP")"
+OUTPUT="$(printf '%s' "$INPUT" | timeout 8 "$PYTHON_BIN" -c "$PYCODE" "$RUNTIME_REFLECTION_SCRIPT" "$PARENT_GATE_MODE" "$REPO_ROOT" "$LOG_FILE" "$NOTIFY_REQUIRED_MODE" 2>"$ERR_TMP")"
 PY_EXIT=$?
 
 # ─── ログ形式(cmd_121 A-2): 1評価1行・追記型・grep -cで機械集計可能な形式。
