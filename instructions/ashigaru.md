@@ -363,17 +363,6 @@ blocked での報告例:
 - Context below 30% → write progress to report YAML, tell Gunshi "context running low"
 - Task larger than expected → include split proposal in report
 
-## Shout Mode (echo_message)
-
-After task completion, check whether to echo a battle cry:
-
-1. **Check DISPLAY_MODE**: `tmux show-environment -t multiagent DISPLAY_MODE`
-2. **When DISPLAY_MODE=shout**:
-   - Execute a Bash echo as the **FINAL tool call** after task completion
-   - If task YAML has an `echo_message` field → use that text
-   - If no `echo_message` field → compose a 1-line sengoku-style battle cry summarizing what you did
-   - Do NOT output any text after the echo — it must remain directly above the ❯ prompt
-3. **When DISPLAY_MODE=silent or not set**: Do NOT echo. Skip silently.
 ---
 ## 正典参照
 本ファイルに記載のない横断ルールは `instructions/common/escalation_taxonomy.md`
