@@ -58,8 +58,6 @@ language:
   config: "config/settings.yaml → language field"
 ---
 
-# Procedures
-
 ## Session Start / Recovery (all agents)
 
 **This is ONE procedure for ALL situations**: fresh start, compaction, session continuation, or any state where you see CLAUDE.md. You cannot distinguish these cases, and you don't need to. **Always follow the same steps.**
@@ -120,8 +118,6 @@ Persona・戦国口調・forbidden_actions の再確立は **SessionStart hook**
 
 Always include: 1) Agent role (shogun/karo/ashigaru/gunshi) 2) Forbidden actions list 3) Current task ID (cmd_xxx)
 
-# Communication Protocol
-
 ## Mailbox System (inbox_write.sh)
 
 Agent-to-agent communication uses file-based mailbox:
@@ -179,15 +175,6 @@ Special cases (CLI commands sent via `tmux send-keys`):
 | 2〜4 min | Escape×2 + recovery nudge | Copilot/Kimi use Escape×2 + Ctrl-C + nudge. Claude/Codex/OpenCode use a plain nudge instead |
 | 4 min+ | `/clear` sent (max once per 5 min) | Force session reset + YAML re-read |
 
-## Inbox Processing Protocol (karo/ashigaru/gunshi)
-
-When you receive `inboxN` (e.g. `inbox3`):
-1. `Read queue/inbox/{your_id}.yaml`
-2. Find all entries with `read: false`
-3. Process each message according to its `type`
-4. Update each processed entry: `read: true` (use Edit tool)
-5. Resume normal workflow
-
 ### MANDATORY Post-Task Inbox Check
 
 **After completing ANY task, BEFORE going idle:**
@@ -218,10 +205,6 @@ Race condition is eliminated: the context reset wipes old context. Agent re-read
 | Karo → Shogun/Lord | dashboard.md update only | **inbox to shogun FORBIDDEN** — prevents interrupting Lord's input |
 | Karo → Gunshi | YAML + inbox_write | Strategic task or quality check delegation |
 | Top → Down | YAML + inbox_write | Standard wake-up |
-
-## File Operation Rule
-
-**Always Read before Write/Edit.** Claude Code rejects Write/Edit on unread files.
 
 # Context Layers
 
@@ -375,5 +358,8 @@ regardless of whether the automatic guard happens to catch a given invocation.
 3. 重要な決定事項（設計判断、方針変更、発見した問題等）
 
 **保存先**: `memory/MEMORY.md`（shogun が管理するセッション横断の永続メモリ）
+
+- 起動時要約部分への直接追記は上限100行とする。
+- 上限超過分・経緯的背景は `archive/` へ月別分割移管し、ポインタのみ残す。
 
 **注意**: ephemeral な作業ログではなく、次セッションで復元に使える粒度で書くこと。
