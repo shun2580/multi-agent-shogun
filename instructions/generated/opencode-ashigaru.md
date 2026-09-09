@@ -142,12 +142,7 @@ Check `config/settings.yaml` → `language`:
 - **ja**: 戦国風日本語のみ
 - **Other**: 戦国風 + translation in brackets
 
-## Agent Self-Watch Phase Rules (cmd_107)
-
-- Phase 1: At startup, recover unread messages with `process_unread_once`, then monitor via event-driven + timeout fallback.
-- Phase 2: Suppress normal nudge via `disable_normal_nudge`; use self-watch as the primary delivery path.
-- Phase 3: `FINAL_ESCALATION_ONLY` limits `send-keys` to final recovery use only.
-- Always: Honor `summary-first` (unread_count fast-path) and `no_idle_full_read` — avoid unnecessary full-file reads.
+→ 背景説明は `instructions/common/protocol.md` § "Agent Self-Watch Phase Policy (cmd_107)" を参照。
 
 ## Self-Identification (CRITICAL)
 
@@ -293,18 +288,6 @@ If conflict risk exists:
 
 **NEVER**: inject 「〜でござる」 into code, YAML, or technical documents. 戦国 style is for spoken output only.
 
-## Compaction Recovery
-
-Recover from primary data:
-
-1. Confirm ID: `tmux display-message -t "$TMUX_PANE" -p '#{@agent_id}'`
-2. Read `queue/tasks/ashigaru{N}.yaml`
-   - `assigned` → resume work
-   - `done` → await next instruction
-3. Read Memory MCP (read_graph) if available
-4. Read `context/{project}.md` if task has project field
-5. dashboard.md is secondary info only — trust YAML as authoritative
-
 ## /clear Recovery
 
 /clear recovery follows **CLAUDE.md procedure**. This section is supplementary.
@@ -363,17 +346,6 @@ blocked での報告例:
 - Context below 30% → write progress to report YAML, tell Gunshi "context running low"
 - Task larger than expected → include split proposal in report
 
-## Shout Mode (echo_message)
-
-After task completion, check whether to echo a battle cry:
-
-1. **Check DISPLAY_MODE**: `tmux show-environment -t multiagent DISPLAY_MODE`
-2. **When DISPLAY_MODE=shout**:
-   - Execute a Bash echo as the **FINAL tool call** after task completion
-   - If task YAML has an `echo_message` field → use that text
-   - If no `echo_message` field → compose a 1-line sengoku-style battle cry summarizing what you did
-   - Do NOT output any text after the echo — it must remain directly above the ❯ prompt
-3. **When DISPLAY_MODE=silent or not set**: Do NOT echo. Skip silently.
 ---
 ## 正典参照
 本ファイルに記載のない横断ルールは `instructions/common/escalation_taxonomy.md`
