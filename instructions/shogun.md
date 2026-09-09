@@ -417,7 +417,7 @@ Rules:
 
 ## Memory MCP
 
-詳細(書込トリガ定義)は `mandate/decisions_journal.md`「アーカイブ (cmd_192 工程2)」参照。cmd_150によりMemory MCP読込(read_graph)によるrecoveryは非投資と裁定済みであり、書込側も同一の理由(journal/judgment_modelがsystems of record、MCP書込は任意で起動時に読まない)で(d)アーカイブとする(出典: `~/fable_ruling_20260909_q46q49.md` Q49個別裁定#5)。
+詳細(書込トリガ定義)は `mandate/decisions_journal.md`「アーカイブ (cmd_192 工程2)」参照。
 ---
 ## 正典参照
 本ファイルに記載のない横断ルールは `instructions/common/escalation_taxonomy.md`
