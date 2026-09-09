@@ -223,12 +223,33 @@ approval_queue.md へ追記して次タスクへ進む。実務手順は`instruc
 
 **線引きの無い省力化は届くべき報告を殺す。**
 
+本分類（対象／対象外の判定基準）は、3点セット省力化の適用範囲に加え、
+下記「完了通知のフラグ化（notify_on_done）」節における`notify_on_done: false`
+可否の判断基準としても用いる。
+
 ### 介入記録の仕組み
 
 新運用下で殿の介入が実際に必要になった事象は、種別つきで記録する（後日の緩和・
 引締め判断のデータとするため）。新規の常駐機構は作らず、既存機構（`logs/daily/`
 日報ファイル）への追記で足りる形とする。種別定義・記入手順は`instructions/karo.md`
 「省力化3点セット運用（cmd_136）」節の「介入記録」参照。
+
+## 完了通知のフラグ化（notify_on_done）（cmd_192工程7制定）
+
+`queue/shogun_to_karo.yaml`のcmdスキーマに`notify_on_done: true|false`を
+追加した。**cmd発行時に将軍が値を決める**。既定は`true`。
+
+**`notify_on_done: false`にできるのは将軍配下で完結する自律実行cmdのみ**。
+判断基準は上記「省力化3点セット」節「🔴適用線引き（必須）」の3分類
+(a)殿への応答・成果物自体が回答となるcmd／(b)裁定案件／(c)緊急・実害が
+現に進行中の事象——のいずれかに該当する場合は`notify_on_done: false`に
+してはならない（無音化禁止）。分類の詳細・改訂経緯は当該節を参照し、本節
+では重複させない。
+
+家老側の実装（完了処理が`notify_on_done`のみを見る1段判定への置換、
+値が未指定の新規cmd追記を`scripts/pretooluse_yaml_guard.sh`でdenyする
+仕組み等）は`instructions/karo.md`「省力化3点セット運用（cmd_136）」節を
+正とする。
 
 ## 陣仕舞い時のapproval_queue消化（cmd_145殿裁定追加③）
 
@@ -280,140 +301,15 @@ When a message arrives, you'll be woken with "ntfy受信あり".
 
 ## SayTask Task Management Routing
 
-Shogun acts as a **router** between two systems: the existing cmd pipeline (Karo→Ashigaru) and SayTask task management (Shogun handles directly). The key distinction is **intent-based**: what the Lord says determines the route, not capability analysis.
-
-### Routing Decision
-
-```
-Lord's input
-  │
-  ├─ VF task operation detected?
-  │  ├─ YES → Shogun processes directly (no Karo involvement)
-  │  │         Read/write saytask/tasks.yaml, update streaks, send ntfy
-  │  │
-  │  └─ NO → Traditional cmd pipeline
-  │           Write queue/shogun_to_karo.yaml → inbox_write to Karo
-  │
-  └─ Ambiguous → Ask Lord: "足軽にやらせるか？TODOに入れるか？"
-```
-
-**Critical rule**: VF task operations NEVER go through Karo. The Shogun reads/writes `saytask/tasks.yaml` directly. This is the ONE exception to the "Shogun doesn't execute tasks" rule (F001). Traditional cmd work still goes through Karo as before.
-
-### Input Pattern Detection
-
-#### (a) Task Add Patterns → Register in saytask/tasks.yaml
-
-Trigger phrases: 「タスク追加」「〇〇やらないと」「〇〇する予定」「〇〇しないと」
-
-Processing:
-1. Parse natural language → extract title, category, due, priority, tags
-2. Category: match against aliases in `config/saytask_categories.yaml`
-3. Due date: convert relative ("今日", "来週金曜") → absolute (YYYY-MM-DD)
-4. Auto-assign next ID from `saytask/counter.yaml`
-5. Save description field with original utterance (for voice input traceability)
-6. **Echo-back** the parsed result for Lord's confirmation:
-   ```
-   「承知つかまつった。VF-045として登録いたした。
-     VF-045: 提案書作成 [client-acme]
-     期限: 2026-02-14（来週金曜）
-   よろしければntfy通知をお送りいたす。」
-   ```
-7. Send ntfy: `bash scripts/ntfy.sh "✅ タスク登録 VF-045: 提案書作成 [client-acme] due:2/14"`
-
-#### (b) Task List Patterns → Read and display saytask/tasks.yaml
-
-Trigger phrases: 「今日のタスク」「タスク見せて」「仕事のタスク」「全タスク」
-
-Processing:
-1. Read `saytask/tasks.yaml`
-2. Apply filter: today (default), category, week, overdue, all
-3. Display with Frog 🐸 highlight on `priority: frog` tasks
-4. Show completion progress: `完了: 5/8  🐸: VF-032  🔥: 13日連続`
-5. Sort: Frog first → high → medium → low, then by due date
-
-#### (c) Task Complete Patterns → Update status in saytask/tasks.yaml
-
-Trigger phrases: 「VF-xxx終わった」「done VF-xxx」「VF-xxx完了」「〇〇終わった」(fuzzy match)
-
-Processing:
-1. Match task by ID (VF-xxx) or fuzzy title match
-2. Update: `status: "done"`, `completed_at: now`
-3. Update `saytask/streaks.yaml`: `today.completed += 1`
-4. If Frog task → send special ntfy: `bash scripts/ntfy.sh "🐸 Frog撃破！ VF-xxx {title} 🔥{streak}日目"`
-5. If regular task → send ntfy: `bash scripts/ntfy.sh "✅ VF-xxx完了！({completed}/{total}) 🔥{streak}日目"`
-6. If all today's tasks done → send ntfy: `bash scripts/ntfy.sh "🎉 全完了！{total}/{total} 🔥{streak}日目"`
-7. Echo-back to Lord with progress summary
-
-#### (d) Task Edit/Delete Patterns → Modify saytask/tasks.yaml
-
-Trigger phrases: 「VF-xxx期限変えて」「VF-xxx削除」「VF-xxx取り消して」「VF-xxxをFrogにして」
-
-Processing:
-- **Edit**: Update the specified field (due, priority, category, title)
-- **Delete**: Confirm with Lord first → set `status: "cancelled"`
-- **Frog assign**: Set `priority: "frog"` + update `saytask/streaks.yaml` → `today.frog: "VF-xxx"`
-- Echo-back the change for confirmation
-
-#### (e) AI/Human Task Routing — Intent-Based
-
-| Lord's phrasing | Intent | Route | Reason |
-|----------------|--------|-------|--------|
-| 「〇〇作って」 | AI work request | cmd → Karo | Ashigaru creates code/docs |
-| 「〇〇調べて」 | AI research request | cmd → Karo | Ashigaru researches |
-| 「〇〇書いて」 | AI writing request | cmd → Karo | Ashigaru writes |
-| 「〇〇分析して」 | AI analysis request | cmd → Karo | Ashigaru analyzes |
-| 「〇〇する」 | Lord's own action | VF task register | Lord does it themselves |
-| 「〇〇予約」 | Lord's own action | VF task register | Lord does it themselves |
-| 「〇〇買う」 | Lord's own action | VF task register | Lord does it themselves |
-| 「〇〇連絡」 | Lord's own action | VF task register | Lord does it themselves |
-| 「〇〇確認」 | Ambiguous | Ask Lord | Could be either AI or human |
-
-**Design principle**: Route by **intent (phrasing)**, not by capability analysis. If AI fails a cmd, Karo reports back, and Shogun offers to convert it to a VF task.
-
-### Context Completion
-
-For ambiguous inputs (e.g., 「Acmeさんの件」):
-1. Search `projects/<id>.yaml` for matching project names/aliases
-2. Auto-assign category based on project context
-3. Echo-back the inferred interpretation for Lord's confirmation
-
-### Coexistence with Existing cmd Flow
-
-| Operation | Handler | Data store | Notes |
-|-----------|---------|------------|-------|
-| VF task CRUD | **Shogun directly** | `saytask/tasks.yaml` | No Karo involvement |
-| VF task display | **Shogun directly** | `saytask/tasks.yaml` | Read-only display |
-| VF streaks update | **Shogun directly** | `saytask/streaks.yaml` | On VF task completion |
-| Traditional cmd | **Karo via YAML** | `queue/shogun_to_karo.yaml` | Existing flow unchanged |
-| cmd streaks update | **Karo** | `saytask/streaks.yaml` | On cmd completion (existing) |
-| ntfy for VF | **Shogun** | `scripts/ntfy.sh` | Direct send |
-| ntfy for cmd | **Karo** | `scripts/ntfy.sh` | Via existing flow |
-
-**Streak counting is unified**: both cmd completions (by Karo) and VF task completions (by Shogun) update the same `saytask/streaks.yaml`. `today.total` and `today.completed` include both types.
+詳細は`.claude/skills/saytask-router/SKILL.md`参照(cmd_192工程4でskill化)。
 
 ## Skill Evaluation
 
-1. **Research latest spec** (mandatory — do not skip)
-2. **Judge as world-class Skills specialist**
-3. **Create skill design doc**
-4. **Record in dashboard.md for approval**
-5. **After approval, instruct Karo to create**
+詳細は`.claude/skills/skill-candidate-evaluation/SKILL.md`参照(cmd_192工程4でskill化)。
 
 ## OSS Pull Request Review
 
-External pull requests are reinforcements to our domain. Receive them with respect.
-
-| Situation | Action |
-|-----------|--------|
-| Minor fix (typo, small bug) | Maintainer fixes and merges — don't bounce back |
-| Right direction, non-critical issues | Maintainer can fix and merge — comment what changed |
-| Critical (design flaw, fatal bug) | Request re-submission with specific fix points |
-| Fundamentally different design | Reject with respectful explanation |
-
-Rules:
-- Always mention positive aspects in review comments
-- Shogun directs review policy to Karo; Karo assigns personas to Ashigaru (F002)
-- Never "reject everything" — respect contributor's time
+詳細は`.claude/skills/oss-pr-review-policy/SKILL.md`参照(cmd_192工程4でskill化)。
 
 ## Memory MCP
 
