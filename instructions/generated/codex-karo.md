@@ -498,8 +498,8 @@ Examples:
 # Shogun → Karo
 bash scripts/inbox_write.sh karo "cmd_048を書いた。実行せよ。" cmd_new shogun
 
-# Ashigaru → Karo
-bash scripts/inbox_write.sh karo "足軽5号、任務完了。報告YAML確認されたし。" report_received ashigaru5
+# Ashigaru → Gunshi
+bash scripts/inbox_write.sh gunshi "足軽5号、任務完了。品質チェックを仰ぎたし。" report_received ashigaru5
 
 # Karo → Ashigaru
 bash scripts/inbox_write.sh ashigaru3 "タスクYAMLを読んで作業開始せよ。" task_assigned karo
@@ -512,7 +512,7 @@ Delivery is handled by `inbox_watcher.sh` (infrastructure layer).
 
 ### Urgent Policy (cmd_146)
 
-`inbox_write.sh` accepts an `--urgent` flag (stored as a Python bool in `message['urgent']`, defaults to `false` when omitted). Set `urgent: true` only for: (1) an unplanned incident/emergency report from any sender (ashigaru/gunshi/shogun) — the informal "🚨緊急報告" convention; (2) an explicit urgent designation from the Lord. Routine task-completion reports, QC results, and standard cmd dispatch do NOT get `urgent` by default. An entry that stays `urgent: true` and `read: false` past the configured threshold triggers `check_urgent_inbox_escalation()`, which escalates to the Lord via ntfy (`config/settings.yaml` → `urgent_inbox_escalation`).
+`inbox_write.sh` accepts an `--urgent` flag (stored as a Python bool in `message['urgent']`, defaults to `false` when omitted). Set `urgent: true` only for: (1) an unplanned incident/emergency report from any sender (ashigaru/gunshi/shogun) — the informal "🚨緊急報告" convention (e.g. the stall_watcher_incident emergency report); (2) an explicit urgent designation from the Lord. Routine task-completion reports, QC results, and standard cmd dispatch do NOT get `urgent` by default, nor do routine dashboard.md 🚨要対応 section entries (visibility is already guaranteed by the dashboard being permanently displayed). An entry that stays `urgent: true` and `read: false` past the configured threshold triggers `check_urgent_inbox_escalation()`, which escalates to the Lord via ntfy (`config/settings.yaml` → `urgent_inbox_escalation`).
 
 ## Delivery Mechanism
 
@@ -552,8 +552,8 @@ Read-cost controls:
 | Elapsed | Action | Trigger |
 |---------|--------|---------|
 | 0〜2 min | Standard pty nudge | Normal delivery |
-| 2〜4 min | Escape×2 + nudge | Copilot/Kimi use Escape×2 + Ctrl-C + nudge. Claude/Codex/OpenCode use a plain nudge instead |
-| 4 min+ | Context reset sent (max once per 5 min, skipped for Codex) | Force session reset + YAML re-read |
+| 2〜4 min | Escape×2 + recovery nudge | Copilot/Kimi use Escape×2 + Ctrl-C + nudge. Claude/Codex/OpenCode use a plain nudge instead |
+| 4 min+ | Context reset sent (max once per 5 min) | Force session reset + YAML re-read |
 
 ## Inbox Processing Protocol (karo/ashigaru/gunshi)
 
@@ -572,7 +572,7 @@ When you receive `inboxN` (e.g. `inbox3`):
 3. Only then go idle
 
 This is NOT optional. If you skip this and a redo message is waiting,
-you will be stuck idle until the next nudge escalation or task reassignment.
+you will be stuck idle until the next escalation or task reassignment.
 
 ## Redo Protocol
 
@@ -589,9 +589,10 @@ Race condition is eliminated: context reset wipes old context. Agent re-reads YA
 
 | Direction | Method | Reason |
 |-----------|--------|--------|
-| Ashigaru/Gunshi → Karo | Report YAML + inbox_write | File-based notification |
+| Ashigaru → Gunshi | Report YAML + inbox_write | Quality check & dashboard aggregation |
+| Gunshi → Karo | Report YAML + inbox_write | Quality check result + strategic reports |
 | Karo → Shogun/Lord | dashboard.md update only | **inbox to shogun FORBIDDEN** — prevents interrupting Lord's input |
-| Karo → Gunshi | YAML + inbox_write | Strategic task delegation |
+| Karo → Gunshi | YAML + inbox_write | Strategic task or quality check delegation |
 | Top → Down | YAML + inbox_write | Standard wake-up |
 
 ## File Operation Rule
