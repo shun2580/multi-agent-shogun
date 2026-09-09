@@ -1922,15 +1922,26 @@ check_and_heal_dead_cli() {
 # 呼び出すため、Python関数定義をbash変数として一元化する(別ファイルへの
 # 切り出しはallowed_pathsのスコープ外のため、同一ファイル内でのDRY化)。
 read -r -d '' _DASHBOARD_RESOLVED_BLOCK_PY <<'PYEOF' || true
+_LEADING_COMMENTS_RE = re.compile(r'^(?:\s*<!--.*?-->\s*\n?)*')
+# cmd_190: 解決済みの機械判定マーカー。carryover_approvedと同じ位置
+# (created_atマーカー直後の先頭コメント群内)にのみ置かれる想定。
+_RESOLVED_MARKER_RE = re.compile(r'<!--\s*resolved:\s*true\s*-->')
+
 def _strip_leading_comments(text):
     # ブロック先頭の連続するHTMLコメント行(created_at直後のcarryover_approved等)
     # を除去する。
-    return re.sub(r'^(?:\s*<!--.*?-->\s*\n?)*', '', text)
+    return _LEADING_COMMENTS_RE.sub('', text, count=1)
 
 def _is_resolved_block(text):
-    # アイテムブロックの本文本体(bullet prefixを除いた部分)が~~で始まり、
-    # ブロック内(複数行可)のどこかで~~が再度出現して閉じる場合、解決済みとみなす。
-    # 閉じタグが無い壊れたMarkdownは安全側(False=未解決扱い)に倒す。
+    # cmd_190: 解決済み判定は以下いずれかの機械可読条件のみで行う。
+    # 本文文言(「✅解決済み」等の自然言語記号)は判定に使わない(殿の明示禁止)。
+    # (a) 先頭コメント群内に`<!-- resolved: true -->`マーカーがある
+    # (b) 取消線(既存互換・削除禁止): 本文本体が~~で始まり、ブロック内
+    #     (複数行可)のどこかで~~が再度出現して閉じる。閉じタグが無い
+    #     壊れたMarkdownは安全側(False=未解決扱い)に倒す。
+    leading = _LEADING_COMMENTS_RE.match(text).group(0)
+    if _RESOLVED_MARKER_RE.search(leading):
+        return True
     body = _strip_leading_comments(text)
     body = re.sub(r'^[\s\-\*\d\.]+', '', body, count=1)
     return body.startswith('~~') and '~~' in body[2:]
@@ -2583,11 +2594,27 @@ except Exception:
     return 0
 }
 
+# ─── cmd_190 依頼事項2: 起動時一斉発火抑止 ───
+# watcher再起動直後、check_dashboard_staleness()のlast_checkマーカーが
+# 古いままだと初回tickで即座に判定が走り、複数エージェントのwatcherが
+# 同時再起動した場合に一斉発火する。起動時にマーカーのmtimeを「今」へ
+# 更新し、初回判定をcheck_interval_minutes(既定30分)経過後まで遅延させる。
+dashboard_staleness_suppress_on_startup() {
+    local marker="${SCRIPT_DIR}/logs/.dashboard_staleness_last_check"
+    mkdir -p "${SCRIPT_DIR}/logs" 2>/dev/null || true
+    touch "$marker" 2>/dev/null || true
+    echo "[$(date -Iseconds)] [STARTUP-SUPPRESS] dashboard_staleness_last_check touched (agent=${AGENT_ID:-unknown}) — initial check deferred" >> "${SCRIPT_DIR}/logs/inbox_watcher_karo.log" 2>/dev/null || true
+}
+
 # ─── Main loop: event-driven via inotifywait (skipped in testing mode) ───
 if [ "${__INBOX_WATCHER_TESTING__:-}" != "1" ]; then
 # Timeout 30s: WSL2 /mnt/c/ can miss inotify events.
 # Shorter timeout = faster escalation retry for stuck agents.
 INOTIFY_TIMEOUT="${INOTIFY_TIMEOUT:-30}"
+
+if [ "${AGENT_ID:-}" = "karo" ]; then
+    dashboard_staleness_suppress_on_startup
+fi
 
 while true; do
     # Block until file is modified OR timeout

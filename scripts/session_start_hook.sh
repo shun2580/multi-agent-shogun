@@ -29,9 +29,29 @@ if [ -z "$AGENT_ID" ]; then
     exit 0
 fi
 
+# cmd_190 依頼事項4: hook stdin(JSON)の"source"フィールド(startup/resume/
+# clear/compact)をmatcher種別として記録する。`[ -t 0 ]`でtty(対話実行・
+# stdin無し)を弾き、`timeout`でstdin読取がハングしてもSession Start注入を
+# 止めない(全エージェントのpersona再確立を阻害しないためのfail-safe)。
+MATCHER=""
+if [ ! -t 0 ]; then
+    HOOK_INPUT=$(timeout 2 cat 2>/dev/null || true)
+    if [ -n "$HOOK_INPUT" ]; then
+        MATCHER=$(printf '%s' "$HOOK_INPUT" | timeout 2 python3 -c "
+import json,sys
+try:
+    d = json.load(sys.stdin)
+    print(d.get('source', '') or '')
+except Exception:
+    print('')
+" 2>/dev/null || true)
+    fi
+fi
+[ -n "$MATCHER" ] || MATCHER="unknown"
+
 LOG_DIR="$(dirname "$0")/../logs"
 mkdir -p "$LOG_DIR" || true
-echo "[$(date -Iseconds)] $AGENT_ID session_start_hook fired" \
+echo "[$(date -Iseconds)] $AGENT_ID session_start_hook fired matcher=${MATCHER}" \
     >> "$LOG_DIR/session_start_hook.log" || true
 
 case "$AGENT_ID" in

@@ -632,3 +632,152 @@ PY
     [ "$status" -eq 0 ]
     echo "$output" | grep -q "\[BUSY-DETERMINATION\] agent=test_agent path=cooldown verdict=busy"
 }
+
+# ═══════════════════════════════════════════════════════════════
+# cmd_190 subtask_190_A: 解決済み判定マーカー一本化 + 起動時一斉発火抑止
+#   依頼事項1/1-2: _is_resolved_block()が`<!-- resolved: true -->`マーカー
+#     または取消線(既存互換)のいずれかで判定すること。本文文言
+#     (「✅解決済み」等)は判定に使わないこと。check_dashboard_staleness()
+#     経由(_DASHBOARD_RESOLVED_BLOCK_PY一元化)で実出力を確認する。
+#   依頼事項2: dashboard_staleness_suppress_on_startup()が起動時マーカーの
+#     mtimeを更新し、初回tickの判定を抑止すること。
+#   受入(ii): resolvedマーカー付き・取消線(既存互換)・未解決の3種、各単体テスト
+#   受入(iii): 再起動直後に判定が走らないことのテスト
+#
+# 本番dashboard.md/logs/timing_events.jsonl/ntfy送信には一切触れない
+# (test_dashboard_staleness.batsと同じ隔離パターン: SCRIPT_DIRを隔離TEST_TMP
+# 配下へ差し替え、__INBOX_WATCHER_TESTING__=1でsourceして対象関数を直接呼ぶ)。
+# ═══════════════════════════════════════════════════════════════
+
+_cmd190_setup_dashboard_env() {
+    # $1 = 隔離ディレクトリ名(TEST_TMPDIR配下のサブディレクトリ名)
+    # $2 = check_interval_minutes(省略時0 — 通常テストは毎回判定を走らせたいため)
+    local subdir="$1" interval_min="${2:-0}"
+    CMD190_DIR="$TEST_TMPDIR/$subdir"
+    mkdir -p "$CMD190_DIR/logs" "$CMD190_DIR/queue/inbox" "$CMD190_DIR/config" "$CMD190_DIR/scripts"
+    ln -s "$PROJECT_ROOT/.venv" "$CMD190_DIR/.venv"
+    ln -s "$PROJECT_ROOT/scripts/log_timing_event.sh" "$CMD190_DIR/scripts/log_timing_event.sh"
+    CMD190_NTFY_LOG="$CMD190_DIR/ntfy.log"
+    : > "$CMD190_NTFY_LOG"
+    cat > "$CMD190_DIR/scripts/ntfy.sh" <<EOF
+#!/bin/bash
+echo "NTFY \$*" >> "$CMD190_NTFY_LOG"
+EOF
+    chmod +x "$CMD190_DIR/scripts/ntfy.sh"
+    cat > "$CMD190_DIR/config/settings.yaml" <<EOF
+dashboard_staleness:
+  hours: 24
+  check_interval_minutes: ${interval_min}
+  cooldown_after_escalation_minutes: 360
+EOF
+}
+
+_cmd190_ts_hours_ago() {
+    "$PROJECT_ROOT/.venv/bin/python3" -c "
+import datetime, sys
+print((datetime.datetime.now() - datetime.timedelta(hours=float(sys.argv[1]))).isoformat(timespec='seconds'))
+" "$1"
+}
+
+_cmd190_run_check() {
+    run bash -c '
+        SCRIPT_DIR="'"$CMD190_DIR"'"
+        AGENT_ID="karo"
+        export __INBOX_WATCHER_TESTING__=1
+        source "'"$WATCHER_SCRIPT"'" >/dev/null 2>&1
+        check_dashboard_staleness
+    '
+}
+
+@test "cmd_190 T-RESOLVED-MARKER-001: <!-- resolved: true --> マーカー付き項目は放置通知の対象から除外される" {
+    _cmd190_setup_dashboard_env cmd190_marker 0
+    local old_ts
+    old_ts="$(_cmd190_ts_hours_ago 30)"
+    cat > "$CMD190_DIR/dashboard.md" <<EOF
+## 🚨要対応
+<!-- created_at: ${old_ts} -->
+<!-- resolved: true -->
+- **解決済み項目のテスト**: 本文は素のまま(取消線なし)。resolvedマーカーのみで判定される。
+EOF
+    _cmd190_run_check
+    [ "$status" -eq 0 ]
+    [ ! -s "$CMD190_NTFY_LOG" ]
+}
+
+@test "cmd_190 T-RESOLVED-STRIKE-001: 取消線項目(既存互換)は引き続き放置通知の対象から除外される" {
+    _cmd190_setup_dashboard_env cmd190_strike 0
+    local old_ts
+    old_ts="$(_cmd190_ts_hours_ago 30)"
+    cat > "$CMD190_DIR/dashboard.md" <<EOF
+## 🚨要対応
+<!-- created_at: ${old_ts} -->
+- ~~**取消線で解決済みの項目**: resolvedマーカーは無いが取消線のみで判定される。~~
+EOF
+    _cmd190_run_check
+    [ "$status" -eq 0 ]
+    [ ! -s "$CMD190_NTFY_LOG" ]
+}
+
+@test "cmd_190 T-RESOLVED-NONE-001: 未解決項目(マーカーも取消線も無い)は放置通知の対象になる" {
+    _cmd190_setup_dashboard_env cmd190_none 0
+    local old_ts
+    old_ts="$(_cmd190_ts_hours_ago 30)"
+    cat > "$CMD190_DIR/dashboard.md" <<EOF
+## 🚨要対応
+<!-- created_at: ${old_ts} -->
+- **未解決の項目**: マーカーも取消線も無い。24時間超過につき通知対象。
+EOF
+    _cmd190_run_check
+    [ "$status" -eq 0 ]
+    grep -q "NTFY" "$CMD190_NTFY_LOG"
+}
+
+@test "cmd_190 T-RESOLVED-NLTEXT-001: 本文文言(✅解決済み等)のみでは判定に使われず通知される(殿の明示禁止の実地確認)" {
+    _cmd190_setup_dashboard_env cmd190_nltext 0
+    local old_ts
+    old_ts="$(_cmd190_ts_hours_ago 30)"
+    cat > "$CMD190_DIR/dashboard.md" <<EOF
+## 🚨要対応
+<!-- created_at: ${old_ts} -->
+- **✅解決済み・✅完了: マーカーの無い項目**: 本文文言はあるがマーカーは無いため未解決扱い。
+EOF
+    _cmd190_run_check
+    [ "$status" -eq 0 ]
+    grep -q "NTFY" "$CMD190_NTFY_LOG"
+}
+
+@test "cmd_190 T-STARTUP-SUPPRESS-001: 起動時抑止直後は check_dashboard_staleness が判定を行わない(一斉発火抑止)" {
+    _cmd190_setup_dashboard_env cmd190_startup_on 30
+    local old_ts
+    old_ts="$(_cmd190_ts_hours_ago 30)"
+    cat > "$CMD190_DIR/dashboard.md" <<EOF
+## 🚨要対応
+<!-- created_at: ${old_ts} -->
+- **未解決の項目・本来なら通知対象**: 24時間超過。だが起動直後の抑止により今回は判定自体が走らない。
+EOF
+    run bash -c '
+        SCRIPT_DIR="'"$CMD190_DIR"'"
+        AGENT_ID="karo"
+        export __INBOX_WATCHER_TESTING__=1
+        source "'"$WATCHER_SCRIPT"'" >/dev/null 2>&1
+        dashboard_staleness_suppress_on_startup
+        check_dashboard_staleness
+    '
+    [ "$status" -eq 0 ]
+    [ ! -s "$CMD190_NTFY_LOG" ]
+    grep -q "STARTUP-SUPPRESS" "$CMD190_DIR/logs/inbox_watcher_karo.log"
+}
+
+@test "cmd_190 T-STARTUP-SUPPRESS-002: 起動時抑止を呼ばない場合は同条件で通知が発火する(対照実験)" {
+    _cmd190_setup_dashboard_env cmd190_startup_off 30
+    local old_ts
+    old_ts="$(_cmd190_ts_hours_ago 30)"
+    cat > "$CMD190_DIR/dashboard.md" <<EOF
+## 🚨要対応
+<!-- created_at: ${old_ts} -->
+- **未解決の項目・本来なら通知対象**: 24時間超過。起動時抑止を呼ばないので判定が走る。
+EOF
+    _cmd190_run_check
+    [ "$status" -eq 0 ]
+    grep -q "NTFY" "$CMD190_NTFY_LOG"
+}

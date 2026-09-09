@@ -134,6 +134,36 @@ QC結果自身（`gunshi_report.yaml` task_id: gunshi_qc_155_AB、issue説明文
 `scripts/analyze_timing.py --phase-breakdown`内部の`by_cmd`グルーピングと同一キー)が
 約10件に達したことをもって評価条件充足とする。
 
+## Fast-Lane実運用評価条件（cmd_192工程3・ashigaru3起票）
+
+`instructions/karo.md`「Fast-Lane Exception」節はcmd_086 Part C制定時、「実cmd 3件の
+累積をもって常用可否を評価する」という試行運用パラグラフを含んでいたが、暦日期限
+のない件数条件であるにもかかわらずkaro.md本文に据え置かれ続けており、
+`mandate/verifiers.md`側の条件式集約箇所（本節）へ未収容だった。cmd_192工程3で
+karo.md本文から当該パラグラフを削除し、本節へ条件式として集約する
+（`judgment_model.md`原則4: 交通量と無関係な代理指標=暦日期限を避ける、の適用。
+「期日を持つ約束の起票禁止則」節（Q35）参照）。
+
+**評価条件**: `scope_check_fastlane_eligible()`による機械判定でexit 0（適格）と
+判定され、かつ実際にQC短縮フローが適用された実cmd事例が**3件累積**した時点で、
+本運用の常用化可否を評価する。🔴**暦日期限は設けない**。
+
+**現況（2026-09-09時点・ashigaru3実データ確認）**: `mandate/decisions_journal.md`
+（`grep -n "fastlane\|Fast-Lane" mandate/decisions_journal.md`）・`dashboard.md`
+（`grep -n "fast-lane.*件目\|fast-lane.*exit 0(適格)" dashboard.md`）を確認した
+限り、実際に適用され「適格」と記録された実cmd事例は**cmd_096（2026-07-17、
+「fast-lane検証実カウンタの記念すべき1件目」）の1件のみ**。cmd_089/091は消失
+原因究明・再配線作業であり適用実績ではない。cmd_094は不適格（exit 1）判定の
+ためカウント対象外。2026-08-27時点のdashboard.md記載（「タスク1(fast-lane常用
+可否): 実データ0件」）とも整合する。3件未満のため、本条件式は現時点未充足。
+
+**一次観測点**: `mandate/decisions_journal.md`と`dashboard.md`を対象に
+`grep -n "fast-lane" mandate/decisions_journal.md dashboard.md`を実行し、
+「実際に適格判定（exit 0）でQC短縮フローを適用した」旨が明記された実cmd事例の
+ユニーク件数を数える（消失調査・再配線・不適格判定の記述は含めない）。今後
+新たな適用事例が生じた際は、`mandate/decisions_journal.md`へ1行記帳することを
+推奨する（記帳が無いと本節の現況調査を都度手動で再実施することになる）。
+
 ## ntfyトピックローテーション完全手順（cmd_150）
 
 **選定理由**: 本ファイル冒頭の運用規則（機械的な手順は判断原則ではなく具体項目として
@@ -318,6 +348,44 @@ mandate/decisions_journal.md`で確認可能)と同趣旨だが、(1)受け入�
 **意図的に付与されていない**(=通常の放置検出対象のまま)。マーカーの
 「あり/なし」両パターンが本番データに実在する(dashboard.md 205行目・209行目、
 `created_at`のみでcarryover_approvedコメントなし)。
+
+## 解決済みマーカー(resolved)の記法(cmd_190)
+
+殿の明示禁止により、🚨要対応欄の解決済み判定は本文文言(「✅解決済み」「✅完了」等の
+自然言語記号)へ依存させてはならない。判定根拠を機械可読なHTMLコメントマーカーへ
+一本化する(north_star: 「✅解決済み」も「取消線」も人が書く記号であり、書き方は
+増え続ける。増え続ける記号を追いかける限り、我らは永遠に3例目・4例目を迎える)。
+
+**記法**: `dashboard.md`の各項目ブロックにおいて、`created_at`コメントの
+**直後**(1行空けず、carryover_approvedと同じ位置)に以下を置く。
+
+```
+<!-- created_at: YYYY-MM-DDTHH:MM:SS -->
+<!-- resolved: true -->
+- **項目本文...**
+```
+
+**判定ロジック**: `_is_resolved_block()`(`scripts/inbox_watcher.sh`、
+`_DASHBOARD_RESOLVED_BLOCK_PY`として一元化され`check_dashboard_staleness()`と
+`build_fleet_idle_message()`の両方から呼出・cmd_190 subtask_190_A実装)は、
+以下いずれかで解決済みと判定する:
+  (a) ブロック先頭の連続するHTMLコメント群内(`created_at`直後、
+      `carryover_approved`と同じ領域)に`<!-- resolved: true -->`がある
+  (b) 取消線(`~~...~~`、既存互換・削除禁止)で本文本体が囲まれている
+🔴本文文言(「✅解決済み」「✅完了」等)は判定に一切使わない
+(殿の明示禁止・cmd_190「自然言語記号を判定対象に増やすこと自体が禁止事項」)。
+
+**carryover_approvedとの使い分け**:
+  - `resolved: true` = 該当項目そのものが解決済みであり、もはや放置ではない
+  - `carryover_approved: true` = 未解決だが殿の裁可により意図的に持ち越し中
+    (放置ではないが、解決もしていない)
+両者は意味的に排他——ある項目が解決済みであれば持ち越しマーカーは不要である。
+
+**取消線との関係**: 取消線([[carryover_approved]]の節にある既存互換パターン
+とは別に)引き続きサポートされ、削除は禁止(殿の明示禁止・既存6件の互換維持)。
+ただし**新規項目では取消線でなく`resolved`マーカーを用いること**——
+判定根拠を自然言語記号から機械可読マーカーへ移す、というのが本節新設の
+理由そのものである。
 
 ## 秘匿値記述禁止則(cmd_180)
 
