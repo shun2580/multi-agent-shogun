@@ -20,6 +20,15 @@
             "timeout": 60
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/stop_hook_evidence.sh",
+            "timeout": 15
+          }
+        ]
       }
     ],
     "PreToolUse": [

@@ -147,6 +147,7 @@ config/settings.yaml
 !scripts/pretooluse_git_push_block.sh
 !scripts/pretooluse_yaml_guard.sh
 !scripts/pretooluse_scope_check.sh
+!scripts/stop_hook_evidence.sh
 !scripts/check_runtime_reflection.sh
 !scripts/check_approval_queue_staleness.sh
 !scripts/branch_drift_check.sh
