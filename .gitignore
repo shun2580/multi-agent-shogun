@@ -172,6 +172,10 @@ logs/
 !memory/
 !memory/MEMORY.md.sample
 
+# Archive (session records archive for MEMORY.md management)
+!archive/
+!archive/memory_*.md
+
 # Docs
 !docs/
 !docs/philosophy.md
