@@ -152,28 +152,7 @@ urgent指定した場合、の2ケースに限る。通常のタスク完了報�
 閾値時間を超えたエントリは`check_urgent_inbox_escalation()`が殿へntfyエスカレー
 ションする(config/settings.yaml `urgent_inbox_escalation`)。
 
-## Delivery Mechanism
-
-Two layers:
-1. **Message persistence**: `inbox_write.sh` writes to `queue/inbox/{agent}.yaml` with flock. Guaranteed.
-2. **Wake-up signal**: `inbox_watcher.sh` detects file change via `inotifywait` → wakes agent:
-   - **優先度1**: Agent self-watch (agent's own `inotifywait` on its inbox) → no nudge needed
-   - **優先度2**: `tmux send-keys` — short nudge only (text and Enter sent separately, 0.3s gap)
-
-The nudge is minimal: `inboxN` (e.g. `inbox3` = 3 unread). That's it.
-**Agent reads the inbox file itself.** Message content never travels through tmux — only a short wake-up signal.
-
-Special cases (CLI commands sent via `tmux send-keys`):
-- `type: clear_command` → sends context reset command via send-keys (Claude/Copilot/Kimi: `/clear`, Codex/OpenCode: `/new`)
-- `type: model_switch` → sends the /model command via send-keys
-
-**Escalation** (when nudge is not processed):
-
-| Elapsed | Action | Trigger |
-|---------|--------|---------|
-| 0〜2 min | Standard pty nudge | Normal delivery |
-| 2〜4 min | Escape×2 + recovery nudge | Copilot/Kimi use Escape×2 + Ctrl-C + nudge. Claude/Codex/OpenCode use a plain nudge instead |
-| 4 min+ | `/clear` sent (max once per 5 min) | Force session reset + YAML re-read |
+Delivery Mechanism・Redo Protocolの詳細は `instructions/common/protocol.md`を参照。
 
 ### MANDATORY Post-Task Inbox Check
 
@@ -184,17 +163,6 @@ Special cases (CLI commands sent via `tmux send-keys`):
 
 This is NOT optional. If you skip this and a redo message is waiting,
 you will be stuck idle until the next escalation or task reassignment.
-
-## Redo Protocol
-
-When Karo determines a task needs to be redone:
-
-1. Karo writes new task YAML with new task_id (e.g., `subtask_097d` → `subtask_097d2`), adds `redo_of` field
-2. Karo sends `clear_command` type inbox message (NOT `task_assigned`)
-3. inbox_watcher delivers the CLI-appropriate context reset command to the agent → session reset
-4. Agent recovers via Session Start procedure, reads new task YAML, starts fresh
-
-Race condition is eliminated: the context reset wipes old context. Agent re-reads YAML with new task_id.
 
 ## Report Flow (interrupt prevention)
 
