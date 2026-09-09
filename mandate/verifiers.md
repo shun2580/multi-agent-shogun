@@ -479,3 +479,34 @@ Fable裁定Q48: `scope_check.sh`のPreToolUse observe接続を最小の一手と
 **現況(2026-09-09時点)**: 上記grepの実行結果はヒット0件(未充足)。2026-08-27付
 INCIDENTエントリ(cmd_186)は軍師が捏造を「捕らえた」成功事例であり、本条件式が
 指す「すり抜けた」事故とは逆の性質のため該当しない。
+
+## scope_checkフック(pretooluse_scope_check.sh)のenforce移行条件(cmd_192工程5)
+
+`scripts/pretooluse_scope_check.sh`(cmd_192工程5新設、既定observe)の
+enforce移行は、以下4条件(Q6出典: `~/fable_ruling_20260727_q1q4.md`
+——yaml_guard_enabledのenforce移行時と同型)を**すべて**満たした時点で
+候補となる。🔴暦日期限は設けない(判断は将軍が別途行う)。
+
+1. 対象評価20件以上
+2. 稼働セッション2回以上に跨る
+3. 偽WOULD-DENYゼロ(allowed_paths内のはずのfile_pathが誤ってWOULD-DENYされた事例が無い)
+4. fail-open(FAIL-OPEN相当のクラッシュ・判定不能)ゼロ、またはfail-open発生時は全件原因説明済み
+
+**一次観測点(Q42-5細則)**: `logs/pretooluse_scope_check.log`を対象に
+以下を実行する。
+- 評価総数(条件1): `grep -cE "^\[.*\] (ALLOW|WOULD-DENY|DENY) " logs/pretooluse_scope_check.log`
+- セッション跨り(条件2): `grep -oE "session=[^ ]+" logs/pretooluse_scope_check.log | sort -u | wc -l`
+  (`session_id`が実際に複数稼働セッションに跨ることをdashboard.md等で追認する)
+- 偽WOULD-DENY(条件3): `grep "WOULD-DENY" logs/pretooluse_scope_check.log`の
+  各行についてfile_pathが実際に該当agentのallowed_paths外だったかを個別確認し、
+  誤判定(allowed_paths内なのにWOULD-DENYされた事例)が0件であることを示す
+  (機械集計不能・目視確認が必要な項目である旨も明記する)。
+- fail-open(条件4): 本フックはFAIL-OPENタグを出力しない設計(JSON解析失敗・
+  agent_id/TASK_YAML解決不能はすべて無ログexit 0のため)。よって本条件式は
+  「クラッシュ・異常終了(exit code非0)がpretooluse hookの実行ログ
+  (Claude Code側のhook実行エラー通知等)に記録されていないこと」を別途
+  確認する形になる——本フック固有の観測点は無いため、この点に留意する。
+
+セッション開始点検スイープ(a)条件式の評価対象として、次回セッション開始時から
+評価対象に加わる(出典: `queue/reports/ashigaru5_report.yaml` task_id:
+subtask_192_5、家老が反映)。
