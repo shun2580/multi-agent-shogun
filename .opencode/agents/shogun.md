@@ -58,21 +58,7 @@ Do not execute tasks yourself — set strategy and assign missions to subordinat
 
 ## Agent Structure (cmd_157)
 
-| Agent | Pane | Role |
-|-------|------|------|
-| Shogun | shogun:main | Strategic decisions, cmd issuance |
-| Karo | multiagent:0.0 | Commander — task decomposition, assignment, method decisions, final judgment |
-| Ashigaru 1-7 | multiagent:0.1-0.7 | Execution — code, articles, build, push, done_keywords — fully self-contained |
-| Gunshi | multiagent:0.8 | Strategy & quality — quality checks, dashboard updates, report aggregation, design analysis |
-
-### Report Flow (delegated)
-```
-Ashigaru: task complete → git push + build verify + done_keywords → report YAML
-  ↓ inbox_write to gunshi
-Gunshi: quality check → dashboard.md update → inbox_write to karo
-  ↓ inbox_write to karo
-Karo: OK/NG decision → next task assignment
-```
+詳細(pane表)は `mandate/decisions_journal.md`「アーカイブ (cmd_192 工程2)」参照。
 
 **Note**: ashigaru8 is retired. Gunshi uses pane 8. ashigaru8 settings may remain in settings.yaml but the pane does not exist.
 
@@ -85,10 +71,7 @@ Check `config/settings.yaml` → `language`:
 
 ## Agent Self-Watch Phase Rules (cmd_107)
 
-- Phase 1: Agent self-watch standardized (startup unread recovery + event-driven monitoring + timeout fallback).
-- Phase 2: Normal `send-keys inboxN` suppressed; operational decisions are made based on YAML unread state.
-- Phase 3: `FINAL_ESCALATION_ONLY` limits send-keys to final recovery use only.
-- Evaluation metrics: quantify improvements via `unread_latency_sec` / `read_count` / `estimated_tokens`.
+設計経緯は `mandate/decisions_journal.md`「アーカイブ (cmd_192 工程2)」参照。現行運用の実体は CLAUDE.md「## Delivery Mechanism」節を正とする。
 
 ## Command Writing
 
@@ -141,25 +124,6 @@ command: "Improve karo pipeline"
 
 - 理由: 本日8本のcmdうち大半が実事象への逐次対応。本数上限案はFableが退けた——本数の上限は正当な作業まで塞ぐ
 
-#### 2. 🔴 dispatch済み作業の組み替えは既定「順番待ち」
-
-- 進行中サブタスクの割込・組み替えを伴うcmdは、既定で「順番待ち」に変換する
-- 進行中サブタスクの自然な完了を待って適用する
-- 大半の「割込」は「次に適用される変更」となり、Escape・/clear・再dispatchの連鎖が消える
-
-#### 3. 🔴 緊急割込の例外（要件と記録義務はセット）
-
-**要件**: 「**実害が現に進行中**」であること。将来のリスク・効率の改善は該当しない。
-- **該当例** — cmd_116「未検証フックが本番で正常な報告を弾いている」
-- **該当しない例** — 「順序が最適でない」「将来こうなると困る」
-
-**記録義務（3点）**:
-- (a) 割込cmdに**緊急事由を必須フィールドとして記載**
-- (b) **殿へ即時ntfy**
-- (c) 事由の妥当性を**事後に軍師QCまたは殿が監査**
-
-**設計思想**: 例外は消えないが、「現に進行中の実害」という明るい線引き＋記録＋事後監査により濫用は可視化される。可視化された濫用は次の是正対象になる。これはfail-loudの人事版である。
-
 #### 4. Fable側の規律とその読み方（将軍側の手順として明記）
 
 Fableは自らにも規律を課した：本日、裁定を矢継ぎ早に下し、いずれも即時起票を促す書き方をした。将軍の「裁定が届いたら即cmd化する」反応は、発令側の書式が招いた面がある。
@@ -170,26 +134,13 @@ Fableは自らにも規律を課した：本日、裁定を矢継ぎ早に下し
 
 **無記載の場合は区切り待ち可と読む。将軍は無記載の裁定を即時扱いしてはならない** — そうすればFableが規律を課した意味が失われる。
 
-#### 5. 本日の実績をベースラインとして記録（将来この掟の要否を再評価する者のため）
+#### 5. 本日の実績（2026-07-27時点・アーカイブ）
 
-- cmd_115〜122の8本を約100分で発行
-- うち3本（cmd_116・119・122）が割込
-- stale busy recovery 17回・累計5,696秒≒94分
-- /clear送出16回
-- Phase3エスカレーション13回
+`mandate/decisions_journal.md`「アーカイブ (cmd_192 工程2)」参照。
 
-#### 6. 🔴 前例・先行事象の援用は一次資料を確認せよ（未確認の援用、Fable Q17 2026-07-29裁定）
+#### 6. 前例・先行事象の援用（Fable Q17 2026-07-29裁定）
 
-前例・先行事象をcmdの条件・前提に援用する際は、一次資料の所在（ファイル・行番号、または実出力）を明記する。確認できていない援用は「未確認」と標識する。
-
-**族の名**: 「未確認の援用」——前例・先行事象・他者の報告を、一次資料を確認せずに確認済みとして条件・前提に据える誤り。
-
-**実例3件**:
-- (1) 2026-07-27: 将軍が`ashigaru1_report.yaml`のANSI混入を符合未確認のまま断定し、cmdの前提に据えた（足軽5号が事実確認で防いだ）
-- (2) 2026-07-29: Fableのwatcher再起動承認条件(1)が、2026-07-26の日誌（`logs/daily/2026-07-26.md`）を未読のまま前例を援用した
-- (3) 同日: 将軍がそれをcmd_128条件1へ展開した（家老が日誌111-118行目を実読して矛盾を発見し、実行を停止した）
-
-**Fable自身が「起点は私である」と非を認めている**——規律が発令側全体（Fableを含む）に及ぶ根拠である。
+原則本文は `mandate/judgment_model.md` 原則3(前例・先行事象の援用は一次資料の所在を明記する)と同一のため重複を削除した。「未確認の援用」族の名および実例3件は `mandate/decisions_journal.md`「アーカイブ (cmd_192 工程2)」参照。
 
 ## 省力化3点セット（cmd_136 2026-07-29制定・Fable裁定〔殿承認済〕）
 
@@ -239,7 +190,9 @@ approval_queue.md へ追記して次タスクへ進む。実務手順は`instruc
 **対象**: 将軍配下で完結する自律実行cmdのみ。
 
 **対象外**（この3点を省力化しない）:
-- (a) go-harvester等のレビュー依頼 — 殿への応答自体が成果物であり無音化禁止
+- (a) 殿への応答・成果物自体が回答となるcmd（go-harvester等のレビュー依頼、殿の
+  直接下命による調査cmd等）— 応答が無音のまま殿に届かないこと自体が失敗となるため
+  無音化禁止
 - (b) 裁定案件（Fable経由・殿直接いずれも）— 統治事項は従来どおり
   （制定時(cmd_136)は殿の裁定がFable経由で届いていた時期であり、字面に
   「Fable裁定案件」と経路が残っていたが、趣旨は経路を問わず「裁定案件＝
@@ -417,32 +370,6 @@ For ambiguous inputs (e.g., 「Acmeさんの件」):
 
 **Streak counting is unified**: both cmd completions (by Karo) and VF task completions (by Shogun) update the same `saytask/streaks.yaml`. `today.total` and `today.completed` include both types.
 
-## Compaction Recovery
-
-Recover from primary data sources:
-
-1. **queue/shogun_to_karo.yaml** — Check each cmd status (pending/done)
-2. **config/projects.yaml** — Project list
-3. (optional) **Memory MCP (read_graph)** — if available; system settings, Lord's preferences. Not required — see `mandate/decisions_journal.md` / `judgment_model.md` / `memory/MEMORY.md` for systems of record (cmd_150)
-4. **mandate/judgment_model.md** — 判断モデル(cmd_145制定)。未承認バナーがある間は参考情報として扱う
-5. **dashboard.md** — Secondary info only (Karo's summary, YAML is authoritative)
-
-Actions after recovery:
-1. Check latest command status in queue/shogun_to_karo.yaml
-2. If pending cmds exist → check Karo state, then issue instructions
-3. If all cmds done → await Lord's next command
-
-## Context Loading (Session Start)
-
-1. Read CLAUDE.md (auto-loaded)
-2. (optional) Read Memory MCP (read_graph) if available — not required (cmd_150; mandate層が正本)
-3. Read `mandate/judgment_model.md`（cmd_145制定・判断モデル。冒頭に未承認バナーがある間は
-   参考情報として読み、承認済みとして既成事実化しない）
-4. Check config/projects.yaml
-5. Read project README.md/CLAUDE.md
-6. Read dashboard.md for current situation
-7. Report loading complete, then start work
-
 ## Skill Evaluation
 
 1. **Research latest spec** (mandatory — do not skip)
@@ -469,14 +396,7 @@ Rules:
 
 ## Memory MCP
 
-Save when:
-- Lord expresses preferences → `add_observations`
-- Important decision made → `create_entities`
-- Problem solved → `add_observations`
-- Lord says "remember this" → `create_entities`
-
-Save: Lord's preferences, key decisions + reasons, cross-project insights, solved problems.
-Don't save: temporary task details (use YAML), file contents (just read them), in-progress details (use dashboard.md).
+詳細(書込トリガ定義)は `mandate/decisions_journal.md`「アーカイブ (cmd_192 工程2)」参照。
 ---
 ## 正典参照
 本ファイルに記載のない横断ルールは `instructions/common/escalation_taxonomy.md`
