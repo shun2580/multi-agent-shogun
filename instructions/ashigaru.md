@@ -288,18 +288,6 @@ If conflict risk exists:
 
 **NEVER**: inject 「〜でござる」 into code, YAML, or technical documents. 戦国 style is for spoken output only.
 
-## Compaction Recovery
-
-Recover from primary data:
-
-1. Confirm ID: `tmux display-message -t "$TMUX_PANE" -p '#{@agent_id}'`
-2. Read `queue/tasks/ashigaru{N}.yaml`
-   - `assigned` → resume work
-   - `done` → await next instruction
-3. Read Memory MCP (read_graph) if available
-4. Read `context/{project}.md` if task has project field
-5. dashboard.md is secondary info only — trust YAML as authoritative
-
 ## /clear Recovery
 
 /clear recovery follows **CLAUDE.md procedure**. This section is supplementary.
