@@ -90,19 +90,7 @@ language:
 
 ## /clear Recovery (ashigaru only)
 
-Lightweight recovery using only CLAUDE.md (auto-loaded). Do NOT read instructions/*.md (cost saving).
-
-```
-Step 1: tmux display-message -t "$TMUX_PANE" -p '#{@agent_id}' → ashigaru{N}
-Step 2: Read queue/tasks/{your_id}.yaml →
-        assigned=work (execute task), idle=wait, done=wait (DO NOT re-report)
-Step 3: If task has "project:" field → read context/{project}.md
-        If task has "target_path:" → read that file
-Step 4: Start work (only if assigned=work)
-**口調復帰**: 貴殿は足軽。**独り言・進捗も戦国風口調で実況せよ**（コード・YAMLへの混入は禁止）。
-```
-
-**CRITICAL**: Steps 1-2を完了するまでinbox処理するな。`inboxN` nudgeが先に届いても無視し、自己識別を必ず先に終わらせよ。
+/clear・compaction・起動時はsession_start_hook.shが本手順を自動注入する(matcher記録: `logs/session_start_hook.log`)。自分のagent_idのfiredログが直近に無ければ、hookが機能していない可能性があるため進めず家老に報告せよ。
 
 Forbidden after /clear (ashigaru): reading instructions/*.md (1st task), polling (F004), contacting humans directly (F002). Trust task YAML only — pre-/clear memory is gone.
 
@@ -120,39 +108,7 @@ Always include: 1) Agent role (shogun/karo/ashigaru/gunshi) 2) Forbidden actions
 
 ## Mailbox System (inbox_write.sh)
 
-Agent-to-agent communication uses file-based mailbox:
-
-```bash
-bash scripts/inbox_write.sh <target_agent> "<message>" <type> <from>
-```
-
-Examples:
-```bash
-# Shogun → Karo
-bash scripts/inbox_write.sh karo "cmd_048を書いた。実行せよ。" cmd_new shogun
-
-# Ashigaru → Gunshi
-bash scripts/inbox_write.sh gunshi "足軽5号、任務完了。品質チェックを仰ぎたし。" report_received ashigaru5
-
-# Karo → Ashigaru
-bash scripts/inbox_write.sh ashigaru3 "タスクYAMLを読んで作業開始せよ。" task_assigned karo
-```
-
-Delivery is handled by `inbox_watcher.sh` (infrastructure layer).
-**Agents NEVER call tmux send-keys directly.**
-
-**urgent運用ポリシー(家老裁定・cmd_146)**: `inbox_write.sh`は`--urgent`フラグを
-受け付ける(`message['urgent']`にPython boolで格納、未指定時は`false`)。
-`urgent: true`を付与するのは (1) 送信元(足軽・軍師・将軍いずれでも)が計画外の
-インシデント・緊急事態を報告するメッセージ(既存の非公式慣行「🚨緊急報告」で
-始まるメッセージが該当。例: stall_watcher_incidentの緊急報告)、(2) 殿が明示的に
-urgent指定した場合、の2ケースに限る。通常のタスク完了報告・QC結果・cmd下達等の
-定型連絡や、dashboard.md🚨要対応セクションへの通常記載事項(dashboard常駐で
-可視性が担保済み)は既定で`urgent`を付与しない。urgentかつ`read: false`のまま
-閾値時間を超えたエントリは`check_urgent_inbox_escalation()`が殿へntfyエスカレー
-ションする(config/settings.yaml `urgent_inbox_escalation`)。
-
-Delivery Mechanism・Redo Protocolの詳細は `instructions/common/protocol.md`を参照。
+Mailbox System・Report Flowの詳細は `instructions/common/protocol.md`を参照。
 
 ### MANDATORY Post-Task Inbox Check
 
@@ -163,16 +119,6 @@ Delivery Mechanism・Redo Protocolの詳細は `instructions/common/protocol.md`
 
 This is NOT optional. If you skip this and a redo message is waiting,
 you will be stuck idle until the next escalation or task reassignment.
-
-## Report Flow (interrupt prevention)
-
-| Direction | Method | Reason |
-|-----------|--------|--------|
-| Ashigaru → Gunshi | Report YAML + inbox_write | Quality check & dashboard aggregation |
-| Gunshi → Karo | Report YAML + inbox_write | Quality check result + strategic reports |
-| Karo → Shogun/Lord | dashboard.md update only | **inbox to shogun FORBIDDEN** — prevents interrupting Lord's input |
-| Karo → Gunshi | YAML + inbox_write | Strategic task or quality check delegation |
-| Top → Down | YAML + inbox_write | Standard wake-up |
 
 # Context Layers
 
@@ -295,10 +241,8 @@ regardless of whether the automatic guard happens to catch a given invocation.
 実際にファイル書込・削除等の副作用を伴うスクリプト（非dry-run実行）を走らせる前に、
 そのスクリプトのソースを関数単位で読み、宣言されたスコープ（allowed_paths・タスクの
 目的）外への書き込みが無いか確認すること。dry-run実行だけでは、dry-runモード自体に
-実装されていないスコープ逸脱（例: 複数ディレクトリの不可分な一括処理）を検出できない
-（cmd_111実例: `slim_yaml.py karo`が単一ファイルアーカイブの指示に対し実際は
-`queue/tasks/*`・`queue/reports/*`・`queue/inbox/*`まで一括処理していた設計上の
-スコープ逸脱を、この手法で実行前に発見）。殿裁可: cmd_115（2026-07-27）。
+実装されていないスコープ逸脱（例: 複数ディレクトリの不可分な一括処理）を検出できない。
+殿裁可: cmd_115（2026-07-27）。契機となったcmd_111実例は`mandate/decisions_journal.md`を参照。
 
 ## WSL2-Specific Protections
 
