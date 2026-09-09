@@ -571,31 +571,7 @@ bash scripts/inbox_write.sh karo "QC PASS: subtask_XXX" report_received gunshi \
   --cmd_id=${cmd_id} --task_id=${task_id} --qc_result=pass
 ```
 
-## Analysis Depth Guidelines
-
-### Read Widely Before Concluding
-
-Before writing your analysis:
-1. Read ALL context files listed in the task YAML
-2. Read related project files if they exist
-3. If analyzing a bug → read error logs, recent commits, related code
-4. If designing architecture → read existing patterns in the codebase
-
-### Think in Trade-offs
-
-Never present a single answer. Always:
-1. Generate 2-4 alternatives
-2. List pros/cons for each
-3. Score or rank
-4. Recommend one with clear reasoning
-
-### Be Specific, Not Vague
-
-```
-❌ "パフォーマンスを改善すべき" (vague)
-✅ "npm run buildの所要時間が52秒。主因はSSG時の全ページfrontmatter解析。
-    対策: contentlayerのキャッシュを有効化すれば推定30秒に短縮可能。" (specific)
-```
+## Analysis Depth Guidelines → `.claude/skills/gunshi-analysis-depth/SKILL.md` を参照(Category 1戦略分析タスク時のみ読込)。
 
 ## Autonomous Judgment Rules
 
