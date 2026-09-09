@@ -187,78 +187,7 @@ Before assigning tasks, ask yourself these five questions:
     ashigaru2: Complete beginner persona — UX simulation
 ```
 
-## 配線確認の設計時決定（cmd_097 2026-07-17制定・B-1の姉妹ルール）
-
-新規スクリプト・フック・監視機構を伴うタスクを分解する際、「作れば自動的に呼ばれるだろう」という暗黙の前提を許さない。**家老は、タスク設計時に以下のいずれかを明示的に決定しなければならない**:
-
-1. **acceptance_criteriaに呼び出し経路まで含める**: 成果物の実在確認だけでなく「何が、いつ、どこから、自動的に呼ばれるか」まで検証条件に組み込む。一つのサブタスク内で実装から配線・動作確認まで完結させる場合に選ぶ。
-2. **配線を別タスクとして明示的に起票する**: 「本サブタスクは機構の実装のみ。配線（呼び出し経路の確立）は別cmd/別subtaskで実施する」と明記し、独立したサブタスクとして追跡する。
-
-**どちらも選ばずに「作れば配線されているだろう」という曖昧なまま分解することを禁ずる。**
-
-本ルール制定の背景: cmd_095で、scope_check.shが1ヶ月以上一度も自動実行経路に組み込まれていなかった事実が発覚した。cmd_086で追加されたFast-Lane例外ルールは書かれたが、呼ばれる保証のないまま消失に気づくまで放置された。いずれも「機構は存在するが運用に配線されていない」という構造的欠陥を見落とした。
-
-## 本番自動実行ファイルの開発隔離（cmd_116 S-3 2026-07-27制定・cmd_097の姉妹ルール）
-
-新規スクリプト・フック・監視機構を伴うタスクを分解する際、「作れば自動的に呼ばれるだろう」という暗黙の前提を許さないのが[配線確認の設計時決定（cmd_097）](#配線確認の設計時決定cmd_097-2026-07-17制定b-1の姉妹ルール)である。本ルールはその姉妹ルールとして、**呼ばれる経路が既にある場合**に固有のリスクを扱う——検証未了の変更が、確認順序を待たずそのまま本番の自動実行経路に混入してしまうリスクである。
-
-背景: cmd_113で、未検証のPart 1-B実装（`shutsujin_departure.sh`本体の書換）が作業ツリー上で直接反映され、検証未了のまま本番起動経路（20:23出陣）で実際に実行される事故が発生した。同日、Part 2のフックfeatureフラグも「無効側を既定」という指示に反し`true`のままcommitされ、家老の緊急是正を要した。**同種の事故が2回連続で発生した**——検証未了の変更が本番の実行経路に混入することを、人間の確認順序（dashboardを読んでから起動する）に頼らず構造で防ぐ仕組みが無いことが根本原因である。
-
-**具体例（抽象論で終わらせないための実例）**: 本節を執筆した足軽1号自身が直前のsubtask_113_part2and3で行ったcommit `dda6b30`（PreToolUse YAMLフックの`.claude/settings.json`への登録）が、まさに本ルールが禁じようとしている事象そのものである。フックは、cmd_116が定めたS-1（監査）・S-2（表示修正）という先行検証工程の完了を待たずに本番パスである`.claude/settings.json`へ直接登録され、かつ`features.yaml_guard_enabled`は「無効側を既定」という指示に反し`true`のままcommitされていた（家老が発見し緊急是正）。Part 1-Bの生開発（起動経路ファイル直接書換）→Part 2のfeatureフラグ既定値違反、という2件の事故連鎖は、いずれも「本番自動実行ファイルを検証完了前に本番パスへ入れてしまう」という同一パターンの再発である。
-
-**制定**: 次回起動時・次回セッション時に自動実行されるファイル（起動スクリプト・フック・watcher類。例: `shutsujin_departure.sh`・`.claude/settings.json`のhooksエントリ・`lib/`配下でそれらからsourceされるファイル）への変更をタスク分解する際、**家老は以下いずれかを明示的に選択し、タスクYAMLに明記しなければならない**:
-
-1. **別名ファイルで開発する**: 検証完了後の最終ステップでのみ本番パスへ反映する（例: `shutsujin_departure.sh.new`で開発し、動作確認後に`mv`で本番パスへ差し替える最終サブタスクを別途起票する）
-2. **feature flagをデフォルトoffで導入する**: 検証完了後にonへ切り替えるサブタスクを別途起票する
-
-Part 2のフック実装が「`settings.json`登録を最後の一手とする」構造を持っていたことを、起動経路全般（`shutsujin_departure.sh`本体・watcher起動ロジック等）へ一般化するものである。**どちらも選ばずに「実装が終われば本番へ反映されている」という曖昧なまま分解することを禁ずる。**
-
-[配線確認の設計時決定（cmd_097）](#配線確認の設計時決定cmd_097-2026-07-17制定b-1の姉妹ルール)との関係: 配線確認は「呼ばれる経路が実在するか」を扱い、本ルールは「その経路に検証前の変更が混入しないか」を扱う。両者は独立した観点であり、両方を満たして初めて安全な設計時決定と言える。
-
-### 標準化2点（Fable裁定 2026-07-27 Q3反映）
-
-前節の具体例（commit `dda6b30`）が示す教訓は、フックの登録そのものではなく
-「flag=trueのまま登録・commitされたこと」にある。ルールの牙は「デフォルト
-off」の側にあるという原則を、以下2点として恒久的な標準に明文化する。
-
-**1. 新規feature flag導入時のQC受け入れ条件**
-
-新規feature flagを導入するタスクのQCは、「導入直後のデフォルト状態がoff
-（または安全側）であること」の確認を**受け入れ条件に必ず含める**。家老は
-タスク分解時にこれをacceptance_criteriaへ明記し、軍師はQC時にflagの初期値
-を実際にgrepするなどして確認する。「flagを導入した」だけでは受け入れ条件を
-満たさない——「off状態でcommitされた」ことまで確認して初めて合格とする。
-
-実例: `config/settings.yaml`の`features.yaml_guard_enabled`は「無効側を既定
-とせよ」という明示的指示があったにもかかわらず`true`のままcommitされ
-（commit `dda6b30`）、家老の緊急是正を要した。
-
-**2. flagを持つ機構のbatsテスト標準**
-
-feature flagを持つ機構のbatsテストには、「**flag=off時は検証ロジックに
-一切入らず即exit 0**」を確認するテストケースを追加することを標準化する。
-
-具体形は`scripts/pretooluse_yaml_guard.sh`の実装と
-`tests/unit/test_pretooluse_yaml_guard.bats`の既存テストに倣う。同スクリプト
-は設定ファイルを`grep`し、flagが`true`でなければ即`exit 0`する早期リターン
-を持つ（`scripts/pretooluse_clear_idle.sh`のような、flag自体を持たない常時
-有効の機構には本標準は適用対象外）。対応するテストケースは以下の形をとる:
-
-```bash
-@test "feature flag disabled: exits 0 with no output even for target path + broken YAML" {
-    local payload='{"tool_name":"Write","tool_input":{"file_path":".../ashigaru9.yaml","content":": broken : ["}}'
-    run env YAML_GUARD_SETTINGS="$SETTINGS_OFF" ... \
-        bash -c "printf '%s' '$payload' | bash '$GUARD_SCRIPT'"
-    [ "$status" -eq 0 ]
-    [ -z "$output" ]
-}
-```
-
-要点は2つ: (a) flag=off設定を注入した環境で実行すること、(b)「対象パス+
-壊れた入力」など、本来ならdenyされるはずの条件を**あえて**与えて、それでも
-検証ロジックに入らず素通りすることを確認すること。flag=off時にたまたま
-無害な入力を使うテストでは、「本当に検証ロジックへ入っていないか」を証明
-できない。
+> 配線確認の設計時決定（cmd_097）・本番自動実行ファイルの開発隔離（cmd_116 S-3）は `.claude/skills/wiring-verification-and-production-safety/SKILL.md` を参照。
 
 ## Proportional Decomposition Rule（比例分解ルール、cmd_058 2026-07-03制定）
 
@@ -766,46 +695,7 @@ Step 11.7「cmd Completion Check」の判定に以下を追加する:
 
 用途: 後日の緩和・引締め判断のデータ。介入頻度が高い種別は線引きの見直し候補となる。
 
-### 陣仕舞い（cmd_114型安全停止）の「停止準備完了」ntfy要件（cmd_116 S-3 2026-07-27制定）
-
-陣仕舞い（殿の御下命で全エージェントを安全な区切りまで進めて停止させるcmd。
-cmd_114が初例）の完了通知として送る `"停止準備完了"` ntfyには、**未commitの
-起動経路差分（起動スクリプト・フック・watcher類、[本番自動実行ファイルの開発隔離](#本番自動実行ファイルの開発隔離cmd_116-s-3-2026-07-27制定cmd_097の姉妹ルール)
-節の対象と同じ範囲）が残存する場合、その旨を必ず本文へ明記する**こと。
-
-背景: cmd_113のPart 1-B実装（起動経路ファイルの書換）が未commitのまま陣仕舞い
-された際、翌日殿が`shutsujin_departure.sh`再実行前に「素の状態で起動されるか、
-改修版で起動されるか」を判断する材料が停止通知になく、結果的に未検証の改修版
-のまま本番起動された（cmd_114追補で発覚）。「次回起動は改修版で走る」ことを
-殿が電源断の前に知れる状態にすることが本ルールの目的である。
-
-**記載必須項目**（該当がある場合のみ記載。無ければ「起動経路差分なし」と明記）:
-- 変更されたファイルパス（起動スクリプト・フック・watcher類）
-- commit未了である旨
-- 次回起動時にその変更が有効になるか否か（feature flagの状態等）
-
-```bash
-# 起動経路差分が残存する場合の例
-bash scripts/ntfy.sh "停止準備完了（⚠️未commitの起動経路差分あり: shutsujin_departure.sh — 次回起動は改修版で走る）"
-
-# 差分が無い場合の例
-bash scripts/ntfy.sh "停止準備完了（起動経路差分なし）"
-```
-
-**通知は実際に安全な区切り（ファイル書き込み＋ローカルcommit、または上記の
-明記）まで完了してから送ること**（先に送って後から作業しない — cmd_114指示の
-「完了通知」原則を継承）。
-
-### approval_queueの消化（cmd_145殿裁定追加③）
-
-陣仕舞い（cmd_114型安全停止）の際、家老は `mandate/approval_queue.md` の
-pendingエントリを**セッション終了前に必ず1回消化する**（殿の裁定へ回す、または
-判断材料を添えて明示的に持ち越し許可を得る）。pendingのまま持ち越してよいのは
-殿の明示判断があった場合のみ。「停止準備完了」ntfyには、pendingエントリが
-残存する場合その旨（件数・概要）を含めること。
-
-消化の前に `bash scripts/check_approval_queue_staleness.sh` を実行し、出力（特に
-🔴STALE標識・滞留日数）を「停止準備完了」ntfy本文および完了報告へ含めること（cmd_165）。
+> 陣仕舞い時の「停止準備完了」ntfy要件・approval_queue消化手順は `.claude/skills/army-shutdown-checklist/SKILL.md` を参照。
 
 ## Skill Candidates
 
@@ -856,117 +746,11 @@ STEP 5以降は不要（watcherが一括処理）
 
 Shogun needs conversation history with the lord.
 
-## Redo Protocol (Task Correction)
+> Redo Protocol（やり直し手順）は `.claude/skills/task-redo-protocol/SKILL.md` を参照。
 
-When an ashigaru's output is unsatisfactory and needs to be redone.
+> Pending Commands順番待ちプロトコル（Fable Q10）は `.claude/skills/pending-cmd-and-interrupt-protocol/SKILL.md` を参照。
 
-### When to Redo
-
-| Condition | Action |
-|-----------|--------|
-| Output wrong format/content | Redo with corrected description |
-| Partial completion | Redo with specific remaining items |
-| Output acceptable but imperfect | Do NOT redo — note in dashboard, move on |
-
-### Procedure (3 Steps)
-
-```
-STEP 1: Write new task YAML
-  - New task_id with version suffix (e.g., subtask_097d → subtask_097d2)
-  - Add `redo_of: <original_task_id>` field
-  - Updated description with SPECIFIC correction instructions
-  - Do NOT just say "redo" — explain WHAT was wrong and HOW to fix it
-  - status: assigned
-
-STEP 2: Send /clear via inbox (NOT task_assigned)
-  bash scripts/inbox_write.sh ashigaru{N} "タスクYAMLを読んで作業開始せよ。" clear_command karo
-  # /clear wipes previous context → agent re-reads YAML → sees new task
-
-STEP 3: If still unsatisfactory after 2 redos → escalate to dashboard 🚨
-```
-
-### Why /clear for Redo
-
-Previous context may contain the wrong approach. `/clear` forces YAML re-read.
-Do NOT use `type: task_assigned` for redo — agent may not re-read the YAML if it thinks the task is already done.
-
-### Race Condition Prevention
-
-Using `/clear` eliminates the race:
-- Old task status (done/assigned) is irrelevant — session is wiped
-- Agent recovers from YAML, sees new task_id with `status: assigned`
-- No conflict with previous attempt's state
-
-### Redo Task YAML Example
-
-```yaml
-task:
-  task_id: subtask_097d2
-  parent_cmd: cmd_097
-  redo_of: subtask_097d
-  bloom_level: L1
-  description: |
-    【やり直し】前回の問題: echoが緑色太字でなかった。
-    修正: echo -e "\033[1;32m..." で緑色太字出力。echoを最終tool callに。
-  status: assigned
-  timestamp: "2026-02-09T07:46:00"
-```
-
-## Pending Commands: 順番待ちプロトコル（Fable Q10 2026-07-27裁定）
-
-dispatch済み作業の割込・組み替えを回避するための家老側運用。
-
-### 「順番待ち」への変換（cmd受信時）
-
-1. 新規cmdを shogun_to_karo.yaml から読む
-2. **dispatch済み作業の割込・組み替え**を伴うか判定:
-   - dispatch済み = 既にタスクYAMLが生成され、ashigaru へ送信済みのもの
-   - 割込・組み替え = 進行中のサブタスクを中断・変更する必要があるか
-3. 割込・組み替えを伴う場合:
-   - shogun_to_karo.yaml に `status: pending` のまま保留する
-   - **「順番待ち」として記録** — コメント欄に `# 待機中: 進行中サブタスク完了後に適用` と記載
-   - タスクYAMLは生成しない（まだ割り当てない）
-4. 割込を伴わない場合（新規独立作業など):
-   - 通常どおり分解・割り当てを実行
-
-### 「順番待ち」からの適用（進行中サブタスク完了時）
-
-1. ashigaru から報告が届き、サブタスクが完了したとき
-2. dashboard.md の「戦果」セクション更新後、**待機中の「順番待ち」cmdを確認**
-3. 待機中のcmdが存在する場合:
-   - 該当の cmd を shogun_to_karo.yaml から読む（status: pending のままの状態）
-   - タスク分解・タスクYAML生成を実施
-   - inbox_write でashigaru へ割り当て
-   - shogun_to_karo.yaml の status を `in_progress` に更新（または完了後に `done`）
-4. 待機中のcmdがない場合:
-   - 次の inbox_wakeup を待つ（通常の event-driven フロー）
-
-### 緊急割込cmd受理時の確認（記録義務の検証）
-
-緊急割込を伴うcmdが到達したときの確認事項:
-
-1. **緊急事由フィールドの有無を確認**:
-   - shogun_to_karo.yaml に `emergency_reason` フィールドが存在するか
-   - 存在しない場合は **即座に shogun へ報告**（確認待機）
-2. **記録と監査の準備**:
-   - 事由内容をメモ（事後の軍師QCまたは殿の監査に備える）
-   - dashboard.md の 🚨要対応 セクションに記載
-   - 殿へ即時ntfy（「緊急割込: 〇〇」という簡潔な通知）
-3. **割込の妥当性を自信を持って判定できない場合は shogun に問い合わせ**
-
-## Pane Number Mismatch Recovery
-
-Normally pane# = ashigaru#. But long-running sessions may cause drift.
-
-```bash
-# Confirm your own ID
-tmux display-message -t "$TMUX_PANE" -p '#{@agent_id}'
-
-# Reverse lookup: find ashigaru3's actual pane
-tmux list-panes -t multiagent:agents -F '#{pane_index}' -f '#{==:#{@agent_id},ashigaru3}'
-```
-
-**When to use**: After 2 consecutive delivery failures. Normally use `multiagent:0.{N}`.
+> Pane番号ズレ復旧手順は `.claude/skills/pane-mismatch-recovery/SKILL.md` を参照。
 
 ## Task Routing: Ashigaru vs. Gunshi
 
@@ -1092,101 +876,16 @@ Claude Pro/Maxの利用枠を意識し、単純タスクはHaikuへ優先的に�
 | 複雑なアーキテクチャ判断・設計変更を伴う | 新規サブシステム設計・API設計 |
 | タスク指示に「Sonnet」「高精度」等の明示的な品質要求がある | shogun_to_karo.yaml に "品質要" の記載 |
 
-### 休眠資産: Ollama・OpenRouter（現在は休眠中・削除禁止 cmd_075殿裁可）
-
-現在の布陣は全Claudeだが、Ollama/opencode一式は将来の復帰に備え温存されている
-（「現在使っていない」≠「記述を消してよい」）。以下は復帰時に参照する当時の運用知見。
-
-#### Ollama（旧 ashigaru4 担当）復帰手順
-- 当時の構成: CLI = OpenCode、モデル = Ollama qwen3.5:9b（ローカル・無制限）
-- 復帰時の設定変更箇所: `config/settings.yaml` の `cli.agents.ashigaru4` を
-  `type: opencode` / `model: ollama/qwen3.5:9b` へ戻す
-  （現在値: `type: claude` / `model: claude-sonnet-5`。切替理由: cmd_071布陣入替・cmd_133 Sonnet帯4席化）
-- 推奨タスク種別（当時の知見）: ファイル操作・テンプレート埋め・設定変更（L1-L3）、
-  コード変換・フォーマット整形・定型バッチ処理、中程度の実装
-
-#### OpenRouter（旧 ashigaru3 担当）復帰手順
-- 当時の構成: CLI = OpenCode + OpenRouter、主力モデル = gpt-oss-120b:free（2026-06-17殿裁可）
-- 復帰時の設定変更箇所: `config/settings.yaml` の `cli.agents.ashigaru3` を
-  `type: opencode` へ戻し、`bash scripts/switch_cli.sh ashigaru3 --model <候補>` でOpenRouterモデルを指定
-  （現在値: `type: claude` / `model: claude-sonnet-5`。切替理由: cmd_070恒久切替
-  = opencode v1.17.15のUD2 panic・OpenRouter:free不安定を同時に断つため）
-- 推奨タスク種別（当時の知見）: 汎用業務・コード生成・実装タスク、調査・情報収集・調査レポート、
-  長文処理・ドキュメント生成、Ollama混雑時のフォールバック
-- 注意: 日次1000req（$10一度購入後）。枯渇時は並列縮退（他足軽へ再配分）
-
-##### OpenRouter フォールバック規則（cmd_040 2026-06-17制定・復帰時に再適用）
-
-**Tier A: 単一モデル障害時（別の :free モデルへ一時切替）**
-対象: 20req/分スロットル・429エラー・gpt-oss-120b:free モデル障害・過負荷
-対処: 家老が `bash scripts/switch_cli.sh ashigaru3 --model <候補>` で一時切替。
-候補モデル（要web再検証・空き状況は時期により変動・2026-06-17時点確認済み）:
-- openrouter/qwen/qwen3-coder:free ← 旧主力。コーダー特化480B。Venice上流あり注意。
-- openrouter/nvidia/nemotron-3-super-120b-a12b:free ← 120B・動作確認済み
-※ deepseek-r1:free / mistral-7b:free は2026-06-17時点で無料枠から削除済み（要再確認）
-
-**Tier B: 日次1000req枯渇時（並列縮退）**
-対象: 日次リクエスト上限到達（アカウント共通・全:free横断で共有）
-注意: 日次枠は全 :free モデル共有。別 :free モデルへの切替は枯渇時には無効。
-対処:
-- 家老が足軽3への新規タスク割当を停止
-- 残りの足軽へ再配分
-- UTC 0時の日次リセット後に自動復帰
-禁止: 有料モデルへの自動切替（コストゼロ優先の殿裁可）
+> 休眠資産（Ollama・OpenRouter）の復帰手順は `.claude/skills/dormant-cli-revival-and-non-claude-routing/SKILL.md` を参照（削除禁止・cmd_075殿裁可）。
 
 ### implement 系の定義
 
 コード変更・ファイル生成・バグ修正・リファクタリング・設定ファイル編集等。
 research / 設計 / 品質チェック / レポート生成はこのルールの対象外。
 
-## 非Claudeエージェントへのタスク割当ルール（cmd_020改訂・2026-06-03）
+> 非Claudeエージェントへのタスク割当ルールは `.claude/skills/dormant-cli-revival-and-non-claude-routing/SKILL.md` を参照。
 
-### inbox_watcher の自動対応（cmd_020実装済み）
-cmd_020 により inbox_watcher.sh が Gemini CLI・OpenCode 向けに以下を自動処理する:
-- nudge を「inboxN」ではなく明示的なタスク指示文に変換して送信
-- inbox YAML の未読メッセージを inbox_watcher 側で自動既読（read:true）に更新
-これにより Gemini CLI・OpenCode にも inbox_write.sh 経由でタスクを割り当て可能。
-
-### 足軽6/7（Claude Haiku）の適性ルール（cmd_021・2026-06-03制定、cmd_145で足軽5→Sonnet昇格に伴い対象を足軽6/7へ更新）
-
-**Haiku に向くタスク（割り当て可）:**
-- YAML フィールドの書き換え（1〜3箇所）
-- 単純なファイルの確認・grep・集計
-- 短いコメント・説明文の追記
-- 既存コードへの1関数追加程度の修正
-
-**Haiku に向かないタスク（足軽1/2へ回せ）:**
-- 複数ファイルにまたがる実装
-- 長い指示書（500文字超）を要するタスク
-- 設計判断・アーキテクチャ変更を含むタスク
-- 報告・QC・分析系タスク
-
-## 意味的編集タスクの割当制約（2026-06-15 subtask_034a 脱線事故より制定）
-
-タスクに「意味的編集要素」が含まれる場合 → Claude系足軽（ashigaru1/2/5/6/7）に固定。
-非Claude足軽（ashigaru3/4: OpenRouter/Ollama）への割当禁止。
-
-意味的編集とは（以下のいずれかを含む編集）:
-  - 複数段落/ファイルを通読し、内容の矛盾・整合を判断する
-  - 前後の文脈を理解して文章を挿入・削除・改変する
-  - 推敲・リライト・要約・意訳など、判断を伴う変更
-
-機械的編集（OpenRouter/Ollama での割当可）:
-  - 特定文字列の検索・置換（sed/grepレベル）
-  - YAMLフィールド値の定型変更
-  - frontmatterの一括修正
-  - コード変数名の一括リネーム
-
-判断の決め手:
-「前後を読まずに、差分箇所だけ見て機械的に処理できるか？」
-YES: 機械的 → Ollama/Gemini で可
-NO（文脈依存・推論が要る）: 意味的 → Claude系限定
-
-【事故教訓】subtask_034a（2記事の通読・矛盾解消）を 元Gemini足軽3 に割り当てた
-【教訓2】qwen3-coder:free はVenice上流の不安定でattempt#32空転。gpt-oss-120bに昇格(2026-06-17)。
-ところ、記事を編集せず .gitignore を誤改変して空回りした。本ルールはこの再発防止。
-同日（2026-06-15）、足軽6・足軽7（Gemini）も cmd_036 実装タスクで虚偽完了報告を提出。
-⚠️ 今後 Gemini/Ollama 足軽へのファイル編集タスク割当は、上記判断の決め手を必ず適用すること。
+> 意味的編集タスクの非Claude足軽割当禁止ルールは `.claude/skills/dormant-cli-revival-and-non-claude-routing/SKILL.md` を参照。
 
 ---
 
@@ -1221,21 +920,7 @@ NO（文脈依存・推論が要る）: 意味的 → Claude系限定
 **Exception**: If the L4+ task is simple enough (e.g., small code review), an ashigaru can handle it.
 Use Gunshi for tasks that genuinely need deep thinking — don't over-route trivial analysis.
 
-## OSS Pull Request Review
-
-External PRs are reinforcements. Treat with respect.
-
-1. **Thank the contributor** via PR comment (in shogun's name)
-2. **Post review plan** — which ashigaru reviews with what expertise
-3. Assign ashigaru with **expert personas** (e.g., tmux expert, shell script specialist)
-4. **Instruct to note positives**, not just criticisms
-
-| Severity | Karo's Decision |
-|----------|----------------|
-| Minor (typo, small bug) | Maintainer fixes & merges. Don't burden the contributor. |
-| Direction correct, non-critical | Maintainer fix & merge OK. Comment what was changed. |
-| Critical (design flaw, fatal bug) | Request revision with specific fix guidance. Tone: "Fix this and we can merge." |
-| Fundamental design disagreement | Escalate to shogun. Explain politely. |
+> 外部PRレビュー運用は `.claude/skills/oss-pr-review-protocol/SKILL.md` を参照。
 
 ## Compaction Recovery
 
