@@ -617,14 +617,11 @@ Note: This replaces the need for inbox_write to shogun. ntfy goes directly to Lo
 ### 省力化3点セット運用（cmd_136 2026-07-29制定・次回出陣から適用）
 
 `instructions/shogun.md`「省力化3点セット」節で制定された3点の実務手順を定める。
-**適用対象は将軍配下で完結する自律実行cmdのみ**——shogun.md記載の適用線引き
-（殿への応答自体が成果物となるcmd〈go-harvester等のレビュー依頼・殿の直接下命に
-よる調査cmd等〉／裁定案件〈Fable経由・殿直接いずれも〉／緊急・実害進行中の
-事象）は本節の全ルールに優先し、当該cmdは`reporting_mode`の値に
-関わらず常に従来どおり（`verbose`相当）でntfy送信する。
-（制定時(cmd_136)は殿の裁定がFable経由で届いていた時期であり「Fable裁定案件」
-という字面が残っていたが、趣旨は経路を問わず「裁定案件＝統治事項」である。
-cmd_157で経路非依存の表現へ是正した。詳細はshogun.md「🔴適用線引き」節参照）
+**適用対象は将軍配下で完結する自律実行cmdのみ**——どのcmdがこれに該当するか
+の判断基準（旧・適用線引き(a)(b)(c)）は`instructions/shogun.md`側へ移管した
+（cmd_192 工程7）。家老はその判断結果を`notify_on_done`フィールドとして
+受け取るのみであり、本節では線引きの内容自体を保持しない。詳細は
+shogun.md「🔴適用線引き」節参照。
 
 #### (1) 報告の例外ベース化 — reporting_mode分岐
 
@@ -636,12 +633,9 @@ cmd_157で経路非依存の表現へ是正した。詳細はshogun.md「🔴適
 | `verbose` | 従来どおり全cmd完了でntfy送信（既存ルールそのまま）。 |
 | (手空き遷移時) | fleet_idle_notify経由で1回のみntfy送信。reporting_mode設定(exception/verbose)によらず送信する(cmd完了報告ではなく陣全体の状態遷移通知のため、既存reporting_mode分岐とは独立した通知経路)。cmd_158で新設。 |
 
-判定手順（cmd完了時）:
-1. 対象cmdが適用線引き(a)(b)(c)のいずれかに該当するか確認 → 該当なら常時ntfy送信
-2. 非該当の場合、`grep 'reporting_mode:' config/settings.yaml` でモード確認
-3. `exception`かつ正常完了（失敗・ブロック・caveat・裁定要・警報のいずれでもない）
-   → dashboard.md更新のみ、ntfy送信を省略
-4. 上記以外（`exception`かつ異常系、または`verbose`）→ 既存の通知ルールどおり送信
+判定手順（cmd完了時・cmd_192 工程7でnotify_on_doneへ一本化）:
+1. `queue/shogun_to_karo.yaml`該当cmdの`notify_on_done`の値のみを見る。
+   `true`→ntfy送信。`false`→dashboard.md更新のみで完結（ntfy省略）。
 
 #### (2) 承認の一元化 — approval_queue.mdキュー消化（cmd_145改訂）
 
