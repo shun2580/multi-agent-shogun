@@ -249,7 +249,16 @@ def check_skip(entry):
     if test_node is None:
         return True, None  # test_results/tests自体が無い → 評価対象外
     for s in collect_strings(test_node):
-        for m in re.finditer(r"(?i)skip", s):
+        # 🔴cmd_192工程8追加是正: 旧`(?i)skip`は「skipped」「skipping」等の
+        # 英単語の部分文字列にも大小無視で誤反応した(実例: report文中の
+        # bats転記『ok 4 shogun is always skipped even in enforce mode』が
+        # 誤ってWOULD-BLOCKした)。実データ(queue/reports/*_report.yaml)での
+        # 真のSKIP表記は「SKIP」「skip:」「SKIP0」「SKIP1」のように単語直後が
+        # 英字で継続しない形のみで、「skipped」「skipping」「skips」等は
+        # 単語直後が英字続きになる。`\bskip(?![a-zA-Z])`で両者を切り分ける:
+        # 単語境界で開始し、直後が英字でなければ真のSKIP表記として検出する
+        # (数字・記号・空白・CJK文字等はすべて許容し、本来の検出漏れは防ぐ)。
+        for m in re.finditer(r"(?i)\bskip(?![a-zA-Z])", s):
             tail = s[m.end():m.end() + 8]
             # 🔴「0件」のように直後がCJK文字だと\bが単語境界と判定しない
             # (Python re の既定Unicodeモードでは表意文字も\w扱いのため)。

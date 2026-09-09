@@ -273,6 +273,83 @@ EOF
     [ "$output" -eq 1 ]
 }
 
+@test "(d) cmd_192 工程8追加是正: English words 'skipped'/'skipping' in prose are NOT mistaken for a SKIP indication" {
+    write_task agD4 subtask_d4 assigned
+    cat > "$REPORTS_DIR/agD4_report.yaml" <<'EOF'
+report:
+  task_id: subtask_d4
+  status: done
+  test_results:
+    bats_evidence: |
+      1..4
+      ok 1 case1
+      ok 2 case2
+      ok 3 case3
+      ok 4 shogun is always skipped even in enforce mode
+EOF
+    run_hook "$SETTINGS_OBSERVE" agD4
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    run grep -c "WOULD-BLOCK" "$LOG_FILE"
+    [ "$output" -eq 0 ]
+    run grep -c "ALLOW-STOP mode=observe agent=agD4" "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "(d) cmd_192 工程8追加是正: a genuine bare-word SKIP mark is still detected as before (non-regression)" {
+    write_task agD5 subtask_d5 assigned
+    cat > "$REPORTS_DIR/agD5_report.yaml" <<'EOF'
+report:
+  task_id: subtask_d5
+  status: done
+  test_results:
+    bats_evidence: |
+      1..3
+      ok 1 case1
+      ok 2 Case 2: SKIP (missing dep)
+      ok 3 case3
+EOF
+    run_hook "$SETTINGS_OBSERVE" agD5
+    [ "$status" -eq 0 ]
+    run grep -c "reason=(d)" "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "(d) cmd_192 工程8追加是正: no-space nonzero notation SKIP1 is still detected as before (non-regression)" {
+    write_task agD6 subtask_d6 assigned
+    cat > "$REPORTS_DIR/agD6_report.yaml" <<'EOF'
+report:
+  task_id: subtask_d6
+  status: done
+  test_results:
+    bats_evidence: |
+      advisory31件=適合17/逸脱13/SKIP1
+EOF
+    run_hook "$SETTINGS_OBSERVE" agD6
+    [ "$status" -eq 0 ]
+    run grep -c "reason=(d)" "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "(d) cmd_192 工程8追加是正: no-space zero notation SKIP0 still passes (non-regression)" {
+    write_task agD7 subtask_d7 assigned
+    cat > "$REPORTS_DIR/agD7_report.yaml" <<'EOF'
+report:
+  task_id: subtask_d7
+  status: done
+  test_results:
+    bats_evidence: |
+      25/25 ok・SKIP0を独立に再現
+EOF
+    run_hook "$SETTINGS_OBSERVE" agD7
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    run grep -c "WOULD-BLOCK" "$LOG_FILE"
+    [ "$output" -eq 0 ]
+    run grep -c "ALLOW-STOP mode=observe agent=agD7" "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
 @test "(d) no test_results/tests key at all is vacuously satisfied (doc-only task)" {
     write_task agD3 subtask_d3 assigned
     cat > "$REPORTS_DIR/agD3_report.yaml" <<'EOF'
