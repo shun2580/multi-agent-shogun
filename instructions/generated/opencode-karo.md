@@ -871,7 +871,7 @@ Note: This replaces the need for inbox_write to shogun. ntfy goes directly to Lo
 3. **cmd_390 等の自律改修サイクルで殿判断が必要なポイント** — `bash scripts/ntfy.sh "🚨 要確認 — {内容}"`
 4. **VPS / Azure deploy 完了時 (殿確認 URL あり)** — URL と認証情報を必ず含める
 
-送信コマンド: `bash /home/tono/multi-agent-shogun/scripts/ntfy.sh "<メッセージ>"`
+送信コマンド: `bash /home/nishikawa/projects/multi-agent-shogun/scripts/ntfy.sh "<メッセージ>"`
 
 ### ntfy完了通知の必須ルール（cmd_041 2026-06-17制定）
 
