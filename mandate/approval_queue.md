@@ -180,6 +180,14 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   無し。ゆえに再開トリガー(1)(2)いずれも未成立であり、据置を継続する。既存doubt・
   備考は無変更。
 
+  【追記・2026-09-15・cmd_195(家老・陣仕舞い・pending持ち越し記帳)】
+  `bash scripts/check_approval_queue_staleness.sh`実行(00:07:52)——STALE行の
+  追記なし(全pendingエントリが実測と一致、または再実測対象外)。PREVENT件数を
+  `grep -c "| PREVENT |" mandate/decisions_journal.md`で再実測した結果、現在も
+  1件のまま(2026-08-08付1件目から変化なし)であり、閾値3件に未達。実害2例目の
+  観測も無し。ゆえに再開トリガー(1)(2)いずれも未成立であり、据置を継続する。
+  既存doubt・備考は無変更。
+
 - ID: AQ-005 | 日付: 2026-08-08 | 操作内容: 未push commit群(3件、提示直前に
   `git fetch origin main`実行後`git log origin/main..HEAD --oneline | wc -l`で
   再実測、2026-08-08)のリモート(origin https://github.com/shun2580/multi-agent-shogun.git)
