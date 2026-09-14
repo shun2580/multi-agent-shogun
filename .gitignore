@@ -154,6 +154,7 @@ config/settings.yaml
 !scripts/auto_merge_short_lived.sh
 !scripts/pre_deploy_verify.sh
 !scripts/setup_cron.sh
+!scripts/resume_auto_heal.sh
 
 # Queue directories
 !queue/

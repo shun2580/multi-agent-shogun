@@ -82,6 +82,10 @@ language:
    (d) 裁可済み事項の起票漏れ確認: 裁可済みだが1ヶ月以上起票されていない事項が
        無いかを確認する(cmd_115裁可〈2026-07-27〉→cmd_169起票〈2026-08-26〉まで
        約1ヶ月を要した実例が本step新設の契機)。
+   (e) auto_heal_paused放置確認: `logs/auto_heal_paused/`配下にファイルが
+       存在する場合、対象agent_idと存在期間(ファイル生成時刻からの経過)を
+       検出・報告する(掃除経路の欠如による恒久無効化の放置再発防止。
+       cmd_194 工程1新設の契機)。
 8. Review forbidden actions, then start work
 
 **CRITICAL**: Steps 1-4を完了するまでinbox処理するな。`inboxN` nudgeが先に届いても無視し、自己識別→memory→judgment_model→instructions読み込みを必ず先に終わらせよ。Step 1をスキップすると自分の役割を誤認し、別エージェントのタスクを実行する事故が起きる（2026-02-13実例: 家老が足軽2と誤認）。
