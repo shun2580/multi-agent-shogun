@@ -99,6 +99,21 @@ write_assigned() {
         "$ts" "$cmd_id" "$task_id" "$agent" >> "$TIMING_LOG"
 }
 
+# cmd_194工程2是正: in-flight判定が一次資料(queue/tasks/{agent}.yaml)中心へ
+# 転換されたため、write_assignedだけではarmしない。write_assigned直後に
+# 対応するtask YAML fixtureを書くために使う(last_event_type/last_event_ts
+# 表示用の付帯情報としてはwrite_assignedを引き続き使う)。
+write_task_yaml() {
+    local agent="$1" task_id="$2" cmd_id="${3:-cmd_test}"
+    mkdir -p "$TEST_TMP/tasks"
+    cat > "$TEST_TMP/tasks/${agent}.yaml" <<EOF
+task:
+  task_id: $task_id
+  parent_cmd: $cmd_id
+  status: assigned
+EOF
+}
+
 pane_for() {
     case "$1" in
         karo) echo "multiagent:agents.0" ;;
@@ -141,6 +156,8 @@ run_stall() {
     local snippet="$1"
     run env \
         TIMING_EVENTS_JSONL="$TIMING_LOG" \
+        INFLIGHT_TASKS_DIR="$TEST_TMP/tasks" \
+        INFLIGHT_REPORTS_DIR="$TEST_TMP/reports" \
         STALL_EVENTS_LOG="$STALL_LOG" \
         STALL_SETTINGS="$SETTINGS" \
         STALL_INBOX_DIR="$INBOX_DIR" \
@@ -204,6 +221,7 @@ run_stall() {
 @test "(3) output static for stall_threshold_min fires exactly one nudge_sent" {
     write_settings true 10 10 10 3 60
     write_assigned "2026-07-01T00:00:00+09:00" "task_3" "ashigaru1" "cmd_3"
+    write_task_yaml "ashigaru1" "task_3" "cmd_3"
     write_inbox ashigaru1 0
     write_capture "$(pane_for ashigaru1)" "steady output"
 
@@ -225,6 +243,7 @@ run_stall() {
 @test "(4) output change after a nudge resets the baseline instead of firing again" {
     write_settings true 10 10 10 3 60
     write_assigned "2026-07-01T00:00:00+09:00" "task_4" "ashigaru1" "cmd_4"
+    write_task_yaml "ashigaru1" "task_4" "cmd_4"
     write_inbox ashigaru1 0
     # 末尾行除外ロジック(get_pane_output_hash)は最後の非空行を1行削るため、
     # 実際のpane出力同様に本文行+状態バー行相当の2行以上を用意する。
@@ -270,6 +289,7 @@ run_stall() {
 @test "(6) once nudge_limit_per_task is reached, new stall episodes skip karo and escalate straight to ntfy" {
     write_settings true 10 10 10 1 60
     write_assigned "2026-07-01T00:00:00+09:00" "task_6" "ashigaru1" "cmd_6"
+    write_task_yaml "ashigaru1" "task_6" "cmd_6"
     write_inbox ashigaru1 0
     write_capture "$(pane_for ashigaru1)" "steady output"
     seed_stall_event "2026-06-01T00:00:00+09:00" "nudge_sent" "ashigaru1" "task_6"
@@ -296,6 +316,7 @@ run_stall() {
 @test "(7) a new task_id for the same agent recounts nudges from zero" {
     write_settings true 10 10 10 3 60
     write_assigned "2026-07-01T00:00:00+09:00" "task_7_new" "ashigaru1" "cmd_7"
+    write_task_yaml "ashigaru1" "task_7_new" "cmd_7"
     write_inbox ashigaru1 0
     write_capture "$(pane_for ashigaru1)" "steady output"
     seed_stall_event "2026-06-01T00:00:00+09:00" "nudge_sent" "ashigaru1" "task_7_old"
@@ -312,13 +333,23 @@ run_stall() {
     [ "$output" -eq 2 ]
 }
 
-# --- 8: karo自身のstall特殊経路 ---
-
-@test "(8) karo's own stall skips inbox_write_karo and escalates straight to ntfy after stage1" {
+# --- 8: karo構造的除外(cmd_194工程2是正) ---
+# cmd_194 Q52(c)裁定によりin-flight判定が一次資料(queue/tasks/{agent}.yaml)
+# 中心へ転換された結果、karoはtask YAMLを持たない(queue/tasks/karo.yamlが
+# 構造的に存在しない)ためget_in_flight_tasks_with_agent()の出力に一切
+# 現れなくなり、check_stall_tickのループ自体に入らなくなった。これに伴い
+# 旧来の「karo自身のstallはinbox_write_karoを経由せず直接ntfyへ短絡する」
+# という経路(かつてのkaro_self_stall分岐)は構造的に到達不能になった。
+# 実測(logs/timing_events.jsonl)では agent="karo" かつ event="assigned" の
+# 実例が歴史上ほぼ皆無(e2e_test由来1件・task_id:null2件のみ)であり、
+# 旧設計下でもkaro自身がin-flight化する経路は実質的にほとんど機能して
+# いなかった(構造的除外は仕様どおりであり、regressionではない)。
+@test "(8) karo never appears in the in-flight list — its self-stall escalation branch is now structurally unreachable" {
     write_settings true 10 10 10 3 60
     write_assigned "2026-07-01T00:00:00+09:00" "task_8" "karo" "cmd_8"
     write_inbox karo 0
     write_capture "$(pane_for karo)" "steady output"
+    # queue/tasks/karo.yaml は意図的に作らない(karoはtask YAMLを持たない)
 
     run_stall '
         check_stall_tick
@@ -329,12 +360,8 @@ run_stall() {
     '
     [ "$status" -eq 0 ]
     [ ! -f "$TEST_TMP/inbox_write.log" ]
-    run grep -c '"event": "escalated_to_karo"' "$STALL_LOG"
-    [ "$output" -eq 0 ]
-    run grep -c '"event": "escalated_to_ntfy"' "$STALL_LOG"
-    [ "$output" -eq 1 ]
-    run cat "$TEST_TMP/ntfy.log"
-    [[ "$output" == *"karo_self_stall"* ]]
+    [ ! -f "$TEST_TMP/ntfy.log" ]
+    [ ! -s "$STALL_LOG" ]
 }
 
 # --- 9: shogun除外 ---
@@ -360,6 +387,7 @@ run_stall() {
 @test "(10) hash excludes the trailing status-bar line so elapsed-seconds churn does not mask a real stall" {
     write_settings true 10 10 10 3 60
     write_assigned "2026-07-01T00:00:00+09:00" "task_10" "ashigaru1" "cmd_10"
+    write_task_yaml "ashigaru1" "task_10" "cmd_10"
     write_inbox ashigaru1 0
     write_capture "$(pane_for ashigaru1)" "$(printf 'real unchanged content\nWorking on task (5s * esc to interrupt)')"
 
@@ -381,6 +409,7 @@ run_stall() {
 @test "(11) losing LAST_HASH/LAST_CHANGE_TS (simulated process restart) re-collects a baseline instead of misfiring" {
     write_settings true 10 10 10 3 60
     write_assigned "2026-07-01T00:00:00+09:00" "task_11" "ashigaru1" "cmd_11"
+    write_task_yaml "ashigaru1" "task_11" "cmd_11"
     write_inbox ashigaru1 0
     write_capture "$(pane_for ashigaru1)" "steady output"
 
