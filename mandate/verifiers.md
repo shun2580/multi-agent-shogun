@@ -552,3 +552,14 @@ subtask_192_5、家老が反映)。
 セッション開始点検スイープ(a)条件式の評価対象として、次回セッション開始時から
 評価対象に加わる(出典: `queue/reports/ashigaru3_report.yaml` task_id:
 subtask_192_8、家老が反映)。
+
+## 状態を持つ機構の三層構成則(cmd_194・Q50(b))
+
+状態を持つ機構は、今後 `config/settings.yaml`(現在値)／`dashboard.md`(現在値の
+表示、settings.yamlから転記・手書き禁止)／`mandate/decisions_journal.md`(遷移の
+記録)の三層で作ること。journalの1行にしか書かれない状態を作らない。
+
+出典: cmd_194・Q50(b)(`~/fable_ruling_20260914_q50q52.md`)。契機は
+フィーチャーフリーズ(cmd_138)の解除(2026-08-05・cmd_150【C】)がjournalにのみ
+記帳され、settings.yaml/dashboard.mdへ反映されなかったために生じた約5週間の
+帳簿と運用の乖離(2026-08-05〜2026-09-14)である。
