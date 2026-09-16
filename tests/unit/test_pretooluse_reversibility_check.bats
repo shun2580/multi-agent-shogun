@@ -368,10 +368,10 @@ run_check_with_settings() {
     [ ! -s "$detail_log" ]
 }
 
-@test "cmd_152: existing main log line format for a reversible verdict is unchanged (no new fields appended)" {
+@test "cmd_152: existing main log line format for a reversible verdict is unchanged (cmd_194 工程6'(b): truncated=/original_len= now precede detail=, field order/meaning of mode/session/file/tool/category unchanged)" {
     local payload='{"session_id":"s-format","tool_name":"Bash","tool_input":{"command":"cat file.txt"}}'
     run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
-    run grep -E "^\[.*\] WOULD-ALLOW mode=observe session=s-format file=NA tool=Bash category=read_only_command detail=cat file\.txt\$" "$LOG_FILE"
+    run grep -E "^\[.*\] WOULD-ALLOW mode=observe session=s-format file=NA tool=Bash category=read_only_command truncated=false original_len=[0-9]+ detail=cat file\.txt\$" "$LOG_FILE"
     [ "$status" -eq 0 ]
 }
 
@@ -551,5 +551,84 @@ run_check_with_settings() {
 
 @test "wiring: existing pretooluse_clear_idle.sh entry is still present unchanged" {
     run grep -n "pretooluse_clear_idle.sh" "$PROJECT_ROOT/.claude/settings.json"
+    [ "$status" -eq 0 ]
+}
+
+# --- cmd_194 工程6'(a): lib/quote_masking.py共有適用による残存偽陽性5件の解消 ---
+
+@test "cmd_194 工程6'(a): git push mentioned in inbox_write.sh prose message argument is NOT WOULD-BLOCK category=push" {
+    local payload='{"session_id":"s194-a1","tool_name":"Bash","tool_input":{"command":"bash scripts/inbox_write.sh agent1 \"地の文にgit pushという語句を含むメッセージ\" done agent1"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "session=s194-a1 .*category=push" "$LOG_FILE"
+    [ "$output" -eq 0 ]
+}
+
+@test "cmd_194 工程6'(a): test fixture (echo JSON piped to bash, non-exec sink) is NOT WOULD-BLOCK category=push" {
+    local payload='{"session_id":"s194-a2","tool_name":"Bash","tool_input":{"command":"echo '"'"'{\"tool_input\":{\"command\":\"git push origin main\"}}'"'"' | bash pretooluse_git_push_block.sh"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "session=s194-a2 .*category=push" "$LOG_FILE"
+    [ "$output" -eq 0 ]
+}
+
+@test "cmd_194 工程6'(a): git push inside a grep search-pattern string is NOT WOULD-BLOCK category=push" {
+    local payload='{"session_id":"s194-a3","tool_name":"Bash","tool_input":{"command":"grep -n \"git push origin main\" README.md"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "session=s194-a3 .*category=push" "$LOG_FILE"
+    [ "$output" -eq 0 ]
+}
+
+@test "cmd_194 工程6'(a) regression: plain unquoted git push is still WOULD-BLOCK category=push after masking is applied" {
+    local payload='{"session_id":"s194-a4","tool_name":"Bash","tool_input":{"command":"git push origin main"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "WOULD-BLOCK mode=observe session=s194-a4 .*category=push" "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "cmd_194 工程6'(a) regression: bash -c \"git push ...\" (executed -c argument) is still WOULD-BLOCK category=push after masking is applied" {
+    local payload='{"session_id":"s194-a5","tool_name":"Bash","tool_input":{"command":"bash -c \"git push origin main\""}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "WOULD-BLOCK mode=observe session=s194-a5 .*category=push" "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "cmd_194 工程6'(a): masking coexists with help/dry-run exclusion (quoted mention + real --dry-run push together)" {
+    local payload='{"session_id":"s194-a6","tool_name":"Bash","tool_input":{"command":"echo \"note about git push\" && git push origin main --dry-run"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "session=s194-a6 .*category=push" "$LOG_FILE"
+    [ "$output" -eq 0 ]
+}
+
+@test "cmd_194 工程6'(a) audit-trail integrity: emit()'s detail is the raw unmasked command, not the #### masked detection string" {
+    local payload='{"session_id":"s194-a7","tool_name":"Bash","tool_input":{"command":"grep -n \"git push origin main\" README.md"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "session=s194-a7 .*detail=grep -n \"git push origin main\" README.md\$" "$LOG_FILE"
+    [ "$output" -eq 1 ]
+    run grep -c "session=s194-a7 .*#####" "$LOG_FILE"
+    [ "$output" -eq 0 ]
+}
+
+# --- cmd_194 工程6'(b): detail切り詰めの検知記録(truncated=/original_len=) ---
+
+@test "cmd_194 工程6'(b): short detail is logged as truncated=false with the exact original_len" {
+    local payload='{"session_id":"s194-b1","tool_name":"Bash","tool_input":{"command":"git push origin main"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "session=s194-b1 .*category=push truncated=false original_len=20 detail=" "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "cmd_194 工程6'(b): detail longer than DETAIL_TRUNCATION_LIMIT is logged as truncated=true with the full original_len" {
+    local long_arg
+    long_arg="$(printf 'a%.0s' $(seq 1 3200))"
+    local payload
+    payload="$(printf '{"session_id":"s194-b2","tool_name":"Bash","tool_input":{"command":"rm %s"}}' "$long_arg")"
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "session=s194-b2 .*category=file_delete truncated=true original_len=3203 " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "cmd_194 工程6'(b): new truncated=/original_len= fields sit before detail= (existing field extraction convention preserved)" {
+    local payload='{"session_id":"s194-b3","tool_name":"Bash","tool_input":{"command":"git push origin main"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -E "category=push truncated=(true|false) original_len=[0-9]+ detail=" "$LOG_FILE"
     [ "$status" -eq 0 ]
 }

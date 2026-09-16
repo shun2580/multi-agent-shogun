@@ -58,14 +58,40 @@ import json
 import re
 import sys
 
+# cmd_194 工程6'(a): mask_quoted_nonexec_stringsはpretooluse_git_push_
+# block.shと共有するためlib/quote_masking.pyへ抽出した(lib/evidence_
+# checks.pyと同型、二重実装を避ける)。
+sys.path.insert(0, "__LIB_DIR__")
+try:
+    from quote_masking import mask_quoted_nonexec_strings
+except Exception:
+    def mask_quoted_nonexec_strings(cmd):
+        # importできない場合はマスキング無しの元コマンドで判定を続行する
+        # (fail-safe: 判定不能でここだけ止めず、既存の無マスキング挙動へ
+        # 退避する。検知力を下げる方向にはならない——マスキングは偽陽性を
+        # 減らす側の追加ロジックであり、未適用でも見逃しにはならない)。
+        return cmd
+
+
+# cmd_194 工程6'(b): detail切り詰め上限。工程6のQCで実測した33/49件(67%)が
+# 旧300文字上限で切り詰められていたため、典型的な多行コマンドを覆う値へ
+# 引き上げる(この値自体は検知記録の主眼ではない——変更する場合もこの1箇所
+# のみでよい設計とする)。
+DETAIL_TRUNCATION_LIMIT = 3000
+
 
 def emit(verdict, category, tool_name, session_id, file_path, detail,
          matched_verb="", rationale=""):
-    detail_b64 = base64.b64encode(detail[:300].encode("utf-8", "replace")).decode("ascii")
+    original_len = len(detail)
+    truncated = original_len > DETAIL_TRUNCATION_LIMIT
+    detail_b64 = base64.b64encode(
+        detail[:DETAIL_TRUNCATION_LIMIT].encode("utf-8", "replace")
+    ).decode("ascii")
     rationale_b64 = base64.b64encode(rationale.encode("utf-8", "replace")).decode("ascii")
     print("\x1f".join([
         verdict, category, tool_name or "unknown", session_id or "unknown",
         file_path or "NA", detail_b64, matched_verb or "NA", rationale_b64,
+        "true" if truncated else "false", str(original_len),
     ]))
 
 
@@ -180,11 +206,16 @@ def classify_readonly_bash(command):
 
 if tool_name == "Bash":
     command = tool_input.get("command") or ""
+    # cmd_194 工程6'(a): 判定専用の別変数。IRREVERSIBLE_BASHループの
+    # pattern.searchのみをこちらへ向ける。emit()へ渡すcommand引数は
+    # 従来どおり無加工の生コマンドのままとする(マスク後の文字列をログの
+    # detailに渡すと事後監査で実コマンドが失われるため、絶対に混同しない)。
+    command_for_detection = mask_quoted_nonexec_strings(command)
     for category, pattern in IRREVERSIBLE_BASH:
-        match = pattern.search(command)
+        match = pattern.search(command_for_detection)
         if match is None:
             continue
-        if category == "push" and _is_help_or_dryrun_push(command, match):
+        if category == "push" and _is_help_or_dryrun_push(command_for_detection, match):
             continue
         emit("irreversible", category, tool_name, session_id, "NA", command)
         sys.exit(0)
@@ -252,6 +283,8 @@ if tool_name in NONBASH_READONLY:
 emit("unknown", "tool_unclassified", tool_name, session_id, "NA", tool_name)
 PYEOF
 
+PYCODE="${PYCODE//__LIB_DIR__/$SCRIPT_DIR/lib}"
+
 OUTPUT="$(printf '%s' "$INPUT" | timeout 4 "$PYTHON_BIN" -c "$PYCODE" 2>/dev/null)"
 PY_EXIT=$?
 
@@ -260,7 +293,7 @@ if [ "$PY_EXIT" -ne 0 ] || [ -z "$OUTPUT" ]; then
     exit 0
 fi
 
-IFS=$'\x1f' read -r VERDICT CATEGORY TOOL_NAME SESSION_ID FILE_PATH DETAIL_B64 MATCHED_VERB RATIONALE_B64 <<< "$OUTPUT"
+IFS=$'\x1f' read -r VERDICT CATEGORY TOOL_NAME SESSION_ID FILE_PATH DETAIL_B64 MATCHED_VERB RATIONALE_B64 TRUNCATED ORIGINAL_LEN <<< "$OUTPUT"
 DETAIL="$(printf '%s' "$DETAIL_B64" | base64 -d 2>/dev/null)"
 RATIONALE="$(printf '%s' "$RATIONALE_B64" | base64 -d 2>/dev/null)"
 
@@ -270,8 +303,11 @@ case "$VERDICT" in
     *) LOGTOKEN="WOULD-UNKNOWN" ;;
 esac
 
-# 既存ログ本体のフォーマットは変更しない(cmd_152: 既存ログの読者を壊さない)。
-echo "[$(date -Iseconds)] $LOGTOKEN mode=$MODE session=$SESSION_ID file=$FILE_PATH tool=$TOOL_NAME category=$CATEGORY detail=$DETAIL" >> "$LOG_FILE"
+# 既存フィールド(mode/session/file/tool/category)の位置・意味は変更しない
+# (cmd_152: 既存ログの読者を壊さない)。cmd_194 工程6'(b)で追加した
+# truncated=/original_len=は既存の抽出手法(「detail=以降を全てdetail値と
+# して扱う」)を壊さないよう、必ずdetail=より前に挿入する。
+echo "[$(date -Iseconds)] $LOGTOKEN mode=$MODE session=$SESSION_ID file=$FILE_PATH tool=$TOOL_NAME category=$CATEGORY truncated=$TRUNCATED original_len=$ORIGINAL_LEN detail=$DETAIL" >> "$LOG_FILE"
 
 # ─── 検知機構 (cmd_152・cmd_151のexclusion effectログを踏襲) ───
 # cmd_152で新設した読取専用verb判定パス(category=read_only_command)による
