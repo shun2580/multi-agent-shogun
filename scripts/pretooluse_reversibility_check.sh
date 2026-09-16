@@ -102,6 +102,25 @@ IRREVERSIBLE_BASH = [
     ("file_delete", re.compile(r"(^|[;&|(`]\s*)rm\s", re.MULTILINE)),
 ]
 
+# ─── push category専用: help/dry-run除外 (cmd_194 工程6・gunshi_design_194_6) ───
+# 「git push --help」「git push --dry-run」等は実際にはpushしないため誤検知だが、
+# 判定はマッチした"git push"に続く同一invocation範囲内のみに厳密に限定する
+# (コマンド全体のどこかに--helpがあれば除外、という単純化は禁止——
+# `echo "for --help info" && git push origin main`のような抜け道を作らないため)。
+# 除外時はreversibleへ昇格させず、既存のフォールスルーでunknownへ帰着させる
+# (判定材料不足はunknown側へ倒す、既存コードの哲学を踏襲)。他category
+# (publish/db_destructive/external_send/file_delete)のロジックは無改造。
+_CMD_BOUNDARY_RE = re.compile(r"[;&|\n]")
+
+
+def _is_help_or_dryrun_push(command, match):
+    boundary = _CMD_BOUNDARY_RE.search(command, match.end())
+    scope_end = boundary.start() if boundary else len(command)
+    scope = command[match.end():scope_end]
+    tokens = scope.split()
+    return any(tok in ("--help", "-h", "--dry-run") for tok in tokens)
+
+
 # 「戻せる操作(ローカル編集・ブランチコミット・テスト実行・docs生成)」
 # (cmd_145 Part3分類)に該当する明示的安全パターンのみreversible判定する。
 REVERSIBLE_BASH = [
@@ -162,9 +181,13 @@ def classify_readonly_bash(command):
 if tool_name == "Bash":
     command = tool_input.get("command") or ""
     for category, pattern in IRREVERSIBLE_BASH:
-        if pattern.search(command):
-            emit("irreversible", category, tool_name, session_id, "NA", command)
-            sys.exit(0)
+        match = pattern.search(command)
+        if match is None:
+            continue
+        if category == "push" and _is_help_or_dryrun_push(command, match):
+            continue
+        emit("irreversible", category, tool_name, session_id, "NA", command)
+        sys.exit(0)
     for pattern in REVERSIBLE_BASH:
         if pattern.search(command):
             emit("reversible", "local_or_test", tool_name, session_id, "NA", command)

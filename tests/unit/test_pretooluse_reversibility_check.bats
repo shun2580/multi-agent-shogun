@@ -444,6 +444,49 @@ run_check_with_settings() {
     [ "$output" -eq 1 ]
 }
 
+# --- cmd_194 工程6: push category help/dry-run除外 ---
+
+@test "cmd_194: git push --help is excluded from push detection, falls through to WOULD-UNKNOWN bash_unclassified" {
+    local payload='{"session_id":"s-push-help","tool_name":"Bash","tool_input":{"command":"git push --help"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-UNKNOWN mode=observe session=s-push-help file=NA tool=Bash category=bash_unclassified " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+    run grep -c "WOULD-BLOCK.*s-push-help" "$LOG_FILE"
+    [ "$status" -ne 0 ]
+}
+
+@test "cmd_194: git push -h is excluded from push detection, falls through to WOULD-UNKNOWN bash_unclassified" {
+    local payload='{"session_id":"s-push-h","tool_name":"Bash","tool_input":{"command":"git push -h"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-UNKNOWN mode=observe session=s-push-h file=NA tool=Bash category=bash_unclassified " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+    run grep -c "WOULD-BLOCK.*s-push-h" "$LOG_FILE"
+    [ "$status" -ne 0 ]
+}
+
+@test "cmd_194: git push origin main --dry-run is excluded from push detection, falls through to WOULD-UNKNOWN bash_unclassified" {
+    local payload='{"session_id":"s-push-dryrun","tool_name":"Bash","tool_input":{"command":"git push origin main --dry-run"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-UNKNOWN mode=observe session=s-push-dryrun file=NA tool=Bash category=bash_unclassified " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+    run grep -c "WOULD-BLOCK.*s-push-dryrun" "$LOG_FILE"
+    [ "$status" -ne 0 ]
+}
+
+@test "cmd_194 anti-loophole: --help mentioned in an unrelated earlier command does NOT excuse a real git push in the same line (echo \"for --help info\" && git push origin main is still WOULD-BLOCK)" {
+    local payload='{"session_id":"s-push-loophole","tool_name":"Bash","tool_input":{"command":"echo \"for --help info\" && git push origin main"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-BLOCK mode=observe session=s-push-loophole file=NA tool=Bash category=push " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "cmd_194 regression: ordinary git push origin main (no help/dry-run) is still WOULD-BLOCK category=push" {
+    local payload='{"session_id":"s-push-plain","tool_name":"Bash","tool_input":{"command":"git push origin main"}}'
+    run_check_with_settings "$SETTINGS_OBSERVE" "$payload"
+    run grep -c "^\[.*\] WOULD-BLOCK mode=observe session=s-push-plain file=NA tool=Bash category=push " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
 # --- fail-open: python欠落時もunknownとして記録しexit0(クラッシュしない) ---
 
 @test "python binary missing: still exits 0 and logs WOULD-UNKNOWN category=hook_internal_error" {
