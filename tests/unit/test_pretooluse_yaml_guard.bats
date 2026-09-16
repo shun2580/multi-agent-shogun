@@ -71,6 +71,26 @@ EOF
 features:
   yaml_guard_enabled: enforce
 EOF
+
+    # --- cmd_194 工程3: verified_evidence_required_enabled fixtures ---
+    SETTINGS_VER_OFF="$TEST_TMP/settings_ver_off.yaml"
+    cat > "$SETTINGS_VER_OFF" <<'EOF'
+features:
+  yaml_guard_enabled: enforce
+  verified_evidence_required_enabled: off
+EOF
+    SETTINGS_VER_OBSERVE="$TEST_TMP/settings_ver_observe.yaml"
+    cat > "$SETTINGS_VER_OBSERVE" <<'EOF'
+features:
+  yaml_guard_enabled: enforce
+  verified_evidence_required_enabled: observe
+EOF
+    SETTINGS_VER_ENFORCE="$TEST_TMP/settings_ver_enforce.yaml"
+    cat > "$SETTINGS_VER_ENFORCE" <<'EOF'
+features:
+  yaml_guard_enabled: enforce
+  verified_evidence_required_enabled: enforce
+EOF
 }
 
 teardown() {
@@ -106,6 +126,19 @@ run_guard_with_settings() {
 }
 
 run_guard_ndr() {
+    local settings_file="$1"
+    local payload="$2"
+    run env \
+        YAML_GUARD_SETTINGS="$settings_file" \
+        YAML_GUARD_REPO_ROOT="$TEST_TMP" \
+        YAML_GUARD_LOG="$LOG_FILE" \
+        YAML_GUARD_TIMING_LOG="$TIMING_LOG" \
+        YAML_GUARD_PYTHON="$PROJECT_ROOT/.venv/bin/python3" \
+        YAML_GUARD_NTFY_SCRIPT="$NTFY_STUB" \
+        bash -c "printf '%s' '$payload' | bash '$GUARD_SCRIPT'"
+}
+
+run_guard_ver() {
     local settings_file="$1"
     local payload="$2"
     run env \
@@ -611,6 +644,74 @@ EOF
     [ "$status" -ne 0 ]
     run grep -c "^\[.*\] ALLOW mode=enforce" "$LOG_FILE"
     [ "$output" -eq 1 ]
+}
+
+# --- cmd_194 工程3: verified_evidence_required_enabled ---
+# queue/reports/gunshi_report.yamlへの書込のうち、result.type=quality_check
+# のドキュメント(軍師のQC報告)にverified_evidence欠落を検知する副flag
+# (off|observe|enforce・既定observe)。strategy等の非QC報告(軍師のCategory1
+# 報告)は過検知防止のため対象外。
+
+# ケースB: verified_evidence欠落 → observeでWOULD-DENY-VERIFIED-EVIDENCEのみ
+@test "verified_evidence_required=observe: QC report missing verified_evidence → WOULD-DENY-VERIFIED-EVIDENCE logged only, not denied" {
+    local payload='{"tool_name":"Write","tool_input":{"file_path":"'"$TEST_TMP"'/queue/reports/gunshi_report.yaml","content":"worker_id: gunshi\ntask_id: gunshi_qc_x\nresult:\n  type: quality_check\n  summary: ok\n"}}'
+    run_guard_ver "$SETTINGS_VER_OBSERVE" "$payload"
+
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    run grep -c "WOULD-DENY-VERIFIED-EVIDENCE" "$LOG_FILE"
+    [ "$output" -eq 1 ]
+    run grep "WOULD-DENY-VERIFIED-EVIDENCE" "$LOG_FILE"
+    [[ "$output" == *"mode=observe"* ]]
+    # 通常のDENY行(実deny)は出現しない
+    run grep -c "^\[.*\] DENY mode=" "$LOG_FILE"
+    [ "$status" -ne 0 ]
+}
+
+@test "verified_evidence_required=enforce: QC report missing verified_evidence → denied" {
+    local payload='{"tool_name":"Write","tool_input":{"file_path":"'"$TEST_TMP"'/queue/reports/gunshi_report.yaml","content":"worker_id: gunshi\ntask_id: gunshi_qc_x\nresult:\n  type: quality_check\n  summary: ok\n"}}'
+    run_guard_ver "$SETTINGS_VER_ENFORCE" "$payload"
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+    [[ "$output" == *"verified_evidence"* ]]
+}
+
+# ケースB': result.typeがQC以外(strategy)ならverified_evidence欠落でも
+# 何もログされない(過検知防止の回帰)
+@test "verified_evidence_required=observe: non-QC report (result.type=strategy) missing verified_evidence → nothing logged" {
+    local payload='{"tool_name":"Write","tool_input":{"file_path":"'"$TEST_TMP"'/queue/reports/gunshi_report.yaml","content":"worker_id: gunshi\ntask_id: gunshi_design_x\nresult:\n  type: strategy\n  summary: ok\n"}}'
+    run_guard_ver "$SETTINGS_VER_OBSERVE" "$payload"
+
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    run grep -c "VERIFIED-EVIDENCE" "$LOG_FILE"
+    [ "$status" -ne 0 ]
+    run grep -c "^\[.*\] ALLOW mode=enforce" "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+# ケースB'': verified_evidenceが非空ならWOULD-DENYが出ない
+@test "verified_evidence_required=observe: QC report with non-empty verified_evidence → nothing logged" {
+    local payload='{"tool_name":"Write","tool_input":{"file_path":"'"$TEST_TMP"'/queue/reports/gunshi_report.yaml","content":"worker_id: gunshi\ntask_id: gunshi_qc_x\nresult:\n  type: quality_check\n  summary: ok\nverified_evidence:\n  - queue/reports/ashigaru1_report.yaml: confirmed test_evidence present\n"}}'
+    run_guard_ver "$SETTINGS_VER_OBSERVE" "$payload"
+
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    run grep -c "VERIFIED-EVIDENCE" "$LOG_FILE"
+    [ "$status" -ne 0 ]
+    run grep -c "^\[.*\] ALLOW mode=enforce" "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "verified_evidence_required=off (explicit): validation logic is never entered, no gate log tag" {
+    local payload='{"tool_name":"Write","tool_input":{"file_path":"'"$TEST_TMP"'/queue/reports/gunshi_report.yaml","content":"worker_id: gunshi\ntask_id: gunshi_qc_x\nresult:\n  type: quality_check\n  summary: ok\n"}}'
+    run_guard_ver "$SETTINGS_VER_OFF" "$payload"
+
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    run grep -c "VERIFIED-EVIDENCE" "$LOG_FILE"
+    [ "$status" -ne 0 ]
 }
 
 # --- cmd_091標準: 実配線の確認(実settings.jsonへの登録実在) ---

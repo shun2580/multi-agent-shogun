@@ -124,8 +124,7 @@ mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
 # stdoutへ返す(bash側での文字列組立を避けるcmd_186教訓の徹底)。 ───
 RESULT_JSON="$("$PYTHON_BIN" - "$TASK_YAML" "$REPORT_FILE" "$REPO_ROOT" <<'PYEOF' 2>/dev/null
 import json
-import re
-import subprocess
+import os
 import sys
 
 task_yaml_path, report_file_path, repo_root = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -134,6 +133,16 @@ try:
     import yaml
 except Exception:
     print(json.dumps({"gate": "skip", "why": "pyyaml-unavailable"}))
+    sys.exit(0)
+
+# cmd_194 工程3: (a)〜(d)判定本体はlib/evidence_checks.pyへ移設した
+# (pretooluse_yaml_guard.shのcheck_parent_cmd_done_gate()と同一実装を
+# 共有するための抽出。二重実装を避ける)。挙動は不変。
+sys.path.insert(0, os.path.join(repo_root, "lib"))
+try:
+    from evidence_checks import check_commit, check_evidence, check_skip, find_report_entry
+except Exception:
+    print(json.dumps({"gate": "skip", "why": "evidence_checks-unavailable"}))
     sys.exit(0)
 
 
@@ -151,124 +160,6 @@ def load_task():
     return task
 
 
-def find_report_entry(task_id):
-    try:
-        with open(report_file_path, "r") as f:
-            raw = f.read()
-    except Exception:
-        return None, None
-    # queue/reports/*.yaml は複数YAMLドキュメントを行単独の "---" で区切る
-    # 実運用形式(通常のYAML `---`ドキュメント区切りと同じ記法)。
-    chunks = re.split(r"(?m)^---[ \t]*$", raw)
-    for chunk in chunks:
-        if "task_id:" not in chunk:
-            continue
-        try:
-            doc = yaml.safe_load(chunk)
-        except Exception:
-            continue
-        if not isinstance(doc, dict):
-            continue
-        entry = doc.get("report") if isinstance(doc.get("report"), dict) else doc
-        if not isinstance(entry, dict):
-            continue
-        if entry.get("task_id") == task_id:
-            return chunk, entry
-    return None, None
-
-
-def collect_strings(node):
-    if isinstance(node, dict):
-        for v in node.values():
-            yield from collect_strings(v)
-    elif isinstance(node, list):
-        for v in node:
-            yield from collect_strings(v)
-    elif isinstance(node, str):
-        yield node
-
-
-def check_evidence(raw_chunk):
-    # 🔴実データではリテラル`evidence:`ではなく`*_evidence:`系の
-    # フィールド名が使われる(scripts本体コメント参照)。末尾一致で検出する。
-    for m in re.finditer(r"(?im)^[ \t]*[\w]*evidence[ \t]*:[ \t]*(.*)$", raw_chunk):
-        inline = m.group(1).strip()
-        if inline and inline not in ("|", ">", "|-", ">-"):
-            return True
-        # ブロックスカラ(| / >)の場合、後続の字下げ行に非空内容があるか確認
-        if inline in ("|", ">", "|-", ">-"):
-            lines = raw_chunk[m.end():].splitlines()
-            key_indent = len(m.group(0)) - len(m.group(0).lstrip())
-            for line in lines:
-                if line.strip() == "":
-                    continue
-                indent = len(line) - len(line.lstrip())
-                if indent <= key_indent:
-                    break
-                if line.strip():
-                    return True
-    return False
-
-
-def check_commit(raw_chunk):
-    # committed: true の明示、または commit文脈での7〜40桁hexトークンの
-    # 主張を抽出する。主張が無ければ本条件は評価対象外(vacuous pass)。
-    claims = []
-    if re.search(r"(?i)^\s*committed\s*:\s*true\s*$", raw_chunk, re.MULTILINE):
-        claims.append(True)
-    for line in raw_chunk.splitlines():
-        if re.search(r"(?i)commit", line):
-            for hexmatch in re.finditer(r"\b[0-9a-f]{7,40}\b", line, re.IGNORECASE):
-                claims.append(hexmatch.group(0))
-    if not claims:
-        return True, None  # 主張なし → vacuous pass
-    hashes = [c for c in claims if c is not True]
-    if not hashes:
-        # committed: true はあるがハッシュ主張が無い → git側で検証できない
-        # ため、ここでは主張の存在のみで不成立とはしない(vacuous pass扱い)。
-        return True, None
-    for h in hashes:
-        try:
-            subprocess.run(
-                ["git", "rev-parse", "--verify", "--quiet", f"{h}^{{commit}}"],
-                cwd=repo_root,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=True,
-            )
-            return True, None
-        except Exception:
-            continue
-    return False, f"commit hash(es) not found in git log: {hashes}"
-
-
-def check_skip(entry):
-    test_node = entry.get("test_results")
-    if test_node is None:
-        test_node = entry.get("tests")
-    if test_node is None:
-        return True, None  # test_results/tests自体が無い → 評価対象外
-    for s in collect_strings(test_node):
-        # 🔴cmd_192工程8追加是正: 旧`(?i)skip`は「skipped」「skipping」等の
-        # 英単語の部分文字列にも大小無視で誤反応した(実例: report文中の
-        # bats転記『ok 4 shogun is always skipped even in enforce mode』が
-        # 誤ってWOULD-BLOCKした)。実データ(queue/reports/*_report.yaml)での
-        # 真のSKIP表記は「SKIP」「skip:」「SKIP0」「SKIP1」のように単語直後が
-        # 英字で継続しない形のみで、「skipped」「skipping」「skips」等は
-        # 単語直後が英字続きになる。`\bskip(?![a-zA-Z])`で両者を切り分ける:
-        # 単語境界で開始し、直後が英字でなければ真のSKIP表記として検出する
-        # (数字・記号・空白・CJK文字等はすべて許容し、本来の検出漏れは防ぐ)。
-        for m in re.finditer(r"(?i)\bskip(?![a-zA-Z])", s):
-            tail = s[m.end():m.end() + 8]
-            # 🔴「0件」のように直後がCJK文字だと\bが単語境界と判定しない
-            # (Python re の既定Unicodeモードでは表意文字も\w扱いのため)。
-            # 「0」の直後が数字でなければ0件扱いとする(?!\d)を使う。
-            if re.match(r"^\s*[:=]?\s*0(?!\d)", tail):
-                continue
-            return False, f"SKIP indication found: ...{s[max(0, m.start()-20):m.end()+20]}..."
-    return True, None
-
-
 task = load_task()
 if task is None:
     print(json.dumps({"gate": "skip", "why": "task-yaml-unreadable"}))
@@ -284,7 +175,7 @@ if not task_id:
     print(json.dumps({"gate": "skip", "why": "task_id missing"}))
     sys.exit(0)
 
-raw_chunk, entry = find_report_entry(task_id)
+raw_chunk, entry = find_report_entry([report_file_path], task_id)
 if entry is None:
     print(json.dumps({"gate": "block", "reason": f"(a) no report entry for task_id={task_id} in {report_file_path}"}))
     sys.exit(0)
@@ -293,7 +184,7 @@ if not check_evidence(raw_chunk):
     print(json.dumps({"gate": "block", "reason": f"(b) no non-empty *evidence field in report entry task_id={task_id}"}))
     sys.exit(0)
 
-commit_ok, commit_reason = check_commit(raw_chunk)
+commit_ok, commit_reason = check_commit(raw_chunk, repo_root)
 if not commit_ok:
     print(json.dumps({"gate": "block", "reason": f"(c) {commit_reason}"}))
     sys.exit(0)

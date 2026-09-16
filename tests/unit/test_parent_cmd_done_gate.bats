@@ -52,6 +52,25 @@ EOF
 echo "NOTIFIED \$1" >> "$NTFY_LOG"
 EOF
     chmod +x "$NTFY_STUB"
+
+    # cmd_194 工程3: check_parent_cmd_done_gate()のevidenceサブチェックは
+    # lib/evidence_checks.pyをPARENT_GATE_REPO_ROOT(=TEST_TMP)/lib配下から
+    # importする。実lib/evidence_checks.pyを隔離用にコピーする
+    # (TEST_TMPを本番libから独立させたまま、同一実装を参照させるため)。
+    mkdir -p "$TEST_TMP/lib" "$TEST_TMP/queue/reports/archive"
+    cp "$PROJECT_ROOT/lib/evidence_checks.py" "$TEST_TMP/lib/evidence_checks.py"
+
+    # 副flag parent_cmd_evidence_gate_enabled=enforce(ロジック自体の正しさは
+    # enforceで直接検証してよい——本番既定はobserveだが、既存ケース3の
+    # パターンに倣う)。parent_cmd_done_gate_enabled自体はoffにして、
+    # evidenceサブチェック単体の挙動を分離検証する。
+    SETTINGS_PEG_ENFORCE="$TEST_TMP/settings_peg_enforce.yaml"
+    cat > "$SETTINGS_PEG_ENFORCE" <<'EOF'
+features:
+  yaml_guard_enabled: enforce
+  parent_cmd_done_gate_enabled: off
+  parent_cmd_evidence_gate_enabled: enforce
+EOF
 }
 
 teardown() {
@@ -200,5 +219,75 @@ run_guard_pg() {
     [ "$status" -eq 0 ]
     [ -z "$output" ]
     run grep -c "PARENT-GATE" "$LOG_FILE"
+    [ "$status" -ne 0 ]
+}
+
+# ─── cmd_194 工程3(Q51): evidenceサブチェック(独立副flag
+# parent_cmd_evidence_gate_enabled)。ロジック自体の正しさはenforceで直接
+# 検証する(既存ケース3のパターンに倣う。本番既定はobserve)。
+# parent_cmd_done_gate_enabled自体はoffにして単体挙動を分離する。 ───
+
+# ケースA: done subtaskのreportに*_evidenceフィールドが無い → deny
+@test "parent_cmd_evidence_gate=enforce: done subtask missing *_evidence field → denied with (evidence)/(b) in reason" {
+    printf -- '- id: cmd_999\n  status: in_progress\n  note: dummy\n' > "$TEST_TMP/queue/shogun_to_karo.yaml"
+    printf 'task:\n  task_id: subtask_999_A\n  parent_cmd: cmd_999\n  status: done\n' > "$TEST_TMP/queue/tasks/ashigaru1.yaml"
+    cat > "$TEST_TMP/queue/reports/ashigaru1_report.yaml" <<'EOF'
+report:
+  task_id: subtask_999_A
+  status: done
+  summary: |
+    done, no evidence field here.
+EOF
+
+    local payload='{"tool_name":"Edit","tool_input":{"file_path":"'"$TEST_TMP"'/queue/shogun_to_karo.yaml","old_string":"status: in_progress","new_string":"status: done","replace_all":false}}'
+    run_guard_pg "$SETTINGS_PEG_ENFORCE" "$payload"
+
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+    [[ "$output" == *"(evidence) task_id=subtask_999_A"* ]]
+    [[ "$output" == *"(b)"* ]]
+}
+
+# ケースA'(最重要): 現行reportファイルには存在せず、archive/にのみ完全な
+# reportが存在する場合にPASSする(アーカイブ探索が機能していることの
+# 直接検証。設計報告(1-補)のgunshi実例による根拠を裏付ける)。
+@test "parent_cmd_evidence_gate=enforce: report exists only in queue/reports/archive/ → evidence check passes via archive lookup" {
+    printf -- '- id: cmd_999\n  status: in_progress\n  note: dummy\n' > "$TEST_TMP/queue/shogun_to_karo.yaml"
+    printf 'task:\n  task_id: subtask_999_A\n  parent_cmd: cmd_999\n  status: done\n' > "$TEST_TMP/queue/tasks/ashigaru1.yaml"
+    # 現行ファイルは空(該当task_idのエントリなし)。
+    : > "$TEST_TMP/queue/reports/ashigaru1_report.yaml"
+    cat > "$TEST_TMP/queue/reports/archive/ashigaru1_report_20260101_000000.yaml" <<'EOF'
+report:
+  task_id: subtask_999_A
+  status: done
+  test_results:
+    syntax_check: "PASS"
+    syntax_evidence: "python3 -m py_compile foo.py -> OK"
+EOF
+
+    local payload='{"tool_name":"Edit","tool_input":{"file_path":"'"$TEST_TMP"'/queue/shogun_to_karo.yaml","old_string":"status: in_progress","new_string":"status: done","replace_all":false}}'
+    run_guard_pg "$SETTINGS_PEG_ENFORCE" "$payload"
+
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    run grep -c "^\[.*\] ALLOW mode=enforce" "$LOG_FILE"
+    [ "$output" -eq 1 ]
+    run grep -c "WOULD-DENY-PARENT-EVIDENCE-GATE" "$LOG_FILE"
+    [ "$status" -ne 0 ]
+}
+
+# 回帰: parent_cmd_evidence_gate_enabled=off時はevidence不一致があっても
+# 一切ログ・denyされない(既存parent_cmd_done_gate_enabled系との独立性)。
+@test "parent_cmd_evidence_gate=off: evidence-missing done subtask is allowed silently, no evidence-gate log tag" {
+    printf -- '- id: cmd_999\n  status: in_progress\n  note: dummy\n' > "$TEST_TMP/queue/shogun_to_karo.yaml"
+    printf 'task:\n  task_id: subtask_999_A\n  parent_cmd: cmd_999\n  status: done\n' > "$TEST_TMP/queue/tasks/ashigaru1.yaml"
+    : > "$TEST_TMP/queue/reports/ashigaru1_report.yaml"
+
+    local payload='{"tool_name":"Edit","tool_input":{"file_path":"'"$TEST_TMP"'/queue/shogun_to_karo.yaml","old_string":"status: in_progress","new_string":"status: done","replace_all":false}}'
+    run_guard_pg "$SETTINGS_PG_OFF" "$payload"
+
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    run grep -c "EVIDENCE-GATE" "$LOG_FILE"
     [ "$status" -ne 0 ]
 }

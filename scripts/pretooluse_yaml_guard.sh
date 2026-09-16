@@ -156,6 +156,48 @@ case "$RAW_VALUE_NDR" in
     *) NOTIFY_REQUIRED_MODE="off" ;;  # off/空/未知値はすべてfail-safeでoff
 esac
 
+# ─── 副flag: parent_cmd_evidence_gate_enabled (cmd_194 工程3) ───
+# check_parent_cmd_done_gate()内、status=doneのsubtaskについてもreport YAMLが
+# stop_hook_evidence.sh由来のevidence a〜d判定(lib/evidence_checks.py共有)を
+# 通過していることを追加確認する副flag。既存parent_cmd_done_gate_enabled
+# (全subtask done確認・既にenforce稼働中)とは共有しない独立フラグ——
+# cmd_194 acceptance_criteria(iii)「工程3・4・5で追加したflagは既定observe」
+# の明示要求による確定事項。off|observe|enforceの3値、未知値・空値・欠落は
+# 必ずoffへ倒すfail-safe(既存副flag群と同方針)。
+RAW_LINE_PEG=$(grep -E '^[[:space:]]*parent_cmd_evidence_gate_enabled:' "$SETTINGS" 2>/dev/null | head -1)
+RAW_VALUE_PEG=$(printf '%s' "$RAW_LINE_PEG" | sed -E \
+    -e 's/^[[:space:]]*parent_cmd_evidence_gate_enabled:[[:space:]]*//' \
+    -e 's/[[:space:]]*#.*$//' \
+    -e 's/[[:space:]]*$//' \
+    -e 's/^"(.*)"$/\1/' \
+    -e "s/^'(.*)'\$/\1/")
+
+case "$RAW_VALUE_PEG" in
+    enforce) PARENT_EVIDENCE_GATE_MODE="enforce" ;;
+    observe) PARENT_EVIDENCE_GATE_MODE="observe" ;;
+    *) PARENT_EVIDENCE_GATE_MODE="off" ;;  # off/空/未知値はすべてfail-safeでoff
+esac
+
+# ─── 副flag: verified_evidence_required_enabled (cmd_194 工程3) ───
+# queue/reports/gunshi_report.yamlへの書込のうち、result.type ==
+# "quality_check" のドキュメントにverified_evidence(検分したreportパスと
+# 確認したevidence項目)が非空で存在することを要求する副flag。
+# parent_cmd_evidence_gate_enabledとは独立(単独でoffへ戻せる)。
+# off|observe|enforceの3値、未知値・空値・欠落は必ずoffへ倒すfail-safe。
+RAW_LINE_VER=$(grep -E '^[[:space:]]*verified_evidence_required_enabled:' "$SETTINGS" 2>/dev/null | head -1)
+RAW_VALUE_VER=$(printf '%s' "$RAW_LINE_VER" | sed -E \
+    -e 's/^[[:space:]]*verified_evidence_required_enabled:[[:space:]]*//' \
+    -e 's/[[:space:]]*#.*$//' \
+    -e 's/[[:space:]]*$//' \
+    -e 's/^"(.*)"$/\1/' \
+    -e "s/^'(.*)'\$/\1/")
+
+case "$RAW_VALUE_VER" in
+    enforce) VERIFIED_EVIDENCE_MODE="enforce" ;;
+    observe) VERIFIED_EVIDENCE_MODE="observe" ;;
+    *) VERIFIED_EVIDENCE_MODE="off" ;;  # off/空/未知値はすべてfail-safeでoff
+esac
+
 # ─── 早期リターン2: tool_name/file_pathの軽量抽出(python起動なし) ───
 # 抽出はここでは「対象パスか否か」の判定のみに使う。実際の検証はpython側で
 # stdinのJSONを正規にパースし直して行うため、ここでの抽出精度が甘くても
@@ -200,6 +242,7 @@ mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
 read -r -d '' PYCODE <<'PYEOF' || true
 import glob
 import json
+import os
 import subprocess
 import sys
 
@@ -219,6 +262,26 @@ PARENT_GATE_LOG_FILE = sys.argv[4] if len(sys.argv) > 4 else None
 # cmd_192 工程7-guard: check_notify_on_done_required()用の副flag値
 # (PARENT_GATE_LOG_FILEと同一ファイルへ別タグで直接ログ追記する)。
 NOTIFY_REQUIRED_MODE = sys.argv[5] if len(sys.argv) > 5 else "off"
+
+# cmd_194 工程3: check_parent_cmd_done_gate()のevidenceサブチェック・
+# check_verified_evidence_required()用の独立副flag値。
+PARENT_EVIDENCE_GATE_MODE = sys.argv[6] if len(sys.argv) > 6 else "off"
+VERIFIED_EVIDENCE_MODE = sys.argv[7] if len(sys.argv) > 7 else "off"
+
+# cmd_194 工程3: check_parent_cmd_done_gate()のevidenceサブチェックは
+# stop_hook_evidence.sh由来の(a)〜(d)判定をlib/evidence_checks.py経由で
+# 共有する(二重実装を避ける、選択肢a)。両flagがoffなら未使用のため、
+# import失敗時もfail-loud/fail-openどちらにも倒さず単に不可用として扱う
+# (評価自体は各関数内でPARENT_EVIDENCE_GATE_MODE=="off"チェックが先に効く)。
+EVIDENCE_CHECKS_AVAILABLE = True
+try:
+    if PARENT_GATE_REPO_ROOT:
+        _lib_dir = os.path.join(PARENT_GATE_REPO_ROOT, "lib")
+        if _lib_dir not in sys.path:
+            sys.path.insert(0, _lib_dir)
+    from evidence_checks import check_commit, check_evidence, check_skip, find_report_entry
+except Exception:
+    EVIDENCE_CHECKS_AVAILABLE = False
 
 
 def deny(reason):
@@ -341,14 +404,78 @@ def _emit_would_deny_parent_gate(reason, file_path):
         pass
 
 
+def _evaluate_subtask_evidence(tf, task):
+    """cmd_194 工程3: status=doneのsubtask 1件についてevidence a〜dを評価し、
+    不成立ならreason文字列を、成立なら None を返す。agentはtask YAML自身の
+    フィールドではなくファイル名から導出する(lib/inflight_tasks.shの既存
+    導出方式と同一・より頑健)。agent=="shogun"は将軍対象外の維持のため
+    呼び出し元でスキップ済みの前提。report探索パスは現行+archive/を両方
+    globし、更新時刻降順で走査する(archive探索が必須である理由は本タスクの
+    設計報告(1-補)参照——gunshi過去subtaskのreportがarchive/にしか
+    存在しない実例で実証済み)。"""
+    task_id_v = task.get("task_id")
+    report_globs = glob.glob(f"{PARENT_GATE_REPO_ROOT}/queue/reports/{os.path.basename(tf)[:-len('.yaml')]}_report*.yaml")
+    report_globs += glob.glob(f"{PARENT_GATE_REPO_ROOT}/queue/reports/archive/{os.path.basename(tf)[:-len('.yaml')]}_report*.yaml")
+    try:
+        report_paths = sorted(report_globs, key=os.path.getmtime, reverse=True)
+    except Exception:
+        report_paths = report_globs
+
+    raw_chunk, entry = find_report_entry(report_paths, task_id_v)
+    if entry is None:
+        return f"(evidence) task_id={task_id_v}: (a) no report entry found in {report_paths}"
+    if not check_evidence(raw_chunk):
+        return f"(evidence) task_id={task_id_v}: (b) no non-empty *_evidence field"
+    commit_ok, commit_reason = check_commit(raw_chunk, PARENT_GATE_REPO_ROOT)
+    if not commit_ok:
+        return f"(evidence) task_id={task_id_v}: (c) {commit_reason}"
+    skip_ok, skip_reason = check_skip(entry)
+    if not skip_ok:
+        return f"(evidence) task_id={task_id_v}: (d) {skip_reason}"
+    return None
+
+
+def _emit_would_deny_parent_evidence_gate(reason, file_path):
+    """副flag PARENT_EVIDENCE_GATE_MODE=observe時、既存deny()を呼ばずに
+    LOG_FILEへ識別可能なタグ(WOULD-DENY-PARENT-EVIDENCE-GATE)を付けて直接
+    1行追記する(cmd_194 工程3、_emit_would_deny_parent_gateと同型の
+    独立副flag。既存WOULD-DENY-PARENT-GATEとはタグのみ別)。終了コード・
+    標準出力には一切影響させない。書込失敗は握り潰す。"""
+    if not PARENT_GATE_LOG_FILE:
+        return
+    try:
+        os.makedirs(os.path.dirname(PARENT_GATE_LOG_FILE), exist_ok=True)
+        ts_result = subprocess.run(
+            ["date", "-Iseconds"], capture_output=True, text=True, timeout=2,
+        )
+        ts = ts_result.stdout.strip() or "unknown-time"
+        with open(PARENT_GATE_LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(
+                f"[{ts}] WOULD-DENY-PARENT-EVIDENCE-GATE mode={PARENT_EVIDENCE_GATE_MODE} "
+                f"file={file_path} reason={reason}\n"
+            )
+    except Exception:
+        pass
+
+
 def check_parent_cmd_done_gate(docs, file_path):
     """queue/shogun_to_karo.yaml上であるcmdのstatusをdoneへ変更しようと
     したとき、queue/tasks/*.yaml中のparent_cmd一致エントリの全statusが
     doneであることを機械確認するゲート(cmd_164 subtask_164_B・stale
     assigned放置の再発防止)。独立の副flag PARENT_GATE_MODE
     (off|observe|enforce)で段階導入し、yaml_guard_enabled本体とは
-    別にoffへ戻せる。"""
-    if PARENT_GATE_MODE == "off":
+    別にoffへ戻せる。
+
+    cmd_194 工程3(Q51): status=doneのsubtaskについても、配下report YAMLが
+    stop_hook_evidence.sh由来のevidence a〜d判定を通過していることを
+    追加で確認する。この追加判定の実施可否は既存PARENT_GATE_MODEとは
+    別の独立副flag PARENT_EVIDENCE_GATE_MODE(既定observe)で制御し、
+    ログタグ・deny/observe経路も既存の全subtask doneチェックとは別系統
+    (WOULD-DENY-PARENT-EVIDENCE-GATE)として扱う——
+    parent_cmd_done_gate_enabledは既にenforce稼働中であり、evidence
+    サブチェックを同一flagに相乗りさせるとobserve期間ゼロでenforce評価が
+    始まってしまうため(cmd_194 acceptance_criteria(iii)違反)。"""
+    if PARENT_GATE_MODE == "off" and PARENT_EVIDENCE_GATE_MODE == "off":
         return
     if "/queue/shogun_to_karo.yaml" not in file_path.replace("\\", "/"):
         return
@@ -366,6 +493,7 @@ def check_parent_cmd_done_gate(docs, file_path):
                 continue
 
             incomplete = []
+            evidence_incomplete = []
             found_any = False
             try:
                 task_files = glob.glob(f"{PARENT_GATE_REPO_ROOT}/queue/tasks/*.yaml")
@@ -394,10 +522,27 @@ def check_parent_cmd_done_gate(docs, file_path):
                         incomplete.append(
                             f"{tf}: task_id={task.get('task_id')} status={tstatus}"
                         )
+                        continue
+
+                    if PARENT_EVIDENCE_GATE_MODE == "off" or not EVIDENCE_CHECKS_AVAILABLE:
+                        continue
+
+                    agent = os.path.basename(tf)
+                    if agent.endswith(".yaml"):
+                        agent = agent[:-len(".yaml")]
+                    if agent == "shogun":
+                        # 将軍対象外の維持(構造上queue/tasks/shogun.yamlは
+                        # 存在しないため現状は到達しないが、明示スキップに
+                        # 格上げする——cmd_194設計(3)節)。
+                        continue
+
+                    ev_reason = _evaluate_subtask_evidence(tf, task)
+                    if ev_reason:
+                        evidence_incomplete.append(f"{tf}: {ev_reason}")
 
             # 該当parent_cmdを持つtaskが1件も無く、探索自体も失敗していなければ
             # 検査対象なし=ALLOW(無関係なcmdの誤denyを避ける。全滅解釈にしない)。
-            if not found_any and not incomplete:
+            if not found_any and not incomplete and not evidence_incomplete:
                 continue
 
             if incomplete:
@@ -409,6 +554,16 @@ def check_parent_cmd_done_gate(docs, file_path):
                     deny(reason)
                 else:
                     _emit_would_deny_parent_gate(reason, file_path)
+
+            if evidence_incomplete:
+                reason = (
+                    f"cmd_id={cmd_id}のdone遷移拒否: 配下subtaskのevidence判定"
+                    "(a)〜(d)不成立があります — " + "; ".join(evidence_incomplete)
+                )
+                if PARENT_EVIDENCE_GATE_MODE == "enforce":
+                    deny(reason)
+                else:
+                    _emit_would_deny_parent_evidence_gate(reason, file_path)
 
 
 def _emit_would_deny_notify_required(reason, file_path):
@@ -488,6 +643,73 @@ def check_notify_on_done_required(docs, file_path):
                 _emit_would_deny_notify_required(reason, file_path)
 
 
+def _emit_would_deny_verified_evidence(reason, file_path):
+    """副flag VERIFIED_EVIDENCE_MODE=observe時、既存deny()を呼ばずに
+    LOG_FILEへ識別可能なタグ(WOULD-DENY-VERIFIED-EVIDENCE)を付けて直接1行
+    追記する(cmd_194 工程3、_emit_would_deny_notify_requiredと同型)。
+    終了コード・標準出力には一切影響させない。書込失敗は握り潰す。"""
+    if not PARENT_GATE_LOG_FILE:
+        return
+    try:
+        os.makedirs(os.path.dirname(PARENT_GATE_LOG_FILE), exist_ok=True)
+        ts_result = subprocess.run(
+            ["date", "-Iseconds"], capture_output=True, text=True, timeout=2,
+        )
+        ts = ts_result.stdout.strip() or "unknown-time"
+        with open(PARENT_GATE_LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(
+                f"[{ts}] WOULD-DENY-VERIFIED-EVIDENCE mode={VERIFIED_EVIDENCE_MODE} "
+                f"file={file_path} reason={reason}\n"
+            )
+    except Exception:
+        pass
+
+
+def check_verified_evidence_required(docs, file_path):
+    """queue/reports/gunshi_report.yamlへの書込のうち、result.type ==
+    "quality_check" のドキュメント(軍師のQC報告)に限り、トップレベル
+    キーverified_evidence(検分したreportパスと確認したevidence項目)が
+    存在し、かつ空でないことを要求する(cmd_194 工程3・Q51「軍師の完了
+    主張はQC PASS」)。strategy/design/analysis/evaluation等の非QC報告
+    (軍師のCategory1報告、本関数自身の設計タスクもその一例)は対象外——
+    QC対象のashigaru report自体が存在しないため、要求すると恒常的な
+    過検知になる(過検知防止のスコープ限定)。
+
+    🔴check_notify_on_done_requiredは「フィールドは存在する(値の真偽は
+    問わない)」方針だが、本チェックは意図的に非対称にする——
+    verified_evidenceは「検分した項目の列挙」が本質であり、
+    `verified_evidence: []`という空の充足は原則5(fail-loudな拒否)が
+    禁じる「サイレントな形骸化」の典型例にあたるため、非空であることまで
+    要求する(list/str/dictいずれの型でもfalsy値は不成立)。
+
+    独立副flag VERIFIED_EVIDENCE_MODE(off|observe|enforce)、既定observe。"""
+    if VERIFIED_EVIDENCE_MODE == "off":
+        return
+    if "/queue/reports/gunshi_report.yaml" not in file_path.replace("\\", "/"):
+        return
+
+    for doc in docs:
+        if not isinstance(doc, dict):
+            continue
+        result = doc.get("result")
+        if not isinstance(result, dict):
+            continue
+        if result.get("type") != "quality_check":
+            continue
+        if doc.get("verified_evidence"):
+            continue  # 存在しかつ非空
+
+        reason = (
+            "QC報告(result.type=quality_check)にverified_evidenceフィールドが"
+            "無い、または空です。検分したreportパスと確認したevidence項目を"
+            "明記してください(cmd_194 工程3・Q51)"
+        )
+        if VERIFIED_EVIDENCE_MODE == "enforce":
+            deny(reason)
+        else:
+            _emit_would_deny_verified_evidence(reason, file_path)
+
+
 def fail_open(msg):
     print(msg, file=sys.stderr)
     sys.exit(1)
@@ -562,6 +784,10 @@ try:
     # cmdエントリのnotify_on_done欠落を検知する(副flag
     # NOTIFY_REQUIRED_MODE=off時は関数内で即return)。
     check_notify_on_done_required(docs, file_path)
+    # cmd_194 工程3: queue/reports/gunshi_report.yamlに限り、QC報告の
+    # verified_evidence欠落を検知する(副flag VERIFIED_EVIDENCE_MODE=off
+    # 時は関数内で即return)。
+    check_verified_evidence_required(docs, file_path)
     sys.exit(0)
 except SystemExit:
     raise
@@ -572,7 +798,7 @@ PYEOF
 ERR_TMP="$(mktemp)"
 trap 'rm -f "$ERR_TMP"' EXIT
 
-OUTPUT="$(printf '%s' "$INPUT" | timeout 8 "$PYTHON_BIN" -c "$PYCODE" "$RUNTIME_REFLECTION_SCRIPT" "$PARENT_GATE_MODE" "$REPO_ROOT" "$LOG_FILE" "$NOTIFY_REQUIRED_MODE" 2>"$ERR_TMP")"
+OUTPUT="$(printf '%s' "$INPUT" | timeout 8 "$PYTHON_BIN" -c "$PYCODE" "$RUNTIME_REFLECTION_SCRIPT" "$PARENT_GATE_MODE" "$REPO_ROOT" "$LOG_FILE" "$NOTIFY_REQUIRED_MODE" "$PARENT_EVIDENCE_GATE_MODE" "$VERIFIED_EVIDENCE_MODE" 2>"$ERR_TMP")"
 PY_EXIT=$?
 
 # ─── ログ形式(cmd_121 A-2): 1評価1行・追記型・grep -cで機械集計可能な形式。
