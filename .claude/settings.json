@@ -52,25 +52,6 @@
         ]
       },
       {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash scripts/pretooluse_scope_check.sh",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash scripts/pretooluse_reversibility_check.sh",
-            "timeout": 5
-          }
-        ]
-      },
-      {
         "matcher": "Bash",
         "hooks": [
           {

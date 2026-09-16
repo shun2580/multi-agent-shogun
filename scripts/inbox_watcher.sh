@@ -1704,7 +1704,7 @@ if [ "${__INBOX_WATCHER_TESTING__:-}" != "1" ]; then
 fi
 
 # ─── Function definitions below are always loaded, even in testing mode ───
-# (cmd_146: check_dashboard_staleness/check_urgent_inbox_escalation need to be
+# (cmd_146: check_urgent_inbox_escalation/check_fleet_idle_notify need to be
 # unit-testable via bats; only the main loop itself stays gated — see below)
 
 # ─── Escalation threshold check (cmd_052d) ───
@@ -1912,15 +1912,12 @@ check_and_heal_dead_cli() {
     return 0
 }
 
-# ─── Dashboard staleness watchdog (cmd_065 Part A-2) ───
-# dashboard.md の🚨要対応項目が created_at (HTMLコメント埋込) から
-# dashboard_staleness.hours 経過しても放置されている場合、ntfy で再通知する。
-# karo の inbox_watcher インスタンスのみが呼び出す(配線側でAGENT_ID判定)。
-
-# cmd_170: 取消線(~~...~~)で解決済みと判定するロジックを
-# check_dashboard_staleness() と build_fleet_idle_message() の両方から
-# 呼び出すため、Python関数定義をbash変数として一元化する(別ファイルへの
+# cmd_170: 取消線(~~...~~)で解決済みと判定するロジックをbuild_fleet_idle_message()
+# から呼び出すため、Python関数定義をbash変数として一元化する(別ファイルへの
 # 切り出しはallowed_pathsのスコープ外のため、同一ファイル内でのDRY化)。
+# cmd_198工程1(Q59①): 従来はcheck_dashboard_staleness()とも共有していたが、
+# 同関数はdashboard_stale_notifierの退役により削除済み(本ヘルパー自体は
+# build_fleet_idle_message()が引き続き使用するためkeep)。
 read -r -d '' _DASHBOARD_RESOLVED_BLOCK_PY <<'PYEOF' || true
 _LEADING_COMMENTS_RE = re.compile(r'^(?:\s*<!--.*?-->\s*\n?)*')
 # cmd_190: 解決済みの機械判定マーカー。carryover_approvedと同じ位置
@@ -2101,208 +2098,12 @@ def _log_duplicate_groups(section_label, groups, jsonl_path):
         pass
 PYEOF
 
-_read_dashboard_staleness_setting() {
-    local key="$1" default="$2"
-    "$SCRIPT_DIR/.venv/bin/python3" -c "
-import yaml
-try:
-    with open('${SCRIPT_DIR}/config/settings.yaml', encoding='utf-8') as f:
-        data = yaml.safe_load(f) or {}
-    v = (data.get('dashboard_staleness') or {}).get('$key')
-    if v is None:
-        v = '$default'
-    print(v)
-except Exception:
-    print('$default')
-" 2>/dev/null
-}
-
-check_dashboard_staleness() {
-    local enabled
-    enabled=$(_read_dashboard_staleness_setting enabled true)
-    if [ "$enabled" != "true" ] && [ "$enabled" != "True" ]; then
-        return 0
-    fi
-
-    local marker="${SCRIPT_DIR}/logs/.dashboard_staleness_last_check"
-    local interval_min
-    interval_min=$(_read_dashboard_staleness_setting check_interval_minutes 30)
-    [ -n "$interval_min" ] || interval_min=30
-
-    mkdir -p "${SCRIPT_DIR}/logs" 2>/dev/null || true
-
-    if [ -f "$marker" ]; then
-        local last_check now_epoch elapsed_min
-        last_check=$(stat -c %Y "$marker" 2>/dev/null || echo 0)
-        now_epoch=$(date +%s)
-        elapsed_min=$(( (now_epoch - last_check) / 60 ))
-        if [ "$elapsed_min" -lt "$interval_min" ]; then
-            return 0
-        fi
-    fi
-    touch "$marker" 2>/dev/null || true
-
-    local hours cooldown_min
-    hours=$(_read_dashboard_staleness_setting hours 24)
-    cooldown_min=$(_read_dashboard_staleness_setting cooldown_after_escalation_minutes 360)
-    [ -n "$hours" ] || hours=24
-    [ -n "$cooldown_min" ] || cooldown_min=360
-
-    local dashboard_path="${SCRIPT_DIR}/dashboard.md"
-    [ -f "$dashboard_path" ] || return 0
-
-    DASHBOARD_PATH="$dashboard_path" \
-    DASHBOARD_STALE_HOURS="$hours" \
-    DASHBOARD_STALE_COOLDOWN_MIN="$cooldown_min" \
-    TIMING_JSONL="${SCRIPT_DIR}/logs/timing_events.jsonl" \
-    DASHBOARD_ANOMALY_JSONL="${SCRIPT_DIR}/logs/dashboard_resolved_block_anomalies.jsonl" \
-    "$SCRIPT_DIR/.venv/bin/python3" -c "
-import datetime, json, os, re
-
-${_DASHBOARD_RESOLVED_BLOCK_PY}
-
-dashboard_path = os.environ['DASHBOARD_PATH']
-stale_hours = float(os.environ['DASHBOARD_STALE_HOURS'])
-cooldown_min = float(os.environ['DASHBOARD_STALE_COOLDOWN_MIN'])
-jsonl_path = os.environ['TIMING_JSONL']
-anomaly_jsonl_path = os.environ['DASHBOARD_ANOMALY_JSONL']
-
-try:
-    with open(dashboard_path, encoding='utf-8') as f:
-        content = f.read()
-except Exception:
-    raise SystemExit
-
-now = datetime.datetime.now()
-
-# cmd_146①: created_at走査を🚨要対応セクション内(次の`## `見出しまで、またはEOF)に
-# 限定する。見出し検出は行頭`## `+「要対応」部分一致とし、絵文字の有無を吸収する。
-section_start_re = re.compile(r'^## .*要対応.*\n', re.MULTILINE)
-m_start = section_start_re.search(content)
-if m_start:
-    m_end = re.compile(r'^## ', re.MULTILINE).search(content, m_start.end())
-    scan_content = content[m_start.end():m_end.start() if m_end else len(content)]
-else:
-    scan_content = ''
-
-# cmd_146③: 再通知を段階的に頻度低下させる(初回360分→2回目720分→3回目以降1440分)。
-# 通知回数はlog_timing_event.shの--extra=へ`notify_count=N`として埋め込み、
-# 新規ストレージを増やさずtiming_events.jsonlのみで完結させる(judgment_model.md原則6)。
-# 直近の1件(最新ts)のみを見ればよい——古い記録は段階判定に不要。
-notify_history = {}
-try:
-    with open(jsonl_path, encoding='utf-8') as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rec = json.loads(line)
-            except Exception:
-                continue
-            if rec.get('event') != 'dashboard_stale_notified':
-                continue
-            tid = rec.get('task_id')
-            ts_raw = rec.get('ts')
-            if not tid or not ts_raw:
-                continue
-            try:
-                ts = datetime.datetime.fromisoformat(ts_raw)
-            except Exception:
-                continue
-            if ts.tzinfo is not None:
-                ts = ts.replace(tzinfo=None)
-            extra = rec.get('extra') or ''
-            m_count = re.match(r'notify_count=(\d+)', extra)
-            count = int(m_count.group(1)) if m_count else 1
-            prev = notify_history.get(tid)
-            if prev is None or ts > prev[0]:
-                notify_history[tid] = (ts, count)
-except Exception:
-    pass
-
-def stage_gap_min(prev_count):
-    if prev_count <= 1:
-        return cooldown_min
-    if prev_count == 2:
-        return 720.0
-    return 1440.0
-
-# cmd_194 工程4: アイテムブロックの境界を、共通ヘルパー
-# _split_dashboard_blocks()(箇条書き項目間split・orphan bullet対応)で
-# 求める。
-# amendment(gunshi_design_194_4_amend): 同一created_at値を2件以上の
-# ブロックが共有する場合でも、is_orphanを1件も含まない純粋duplicate-value型
-# (forced_values外)は各ブロック独自のcarryover/_is_resolved_block()判定を
-# 尊重する(既存bats④-7が要求する挙動)。is_orphanを1件以上含む
-# forced_values群のみ、境界の帰属自体が曖昧なため「未解決」扱いに倒し、
-# notify_history(cooldown段階制御)も経由せず常に通知対象とする。
-_carryover_re = re.compile(r'^\s*<!--\s*carryover_approved:\s*true\s*-->', re.IGNORECASE)
-_blocks = _split_dashboard_blocks(scan_content)
-_dup_values, _forced_values, _dup_groups = _detect_duplicate_groups(_blocks)
-_log_duplicate_groups('要対応', _dup_groups, anomaly_jsonl_path)
-_pure_dup_values = _dup_values - _forced_values
-
-for _b in _blocks:
-    created_at_raw = _b['created_at']
-    if created_at_raw is None:
-        continue
-    block_text = _b['block_text']
-
-    if created_at_raw in _forced_values:
-        key = created_at_raw
-        next_count = 1
-    else:
-        # 持ち越しマーカー: 殿の明示許可による管理された保留は放置ではない。
-        if _carryover_re.match(block_text):
-            continue
-        # 取消線除外: 既に解決済みの項目は放置ではない。
-        if _is_resolved_block(block_text):
-            continue
-
-        try:
-            created_at = datetime.datetime.fromisoformat(created_at_raw)
-        except Exception:
-            continue
-        age_hours = (now - created_at).total_seconds() / 3600
-        if age_hours < stale_hours:
-            continue
-
-        # 純粋duplicate-value型(グループサイズ2以上・orphan無し)のみ、
-        # notify_history/log_timing_eventのキーを複合キー化してcooldown
-        # 混線を避ける。単独項目(大多数)は従来どおりcreated_at_raw単独。
-        if created_at_raw in _pure_dup_values:
-            key = f'{created_at_raw}#{_snippet_fingerprint(block_text)}'
-        else:
-            key = created_at_raw
-
-        hist = notify_history.get(key)
-        if hist is not None:
-            last_ts, prev_count = hist
-            elapsed_min = (now - last_ts).total_seconds() / 60
-            if elapsed_min < stage_gap_min(prev_count):
-                continue
-            next_count = prev_count + 1
-        else:
-            next_count = 1
-    _snippet_body = _strip_leading_comments(block_text).strip()
-    _snippet = _snippet_body.splitlines()[0] if _snippet_body else ''
-    print(f'{key}\t{next_count}\t' + _snippet[:50])
-" 2>/dev/null | while IFS=$'\t' read -r created_at_raw notify_count snippet; do
-        [ -n "$created_at_raw" ] || continue
-        bash "${SCRIPT_DIR}/scripts/ntfy.sh" "🚨 24時間放置: ${snippet}" >&2 || true
-        bash "${SCRIPT_DIR}/scripts/log_timing_event.sh" dashboard_stale_notified "" "$created_at_raw" karo --source=inbox_watcher.sh --extra="notify_count=${notify_count}" || true
-    done
-
-    return 0
-}
-
 # ─── Urgent inbox escalation watchdog (cmd_146②) ───
 # queue/inbox/*.yaml の各エントリに`urgent: true`かつ`read: false`のまま
 # 閾値時間を超えたものがあれば殿へntfyエスカレーションする。2026-08-01、
 # 軍師の緊急報告がkaroのinboxでread:falseのまま3日間放置された実損事案の
 # 再発防止(north_star cmd_146)。karo instanceのメインループからのみ呼ばれる
-# (check_dashboard_staleness()と同じ設計パターン)。
+# (check_fleet_idle_notify()と同じ設計パターン)。
 _read_urgent_escalation_setting() {
     local key="$1" default="$2"
     "$SCRIPT_DIR/.venv/bin/python3" -c "
@@ -2602,8 +2403,8 @@ def section_body(heading_match):
     return text[start:end]
 
 # 予定事項(両見出し共通prefix): created_at件数+最古日
-# cmd_194 工程4: check_dashboard_staleness()と同じ共通ヘルパー
-# _split_dashboard_blocks()を使う。マーカー間splitでは検出できなかった
+# cmd_194 工程4: 共通ヘルパー_split_dashboard_blocks()を使う。
+# マーカー間splitでは検出できなかった
 # orphan bullet(1マーカーが複数箇条書きを共有)も個別カウントすることで、
 # cmd_194実例(b)(1079行目マーカー配下3論点が従来1件としてしかカウント
 # されていなかった過小集計バグ)を是正する。
@@ -2778,27 +2579,11 @@ except Exception:
     return 0
 }
 
-# ─── cmd_190 依頼事項2: 起動時一斉発火抑止 ───
-# watcher再起動直後、check_dashboard_staleness()のlast_checkマーカーが
-# 古いままだと初回tickで即座に判定が走り、複数エージェントのwatcherが
-# 同時再起動した場合に一斉発火する。起動時にマーカーのmtimeを「今」へ
-# 更新し、初回判定をcheck_interval_minutes(既定30分)経過後まで遅延させる。
-dashboard_staleness_suppress_on_startup() {
-    local marker="${SCRIPT_DIR}/logs/.dashboard_staleness_last_check"
-    mkdir -p "${SCRIPT_DIR}/logs" 2>/dev/null || true
-    touch "$marker" 2>/dev/null || true
-    echo "[$(date -Iseconds)] [STARTUP-SUPPRESS] dashboard_staleness_last_check touched (agent=${AGENT_ID:-unknown}) — initial check deferred" >> "${SCRIPT_DIR}/logs/inbox_watcher_karo.log" 2>/dev/null || true
-}
-
 # ─── Main loop: event-driven via inotifywait (skipped in testing mode) ───
 if [ "${__INBOX_WATCHER_TESTING__:-}" != "1" ]; then
 # Timeout 30s: WSL2 /mnt/c/ can miss inotify events.
 # Shorter timeout = faster escalation retry for stuck agents.
 INOTIFY_TIMEOUT="${INOTIFY_TIMEOUT:-30}"
-
-if [ "${AGENT_ID:-}" = "karo" ]; then
-    dashboard_staleness_suppress_on_startup
-fi
 
 while true; do
     # Block until file is modified OR timeout
@@ -2848,7 +2633,6 @@ while true; do
     if [ "$rc" -eq 2 ]; then
         check_and_heal_dead_cli
         if [ "$AGENT_ID" = "karo" ]; then
-            check_dashboard_staleness || true
             check_urgent_inbox_escalation || true
             check_fleet_idle_notify || true
         fi
