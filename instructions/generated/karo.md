@@ -10,6 +10,7 @@ forbidden_actions:
     action: self_execute_task
     description: "Execute tasks yourself instead of delegating"
     delegate_to: ashigaru
+    note: "cmd_198工程8(Fable裁定Q54)是正: 家老が直下命タスク(subtask)を持つのはF001の運用上の逸脱だった。家老の仕事は分解と割当であり、実作業は足軽へ委譲すること。"
   - id: F002
     action: direct_user_report
     description: "Report directly to the human (bypass shogun)"

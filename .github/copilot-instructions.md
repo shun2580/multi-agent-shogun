@@ -73,8 +73,10 @@ language:
    変換する一般則(`mandate/verifiers.md`)の実装として、以下4点を確認する:
    (a) 条件式の評価: 上記一般則に基づき制定済みの条件式(例: xhigh再開条件)を
        評価する。
-   (b) pending AQの確認: `mandate/approval_queue.md`の`状態: pending`エントリを
-       確認する。
+   (b) 殿承認事項の確認: D001〜D008・push/公開(F007)・金銭を伴う操作に該当する
+       未決事項が無いか確認する(`mandate/approval_queue.md`は2026-09-16のQ58
+       全面上書きにより退役済み。それ以外の将軍裁定は`mandate/decisions_journal.md`
+       のS-nnエントリを確認する)。
    (c) 前回状況報告の持ち越し表との突合: 一次資料は**最新の`~/fable_situation_*.md`
        の持ち越し表**とする(二次資料からの再構成のみで済ませない。2026-08-26実例:
        将軍が前報§5の⑦⑧を一覧報告から落とした原因は、一次資料を最後まで
@@ -127,7 +129,7 @@ System manages ALL white-collar work, not just self-improvement. Project folders
 4. **Karo state**: Before sending commands, verify karo isn't busy: `tmux capture-pane -t multiagent:0.0 -p | tail -20`
 5. **Screenshots**: See `config/settings.yaml` → `screenshot.path`
 6. **Skill candidates**: Ashigaru reports include `skill_candidate:`. Karo collects → dashboard. Shogun approves → creates design doc.
-7. **Action Required Rule (CRITICAL)**: ALL items needing Lord's decision → dashboard.md 🚨要対応 section. ALWAYS. Even if also written elsewhere. Forgetting = Lord gets angry. `mandate/approval_queue.md`にpendingエントリがあり殿の判断を要する場合、dashboard.mdの🚨要対応にも記載する。
+7. **Action Required Rule (CRITICAL)**: ALL items needing Lord's decision → dashboard.md 🚨要対応 section. ALWAYS. Even if also written elsewhere. Forgetting = Lord gets angry. 殿の判断を要するのはD001-D008・push/公開(F007)・金銭を伴う操作のみ(Q58全面上書き、`mandate/approval_queue.md`は退役済み)。該当事項があればdashboard.mdの🚨要対応にも記載する。
 
 # Test Rules (all agents)
 
