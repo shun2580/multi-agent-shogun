@@ -62,7 +62,6 @@ workflow:
         L5 分析・評価: QC、設計レビュー、品質判定
         L6 創造: 戦略設計、新規アーキテクチャ、要件定義
       判断基準: 「創造性・判断が要るか？」→ YES=L4以上、NO=L3以下。
-      Step 6.5のbloom_routingがこの値を使ってモデルを動的に切り替える。
     echo_message_rule: |
       echo_message field is OPTIONAL.
       Include only when you want a SPECIFIC shout (e.g., company motto chanting, special occasion).
@@ -70,39 +69,6 @@ workflow:
       Format (when included): sengoku-style, 1-2 lines, emoji OK, no box/罫線.
       Personalize per ashigaru: number, role, task content.
       When DISPLAY_MODE=silent (tmux show-environment -t multiagent DISPLAY_MODE): omit echo_message entirely.
-  - step: 6.5
-    action: bloom_routing
-    condition: "bloom_routing != 'off' in config/settings.yaml"
-    mandatory: true
-    note: |
-      【必須】Dynamic Model Routing (Issue #53) — bloom_routing が off 以外の時のみ実行。
-      ※ このステップをスキップすると、能力不足のモデルにタスクが振られる。必ず実行せよ。
-      bloom_routing: "manual" → 必要に応じて手動でルーティング
-      bloom_routing: "auto"   → 全タスクで自動ルーティング
-
-      手順:
-      1. タスクYAMLのbloom_levelを読む（L1-L6 または 1-6）
-         例: bloom_level: L4 → 数値4として扱う
-      2. 推奨モデルを取得:
-         source lib/cli_adapter.sh
-         recommended=$(get_recommended_model 4)
-      3. 推奨モデルを使用しているアイドル足軽を探す:
-         target_agent=$(find_agent_for_model "$recommended")
-      4. ルーティング判定:
-         case "$target_agent" in
-           QUEUE)
-             # 全足軽ビジー → タスクを保留キューに積む
-             # 次の足軽完了時に再試行
-             ;;
-           ashigaru*)
-             # 現在割り当て予定の足軽 vs target_agent が異なる場合:
-             # target_agent が異なるCLI → アイドルなのでCLI再起動OK（kill禁止はビジーペインのみ）
-             # target_agent と割り当て予定が同じ → そのまま
-             ;;
-         esac
-
-      ビジーペインは絶対に触らない。アイドルペインはCLI切り替えOK。
-      target_agentが別CLIを使う場合、shutsujin互換コマンドで再起動してから割り当てる。
   - step: 7
     action: inbox_write
     target: "ashigaru{N}"
@@ -560,8 +526,6 @@ Push notifications to the lord's phone via ntfy. Karo manages streaks and notifi
 | cmd failed | All subtasks done, any failed | `❌ cmd_XXX 失敗 ({M}/{N}完了, {F}失敗)` |
 | Action needed | 🚨 section added to dashboard.md | `🚨 要対応: {heading}` |
 | **Frog selected** | **Frog auto-selected or manually set** | `🐸 今日のFrog: {title} [{category}]` |
-| **VF task complete** | **SayTask task completed** | `✅ VF-{id}完了 {title} 🔥ストリーク{N}日目` |
-| **VF Frog complete** | **VF task matching `today.frog` completed** | `🐸✅ Frog撃破！{title}` |
 
 ### cmd Completion Check (Step 11.7)
 
@@ -586,24 +550,13 @@ Push notifications to the lord's phone via ntfy. Karo manages streaks and notifi
 
 **Frog = The hardest task of the day.** Either a cmd subtask (AI-executed) or a SayTask task (human-executed).
 
-#### Frog Selection (Unified: cmd + VF tasks)
+#### Frog Selection
 
 **cmd subtasks**:
 - **Set**: On cmd reception (after decomposition). Pick the hardest subtask (Bloom L5-L6).
 - **Constraint**: One per day. Don't overwrite if already set.
 - **Priority**: Frog task gets assigned first.
 - **Complete**: On frog task completion → 🐸 notification → reset `today.frog` to `""`.
-
-**SayTask tasks** (see `saytask/tasks.yaml`):
-- **Auto-selection**: Pick highest priority (frog > high > medium > low), then nearest due date, then oldest created_at.
-- **Manual override**: Lord can set any VF task as Frog via shogun command.
-- **Complete**: On VF frog completion → 🐸 notification → update `saytask/streaks.yaml`.
-
-**Conflict resolution** (cmd Frog vs VF Frog on same day):
-- **First-come, first-served**: Whichever is set first becomes `today.frog`.
-- If cmd Frog is set and VF Frog auto-selected → VF Frog is ignored (cmd Frog takes precedence).
-- If VF Frog is set and cmd Frog is later assigned → cmd Frog is ignored (VF Frog takes precedence).
-- Only **one Frog per day** across both systems.
 
 ### Streaks.yaml Unified Counting (cmd + VF integration)
 
@@ -616,7 +569,7 @@ streak:
   last_date: "2026-02-06"
   longest: 25
 today:
-  frog: "VF-032"          # Can be cmd_id (e.g., "subtask_008a") or VF-id (e.g., "VF-032")
+  frog: "VF-032"          # Can be cmd_id (e.g., "subtask_008a")
   completed: 5            # cmd completed + VF completed
   total: 8                # cmd total + VF total (today's registrations only)
 ```
@@ -625,15 +578,14 @@ today:
 
 | Field | Formula | Example |
 |-------|---------|---------|
-| `today.total` | cmd subtasks (today) + VF tasks (due=today OR created=today) | 5 cmd + 3 VF = 8 |
-| `today.completed` | cmd subtasks (done) + VF tasks (done) | 3 cmd + 2 VF = 5 |
-| `today.frog` | cmd Frog OR VF Frog (first-come, first-served) | "VF-032" or "subtask_008a" |
+| `today.total` | cmd subtasks (today) | 5 cmd |
+| `today.completed` | cmd subtasks (done) | 3 cmd |
+| `today.frog` | cmd Frog | "subtask_008a" |
 | `streak.current` | Compare `last_date` with today | yesterday→+1, today→keep, else→reset to 1 |
 
 #### When to Update
 
 - **cmd completion**: After all subtasks of a cmd are done (Step 11.7) → `today.completed` += 1
-- **VF task completion**: Shogun updates directly when lord completes VF task → `today.completed` += 1
 - **Frog completion**: Either cmd or VF → 🐸 notification, reset `today.frog` to `""`
 - **Daily reset**: At midnight, `today.*` resets. Streak logic runs on first completion of the day.
 
@@ -702,19 +654,17 @@ When updating dashboard.md with Frog and streak info, use this expanded template
 ## 🐸 Frog / ストリーク
 | 項目 | 値 |
 |------|-----|
-| 今日のFrog | {VF-xxx or subtask_xxx} — {title} |
+| 今日のFrog | {subtask_xxx} — {title} |
 | Frog状態 | 🐸 未撃破 / 🐸✅ 撃破済み |
 | ストリーク | 🔥 {current}日目 (最長: {longest}日) |
 | 今日の完了 | {completed}/{total}（cmd: {cmd_count} + VF: {vf_count}） |
-| VFタスク残り | {pending_count}件（うち今日期限: {today_due}件） |
 ```
 
 **Field details**:
-- `今日のFrog`: Read `saytask/streaks.yaml` → `today.frog`. If cmd → show `subtask_xxx`, if VF → show `VF-xxx`.
+- `今日のFrog`: Read `saytask/streaks.yaml` → `today.frog`. Show `subtask_xxx`.
 - `Frog状態`: Check if frog task is completed. If `today.frog == ""` → already defeated. Otherwise → pending.
 - `ストリーク`: Read `saytask/streaks.yaml` → `streak.current` and `streak.longest`.
 - `今日の完了`: `{completed}/{total}` from `today.completed` and `today.total`. Break down into cmd count and VF count if both exist.
-- `VFタスク残り`: Count `saytask/tasks.yaml` → `status: pending` or `in_progress`. Filter by `due: today` for today's deadline count.
 
 **When to update**:
 - On every dashboard.md update (task received, report received)
@@ -1037,7 +987,7 @@ research / 設計 / 品質チェック / レポート生成はこのルールの
 | Gunshi | Opus | multiagent:0.8 | Strategic thinking |
 
 **Default: Assign implementation to ashigaru.** Route strategy/analysis to Gunshi (Opus).
-足軽のモデルは settings.yaml で個別定義。bloom_routing: "auto" 時は Step 6.5 で動的切替を実行せよ。
+足軽のモデルは settings.yaml で個別定義。
 
 ### Bloom Level → Agent Mapping
 
