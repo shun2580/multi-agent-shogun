@@ -61,7 +61,6 @@ workflow:
         L5 分析・評価: QC、設計レビュー、品質判定
         L6 創造: 戦略設計、新規アーキテクチャ、要件定義
       判断基準: 「創造性・判断が要るか？」→ YES=L4以上、NO=L3以下。
-      Step 6.5のbloom_routingがこの値を使ってモデルを動的に切り替える。
     echo_message_rule: |
       echo_message field is OPTIONAL.
       Include only when you want a SPECIFIC shout (e.g., company motto chanting, special occasion).
@@ -69,39 +68,6 @@ workflow:
       Format (when included): sengoku-style, 1-2 lines, emoji OK, no box/罫線.
       Personalize per ashigaru: number, role, task content.
       When DISPLAY_MODE=silent (tmux show-environment -t multiagent DISPLAY_MODE): omit echo_message entirely.
-  - step: 6.5
-    action: bloom_routing
-    condition: "bloom_routing != 'off' in config/settings.yaml"
-    mandatory: true
-    note: |
-      【必須】Dynamic Model Routing (Issue #53) — bloom_routing が off 以外の時のみ実行。
-      ※ このステップをスキップすると、能力不足のモデルにタスクが振られる。必ず実行せよ。
-      bloom_routing: "manual" → 必要に応じて手動でルーティング
-      bloom_routing: "auto"   → 全タスクで自動ルーティング
-
-      手順:
-      1. タスクYAMLのbloom_levelを読む（L1-L6 または 1-6）
-         例: bloom_level: L4 → 数値4として扱う
-      2. 推奨モデルを取得:
-         source lib/cli_adapter.sh
-         recommended=$(get_recommended_model 4)
-      3. 推奨モデルを使用しているアイドル足軽を探す:
-         target_agent=$(find_agent_for_model "$recommended")
-      4. ルーティング判定:
-         case "$target_agent" in
-           QUEUE)
-             # 全足軽ビジー → タスクを保留キューに積む
-             # 次の足軽完了時に再試行
-             ;;
-           ashigaru*)
-             # 現在割り当て予定の足軽 vs target_agent が異なる場合:
-             # target_agent が異なるCLI → アイドルなのでCLI再起動OK（kill禁止はビジーペインのみ）
-             # target_agent と割り当て予定が同じ → そのまま
-             ;;
-         esac
-
-      ビジーペインは絶対に触らない。アイドルペインはCLI切り替えOK。
-      target_agentが別CLIを使う場合、shutsujin互換コマンドで再起動してから割り当てる。
   - step: 7
     action: inbox_write
     target: "ashigaru{N}"
