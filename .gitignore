@@ -187,6 +187,7 @@ logs/
 !docs/vps_pr118_verification_plan.md
 !docs/my_setup.md
 !docs/loop_engineering_design.md
+!docs/watcher_switchover.md
 
 # Screenshots (masked — no secrets)
 !images/
