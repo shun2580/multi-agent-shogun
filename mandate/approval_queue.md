@@ -1352,3 +1352,20 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   (将軍の明示指定「先に押して後から書くな」)。送出後は
   `origin/main..HEAD`に構造的残滓1件(本送出結果を記帳するcommit自身)が
   必ず残る——欠陥ではない、追って再送出を試みるな。
+
+- ID: AQ-018 | 日付: 2026-09-16 | 操作内容: pretooluse_reversibility_check.sh
+  のcategory=push誤判定是正(ヘルプ/dry-run除外)完了に伴うenforce移行検討
+  状態: pending(🔴前提未充足——下記参照)
+  詳細: (a)全件再判定の結果、ヘルプ/dry-run型の是正1件は解消したが、
+  クォート文脈・テスト起源ノイズ等の別型偽陽性が最低5件残存し、
+  さらに67%(33/49件)がログのdetail300文字切り詰め仕様により
+  再判定不能のまま残った。🔴(b)より根本的な前提未充足として、
+  pretooluse_reversibility_check.sh自体にenforceモードのブロック
+  コードが実装されていない(observeモード固定、cmd_194工程6の
+  止めて報告する条件に該当する発見として家老へ別途報告済み)。
+  enforce移行には、まず①enforceモードのコード実装(他ガードの
+  off|observe|enforce3値パターンへの追随)、②detail切り詰め上限の
+  引き上げまたは切り詰め検知付き再判定の恒常化、③残存する
+  クォート/テストノイズ型偽陽性の是正、の3点が前提として必要。
+  出典: gunshi_design_194_6 algorithm_spec(逐語案どおり起票。数値のみ
+  subtask_194_6の実測値〈2026-09-16・スナップショット38,155行〉へ更新)。
