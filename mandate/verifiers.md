@@ -597,3 +597,31 @@ category=push件数の蓄積(条件1・2の20件・2セッション基準)はこ
 
 充足時の扱いは`mandate/approval_queue.md` AQ-018の補遺§(c)条件式を参照
 (enforceモードの実装を起票し、実装後に原則4で移行を裁可する)。
+
+### 条件式(d): 非Claudeエージェント復帰時のroles/*_role.md同期要否判断(残件10)
+
+条件文: 「非Claudeエージェント(codex/copilot/kimi)への復帰判断が発生した時、
+instructions/roles/*_role.mdの同期要否を判定する」(出典: cmd_194 工程8、
+`.claude/skills/dormant-cli-revival-and-non-claude-routing/SKILL.md`——
+休眠資産復帰手順の一部として本条件を位置づける)。
+
+**一次観測点**: 4ペア(role∈{shogun,karo,ashigaru,gunshi})の
+`git log -1 --format=%cI -- instructions/${role}.md`と
+`git log -1 --format=%cI -- instructions/roles/${role}_role.md`の比較。
+本工程8で新設した`scripts/build_instructions.sh`の未同期検知ガード
+(`build_instruction_file()`内、codex/copilot/kimi向け生成のみ対象)が
+実行時に同じ判定を行うため、`bash scripts/build_instructions.sh 2>&1 |
+grep -c "未同期につき生成拒否"`を実行し0件でなければ未同期ペアありという
+簡易確認も可(スイープでの機械判定は同じロジックの事前確認として位置づけられる)。
+
+**トリガー条件(いつ評価すべきか)**: 「非Claudeエージェントへの復帰判断が
+発生した時」。日常のセッション開始点検スイープでの常時評価は不要
+(現状フリートは全Claudeであり、このトリガー条件自体が滅多に発生しない
+ため。Q35「期日を持つ約束の起票禁止」に反しないよう、暦日での再測ではなく
+「復帰判断発生時」という事象トリガーとして本条件式を書いている)。
+
+**相互参照**: `.claude/skills/dormant-cli-revival-and-non-claude-routing/
+SKILL.md`(非Claudeエージェント復帰手順)を読む場面で本条件式も併せて
+参照する設計とする。
+
+出典: `queue/reports/gunshi_report.yaml` task_id: gunshi_design_194_8。
