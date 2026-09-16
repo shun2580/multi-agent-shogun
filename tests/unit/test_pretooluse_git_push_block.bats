@@ -140,3 +140,92 @@ with open(sys.argv[3], 'w') as f:
     [ "$status" -eq 0 ]
     [ -z "$output" ]
 }
+
+# --- cmd_194 工程5: 引用符内非実行文字列の偽陽性是正 ---
+
+# (a) 実被弾repro: メッセージ引数の地の文にgit pushという語句が含まれる
+#     だけのinbox_write.sh呼び出しはALLOWされる(是正確認・必須)。
+@test "(a) inbox_write.sh with 'git push' mentioned in prose message argument: ALLOW (fix confirmation)" {
+    write_payload "$TEST_TMP/p.json" "qa" 'bash scripts/inbox_write.sh shogun "git push --force はD003で絶対禁止である旨を家老へ再確認させたい" report_received karo'
+    run_guard_json "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    run grep -c "^\[.*\] ALLOW .*session=qa " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+# (i) 安全な引用符の後に実push連結: 引用符マスクが後続の実コマンドまで
+#     巻き添えで隠さないことの確認(最重要回帰ケース・必須)。
+@test "(i) echo \"safe\" && git push origin main: DENY still triggers on the real push after a safe quoted arg" {
+    write_payload "$TEST_TMP/p.json" "qi" 'echo "safe" && git push origin main'
+    run_guard_json "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+}
+
+# (e) 素のgit push(引用符関与なし): 回帰なくDENY維持(必須)。
+@test "(e) plain unquoted git push origin main: DENY (no regression)" {
+    write_payload "$TEST_TMP/p.json" "qe" 'git push origin main'
+    run_guard_json "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+}
+
+# (b) bash -c "git push ...": 実行される経路の引数は保護され続けDENY維持
+#     (必須)。
+@test "(b) bash -c \"git push origin main\": DENY (executed -c argument still detected)" {
+    write_payload "$TEST_TMP/p.json" "qb" 'bash -c "git push origin main"'
+    run_guard_json "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+}
+
+# (c) sh -c 'git push': シングルクォート版でも同様にDENY維持。
+@test "(c) sh -c 'git push': DENY (executed -c argument, single-quoted)" {
+    write_payload "$TEST_TMP/p.json" "qc" "sh -c 'git push'"
+    run_guard_json "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+}
+
+# (d) eval "git push ...": evalの引数もDENY維持。
+@test "(d) eval \"git push origin main\": DENY (eval argument still detected)" {
+    write_payload "$TEST_TMP/p.json" "qd" 'eval "git push origin main"'
+    run_guard_json "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+}
+
+# (f) AQ_APPROVED_ID prefix付き素push: 承認判定レイヤーに影響しないこと
+#     (未承認AQなのでDENY維持、回帰なし)。
+@test "(f) AQ_APPROVED_ID=AQ-999 git push origin main: still detected then ALLOW via approval (regression check)" {
+    write_payload "$TEST_TMP/p.json" "qf" 'AQ_APPROVED_ID=AQ-999 git push origin main'
+    run_guard_json "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+# (h) 同一segment内に複数の引用符引数、片方にgit push含む: ALLOW。
+@test "(h) multiple quoted args in one segment, one mentions git push in prose: ALLOW" {
+    write_payload "$TEST_TMP/p.json" "qh" 'bash scripts/inbox_write.sh shogun "safe text" "git push is mentioned here in prose" report_received karo'
+    run_guard_json "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+# (j) -cの前に無関係フラグ: bash --norc -c "git push"はそれでもDENY維持。
+@test "(j) bash --norc -c \"git push\": DENY (unrelated flag before -c does not break arming)" {
+    write_payload "$TEST_TMP/p.json" "qj" 'bash --norc -c "git push"'
+    run_guard_json "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+}
+
+# (k) curl -c cookiejar.txt "...git push...": shell-exec系でないコマンドの
+#     -cで誤ってarmしない(過剰保護の誤りが無いことの確認)。
+@test "(k) curl -c cookiejar.txt \"...git push...\": ALLOW (curl's -c must not falsely arm exec protection)" {
+    write_payload "$TEST_TMP/p.json" "qk" 'curl -c cookiejar.txt "please do not git push this, just a data string"'
+    run_guard_json "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}

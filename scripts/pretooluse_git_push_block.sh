@@ -181,6 +181,65 @@ def mask_non_shell_heredoc_bodies(cmd):
 
 command_for_detection = mask_non_shell_heredoc_bodies(command)
 
+# ─── 引用符内非実行文字列マスキング(cmd_194 工程5): heredocマスキングでは
+# 救えない偽陽性(`bash scripts/inbox_write.sh <agent> "地の文にgit pushという
+# 語句を含むメッセージ"`等、実行されないただの引数文字列内のリテラル
+# 「git push」)を、実行される経路(bash -c/sh -c/evalの引数)は保護したまま
+# 是正する。既存のmask_non_shell_heredoc_bodies・後続のsplit+GIT_PUSH_RE
+# 検出ロジックは一切変更しない(本ブロックはその間に追加する専用ステップ)。
+GIT_PUSH_MASK_RE = re.compile(r"\bgit\s+push\b")
+
+# 引用符・シェル境界(既存SPLIT_REと同一文字集合)・語を1回の左から右への
+# 走査で排他的にトークン化する(先にsplitしてしまうと、分割文字自体が
+# 引用符内に現れた場合に誤分割するため、必ずsplitより前に処理する)。
+QUOTE_MASK_TOKEN_RE = re.compile(
+    r"(?P<boundary>\n|;|&&|\|\||\$\(|\)|`)"
+    r"|(?P<dquote>\"(?:\\.|[^\"\\])*\")"
+    r"|(?P<squote>'[^']*')"
+    r"|(?P<word>[^\s;&|()`\"'\n]+)"
+    r"|(?P<other>[\s\S])"
+)
+
+# -cが実行の引数として意味を持つのはシェル本体を直接起動した場合のみ
+# (evalは-c無しで引数を直接評価するため、eval用の判定は別条件で行う)。
+SHELL_C_BASENAMES = {"bash", "sh", "zsh", "dash", "ksh"}
+
+
+def mask_quoted_nonexec_strings(cmd):
+    out = []
+    current_sink = None
+    dash_c_armed = False
+    for tok in QUOTE_MASK_TOKEN_RE.finditer(cmd):
+        kind = tok.lastgroup
+        text = tok.group()
+        if kind == "boundary":
+            current_sink = None
+            dash_c_armed = False
+            out.append(text)
+        elif kind == "word":
+            if current_sink is None:
+                current_sink = text.rsplit("/", 1)[-1]
+            if text == "-c" and current_sink in SHELL_C_BASENAMES:
+                dash_c_armed = True
+            out.append(text)
+        elif kind in ("dquote", "squote"):
+            if dash_c_armed or current_sink == "eval":
+                # 実行される経路(bash -c/sh -c/evalの引数)の文字列は保護
+                # したまま保持する(検知力を落とさないため)。
+                dash_c_armed = False
+                out.append(text)
+            else:
+                # 実行されない単なるデータ引数: 引用符範囲内でのみ
+                # git push相当部分を同じ文字数の#列へ置換する(引用符の
+                # 外側・非マッチ部分は変更しない)。
+                out.append(GIT_PUSH_MASK_RE.sub(lambda m: "#" * len(m.group(0)), text))
+        else:
+            out.append(text)
+    return "".join(out)
+
+
+command_for_detection = mask_quoted_nonexec_strings(command_for_detection)
+
 # ─── 複合コマンド分割(pretooluse_reversibility_check.shの_DANGER_CHARS_RE型
 # 分割ロジックを一般化): 改行・`;`・`&&`・`||`・コマンド置換($( ) とバック
 # クォート)の境界で分割し、各断片に対し\bgit\s+push\bを適用する。分割自体は
