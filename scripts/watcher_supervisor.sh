@@ -56,7 +56,16 @@ start_watcher_if_missing() {
     fi
 
     cli=$(tmux show-options -p -t "$pane" -v @agent_cli 2>/dev/null || echo "codex")
-    nohup bash scripts/inbox_watcher.sh "$agent" "$pane" "$cli" >> "$log_file" 2>&1 &
+    if [ "$agent" = "shogun" ]; then
+        # 将軍固有の安全モード: phase2/phase3エスカレーション無効、
+        # timeout周期処理無効（event-drivenのみ）。cmd_198工程6で
+        # shutsujin_departure.shの直接launchブロックから移植（他エージェント
+        # には適用しない）。
+        ASW_DISABLE_ESCALATION=1 ASW_PROCESS_TIMEOUT=0 ASW_DISABLE_NORMAL_NUDGE=0 \
+            nohup bash scripts/inbox_watcher.sh "$agent" "$pane" "$cli" >> "$log_file" 2>&1 &
+    else
+        nohup bash scripts/inbox_watcher.sh "$agent" "$pane" "$cli" >> "$log_file" 2>&1 &
+    fi
 }
 
 watcher_specs() {

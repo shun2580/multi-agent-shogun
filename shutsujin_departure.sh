@@ -958,9 +958,15 @@ NINJA_EOF
     echo ""
 
     # ═══════════════════════════════════════════════════════════════════
-    # STEP 6.6: inbox_watcher起動（全エージェント）
+    # STEP 6.6: inbox初期化（全エージェント）
+    # cmd_198工程6(Q53): 直接nohup起動ブロックはここでは行わない。
+    # watcher_supervisor.sh（STEP 6.6.5）を唯一の起動元とし、10体分の
+    # watcher起動はsupervisor起動後5秒以内の最初のstart_all_watchers
+    # ループが担う（start_watcher_if_missing()の既存pgrep冪等により
+    # 二重起動は防止済み。launcherが一つになりTOCTOUの相手が消えたため
+    # flockは追加しない — 裁定書の明示的判断）。
     # ═══════════════════════════════════════════════════════════════════
-    log_info "📬 メールボックス監視を起動中..."
+    log_info "📬 メールボックス監視の起動準備中..."
 
     # inbox ディレクトリ初期化（シンボリックリンク先のLinux FSに作成）
     mkdir -p "$SCRIPT_DIR/logs"
@@ -968,43 +974,7 @@ NINJA_EOF
         [ -f "$SCRIPT_DIR/queue/inbox/${agent}.yaml" ] || echo "messages:" > "$SCRIPT_DIR/queue/inbox/${agent}.yaml"
     done
 
-    # 既存のwatcherと孤児inotifywait/fswatchをkill
-    pkill -f "inbox_watcher.sh" 2>/dev/null || true
-    pkill -f "inotifywait.*queue/inbox" 2>/dev/null || true
-    pkill -f "fswatch.*queue/inbox" 2>/dev/null || true
-    sleep 1
-
-    # 将軍のwatcher（ntfy受信の自動起床に必要）
-    # 安全モード: phase2/phase3エスカレーションは無効、timeout周期処理も無効（event-drivenのみ）
-    _shogun_watcher_cli=$(tmux show-options -p -t "shogun:main" -v @agent_cli 2>/dev/null || echo "claude")
-    nohup env ASW_DISABLE_ESCALATION=1 ASW_PROCESS_TIMEOUT=0 ASW_DISABLE_NORMAL_NUDGE=0 \
-        bash "$SCRIPT_DIR/scripts/inbox_watcher.sh" shogun "shogun:main" "$_shogun_watcher_cli" \
-        >> "$SCRIPT_DIR/logs/inbox_watcher_shogun.log" 2>&1 &
-    disown
-
-    # 家老のwatcher
-    _karo_watcher_cli=$(tmux show-options -p -t "multiagent:agents.${PANE_BASE}" -v @agent_cli 2>/dev/null || echo "claude")
-    nohup bash "$SCRIPT_DIR/scripts/inbox_watcher.sh" karo "multiagent:agents.${PANE_BASE}" "$_karo_watcher_cli" \
-        >> "$SCRIPT_DIR/logs/inbox_watcher_karo.log" 2>&1 &
-    disown
-
-    # 足軽のwatcher
-    for i in $(seq 1 "$_ASHIGARU_COUNT"); do
-        p=$((PANE_BASE + i))
-        _ashi_watcher_cli=$(tmux show-options -p -t "multiagent:agents.${p}" -v @agent_cli 2>/dev/null || echo "claude")
-        nohup bash "$SCRIPT_DIR/scripts/inbox_watcher.sh" "ashigaru${i}" "multiagent:agents.${p}" "$_ashi_watcher_cli" \
-            >> "$SCRIPT_DIR/logs/inbox_watcher_ashigaru${i}.log" 2>&1 &
-        disown
-    done
-
-    # 軍師のwatcher
-    p=$((PANE_BASE + _ASHIGARU_COUNT + 1))
-    _gunshi_watcher_cli=$(tmux show-options -p -t "multiagent:agents.${p}" -v @agent_cli 2>/dev/null || echo "claude")
-    nohup bash "$SCRIPT_DIR/scripts/inbox_watcher.sh" "gunshi" "multiagent:agents.${p}" "$_gunshi_watcher_cli" \
-        >> "$SCRIPT_DIR/logs/inbox_watcher_gunshi.log" 2>&1 &
-    disown
-
-    log_success "  └─ $((_ASHIGARU_COUNT + 3))エージェント分のinbox_watcher起動完了（将軍+家老+足軽${_ASHIGARU_COUNT}+軍師）"
+    log_success "  └─ inbox初期化完了（watcher本体の起動はSTEP 6.6.5のsupervisorへ一元化）"
 
     # ═══════════════════════════════════════════════════════════════════
     # STEP 6.6.5: watcher_supervisor.sh 起動（冪等）+ dashboard常設可視化
