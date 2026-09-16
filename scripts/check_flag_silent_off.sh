@@ -13,7 +13,7 @@
 # されれば以後は本スクリプトにより機械判定される。
 #
 # 使い方:
-#   scripts/check_flag_silent_off.sh                # 既定4対象を検査
+#   scripts/check_flag_silent_off.sh                # 既定3対象を検査
 #   scripts/check_flag_silent_off.sh <file>[:<function>] ...  # 対象を指定
 #
 # 判定方法: 対象内でoff判定条件式( `[ "$MODE" = "off" ]` や
@@ -28,7 +28,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 DEFAULT_TARGETS=(
     "scripts/pretooluse_yaml_guard.sh"
-    "scripts/pretooluse_reversibility_check.sh"
     "scripts/pretooluse_git_push_block.sh"
     "scripts/inbox_watcher.sh:check_fleet_idle_notify"
 )
