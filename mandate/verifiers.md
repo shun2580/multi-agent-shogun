@@ -45,9 +45,10 @@
 - done判定時は、成果物ファイルが実際にcommitされていることを`git status --porcelain`等で
   確認する。commitし忘れたまま「完了」と判定しない(出典: cmd_146成果物が一部未commitのまま
   done判定されていた実例、cmd_147是正)
-- approval_queueエントリを殿の消化に出す直前、doubt欄の数値・件数を再実測して更新する
-  (出典: 殿の2026-08-05裁定・cmd_149。AQ-001 doubt(a)137→149行、AQ-002 doubt(b)
-  commit件数62→65件と複数回陳腐化した実例を族と認定)
+- 🔴retire(2026-09-16・approval_queue.md自体がQ58全面上書きにより退役): approval_queueエントリを
+  殿の消化に出す直前、doubt欄の数値・件数を再実測して更新する、という項目は対象消失。
+  (旧出典: 殿の2026-08-05裁定・cmd_149。AQ-001 doubt(a)137→149行、AQ-002 doubt(b)
+  commit件数62→65件と複数回陳腐化した実例を族と認定。将軍裁定は`mandate/decisions_journal.md`のS-nn記帳へ移行)
 - 既存ログの再スキャンで危険な形の混入がゼロだったことは、分類器が
   敵対的入力に対して安全であることを示さない。標本に無いことと
   有り得ないことは別物である(cmd_153・judgment_model原則1の適用例。
@@ -64,8 +65,10 @@
 - `queue/reports/ashigaru*_report.yaml`（全足軽分の合算）
 - `queue/reports/gunshi_report.yaml`
 - `mandate/decisions_journal.md`
-- `mandate/approval_queue.md`
 - `dashboard.md`
+
+(2026-09-16注記: `mandate/approval_queue.md`は退役済みのため走査対象から除外。
+下表の2026-08-08時点実測値〈同ファイル1件〉は退役前の歴史的記録として保持する)
 
 **実測値（2026-08-08時点・subtask_155_AB2完了直前に最終再実測。旧値49はashigaru1の
 自己言及インフレを見落としていた誤りだったため訂正した。詳細は
@@ -216,13 +219,13 @@ Q42-5、`queue/shogun_to_karo.yaml` cmd_178)。
 1. 一次観測点となるファイルパス(例: `logs/stall_events.jsonl`)
 2. 機械判定可能なパターン(例: `event: nudge_sent`の出現件数を数える`grep`/`jq`コマンド)
 
-**全件遡及適用(subtask_178_B・全件洗い出し実測)**: 制定時点で存在した既存の未解除
+**全件遡及適用(subtask_178_B・全件洗い出し実測)**: 制定時点(cmd_178)で存在した既存の未解除
 caveat・条件式**全件**(`dashboard.md`「📋未解除caveat追跡」欄1件〈cmd_147〉、
-`mandate/approval_queue.md`のpending状態3件〈AQ-008・AQ-010・AQ-012〉、本ファイル内の
-条件式1件〈cmd_156 phase-breakdown評価条件、直下の「一次観測点(Q42-5遡及適用)」参照〉、
-計5件)へ本細則を遡及適用し、各所在に一次観測点を追記した。対象件数・所在の洗い出し
-方法(`grep -n`実行結果を含む)の全文は`queue/reports/ashigaru2_report.yaml`
-task_id: subtask_178_Bを参照のこと。
+当時の`mandate/approval_queue.md`(2026-09-16retire済み、参照はgit履歴)のpending状態3件
+〈AQ-008・AQ-010・AQ-012〉、本ファイル内の条件式1件〈cmd_156 phase-breakdown評価条件、
+直下の「一次観測点(Q42-5遡及適用)」参照〉、計5件)へ本細則を遡及適用し、各所在に一次観測点を
+追記した。対象件数・所在の洗い出し方法(`grep -n`実行結果を含む)の全文は
+`queue/reports/ashigaru2_report.yaml` task_id: subtask_178_Bを参照のこと。
 
 ## 期日を持つ約束の起票禁止則(Q35・cmd_168)
 
@@ -597,6 +600,13 @@ category=push件数の蓄積(条件1・2の20件・2セッション基準)はこ
 
 充足時の扱いは`mandate/approval_queue.md` AQ-018の補遺§(c)条件式を参照
 (enforceモードの実装を起票し、実装後に原則4で移行を裁可する)。
+
+🔴**retire注記(2026-09-16・cmd_198工程1/工程12)**: `reversibility_check_enabled`機構自体
+(コード・flag・テスト・文書)がFable裁定書Q59①(軍師棚卸し`queue/reports/gunshi_report.yaml`
+task_id: subtask_198_1)によりretire(削除)と判定されたため、本条件式(c)は対象消失により
+以後の再開・追跡は不要となった。`mandate/approval_queue.md`自体もQ58全面上書きにより退役済み
+(新規追記先は`mandate/decisions_journal.md`のS-nn記帳)。AQ-018の裁定はS-03
+(decisions_journal.md、cmd_198工程12)を参照。
 
 ### 条件式(d): 非Claudeエージェント復帰時のroles/*_role.md同期要否判断(残件10)
 

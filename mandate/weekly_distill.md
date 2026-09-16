@@ -52,7 +52,7 @@ judgment_model.md の既存原則と比較し、以下のいずれかに分類:
 | 分類 | 処理 | 例 |
 |-----|-----|-----|
 | **統合型** | 既存原則に出典追加 | Q9の「横断洗い出し」→原則12に「Q9」を参照追加 |
-| **新規型** | approval_queue.md に pending として登録 | 新しい観点の原則 |
+| **新規型** | `mandate/decisions_journal.md` へ将軍裁定として直接記帳(2026-09-16 Q58全面上書きにより<br>approval_queue.mdは退役。S-nn不要・詳細はStep 4b参照) | 新しい観点の原則 |
 | **重複型** | すでに記録済み・対応不要 | (この場合、蒸留ログに「重複」と記録) |
 
 ### Step 4: judgment_model.md への反映
@@ -74,18 +74,24 @@ judgment_model.md の既存原則と比較し、以下のいずれかに分類:
 
 #### 4b. 新規型の場合
 
-**本手順では approval_queue.md へ登録し、新原則の実装は行わない。**
+**新規原則候補は`mandate/decisions_journal.md`へ将軍裁定として直接記帳する
+（2026-09-16 Q58全面上書きにより`mandate/approval_queue.md`は退役。殿承認を要するのは
+D001-D008・push/公開・金銭の3カテゴリのみであり新原則の追加はいずれにも該当しないため、
+S-nn付与も不要——将軍が本手順の中で直接判断してよい）。**
 
-approval_queue.md に以下フォーマットで登録:
+decisions_journal.md に以下フォーマットで記帳:
 
 ```
-AQ-NNN | YYYY-MM-DD | 新原則: 「原則タイトル」の承認申請 | decisions_journal.mdのQ番号(例: Q20,Q21)から抽出 | doubt: その原則が普遍的か、または特定ケース限定か、の判断点を記す | pending
+YYYY-MM-DD | RULE | 新原則「原則タイトル」の採択(週次蒸留) | decisions_journal.mdのQ番号(例: Q20,Q21)から抽出 | 判断点: その原則が普遍的か、または特定ケース限定か
 ```
 
 例:
 ```
-AQ-027 | 2026-08-11 | 新原則「破壊的スコープの透視」の承認申請 | decisions_journal.md 2026-08-11 RULE(Q20相当) | doubt: 既存原則7「修復の一貫性」と共存すべき独立原則か、それとも補足か | pending
+2026-08-11 | RULE | 新原則「破壊的スコープの透視」の採択(週次蒸留) | decisions_journal.md 2026-08-11 RULE(Q20相当) | 判断点: 既存原則7「修復の一貫性」と共存すべき独立原則か、それとも補足か
 ```
+
+記帳後、上限160行の運用規則(超過時は既存原則の統合・退役を先に行う)を踏まえて
+judgment_model.mdへ実装する。
 
 ### Step 5: ジャーナルへの蒸留記録
 
@@ -106,7 +112,7 @@ YYYY-MM-DD | CORRECT | 週次蒸留実行 | 開始日時 YYYY-MM-DD HH:MM:SS、�
 
 - [ ] judgment_model.md が160行以内か確認
 - [ ] 出典の記載が正しいか(エントリの日付・Q番号が decisions_journal.md に実在するか)
-- [ ] approval_queue.md の新規登録が doubt欄を含むか
+- [ ] decisions_journal.md への新規記帳(新規型)が判断点の記載を含むか(旧doubt欄相当)
 - [ ] git diff で意図しない変更がないか
 
 ## 実装方式
@@ -145,7 +151,7 @@ crontab に登録(毎週日曜 09:00):
 [YYYY-MM-DD HH:MM:SS] [START] Weekly distillation started
 [YYYY-MM-DD HH:MM:SS] [EXTRACT] Entries from YYYY-MM-DD to YYYY-MM-DD found: N件
 [YYYY-MM-DD HH:MM:SS] [MERGE] Unified N entries into existing principles
-[YYYY-MM-DD HH:MM:SS] [NEW] N new principles queued in approval_queue.md
+[YYYY-MM-DD HH:MM:SS] [NEW] N new principles recorded to decisions_journal.md (将軍裁定, S-nn不要)
 [YYYY-MM-DD HH:MM:SS] [QC] judgment_model.md line count: NNN/160
 [YYYY-MM-DD HH:MM:SS] [COMPLETE] Duration: XXs
 ```
@@ -155,15 +161,14 @@ crontab に登録(毎週日曜 09:00):
 - **decisions_journal.md に対する書き換え禁止**: 蒸留中も既存エントリは変更しない。
   追記のみを行う(Step 5の蒸留記録)。
 
-- **承認前の judgment_model.md 実装禁止**: 新規原則は approval_queue.md に pending として
-  登録し、殿の明示承認まで judgment_model.md には載せない。
-
-- **approval_queue.md での承認消化**: セッション終了前に approval_queue.md のキューを
-  必ず1回消化する(詳細は CLAUDE.md・mandate/approval_queue.md 参照)。
+- **実装前の将軍裁定記帳を先行させる**: 新規原則は`mandate/decisions_journal.md`へ
+  将軍裁定として記帳してから judgment_model.md へ実装する(2026-09-16 Q58全面上書きにより
+  approval_queue.mdでのpending運用・殿の明示承認待ちは退役。殿承認は
+  D001-D008・push/公開・金銭の3カテゴリのみ)。
 
 ## 参考資料
 
-- `mandate/decisions_journal.md` — 裁定・訂正の記録元
+- `mandate/decisions_journal.md` — 裁定・訂正の記録元。新規原則もここへ将軍裁定として直接記帳する
+  (旧`mandate/approval_queue.md`は2026-09-16のQ58全面上書きにより退役)
 - `mandate/judgment_model.md` — 蒸留対象・出力先
-- `mandate/approval_queue.md` — 新規原則のキュー
 - `~/fable_ruling_*.md` — 初期裁定の出典(cmd_145で指示されたもの)

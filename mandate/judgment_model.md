@@ -10,10 +10,7 @@
 将軍・家老・軍師の3体はセッション開始時に本ファイルを必ず読み込むこと
 (instructions/shogun.md・karo.md・gunshi.md および CLAUDE.md Session Start手順参照)。
 
-**恒久例外(非緩和・cmd_145殿裁定追加②)**: 設計承認(CoDD Wave境界)の殿必須は、
-approval_queue.mdによる承認一元化・キュー消化運用の対象**外**であり、恒久的に
-維持する。バッチ承認の廃止・省力化は本例外を緩和しない。mandate層のみを読む
-者にも分かるよう、`mandate/approval_queue.md`側にも同じ例外を明記する。
+(2026-09-16 Q58全面上書きにより恒久例外を退役。CoDD Wave境界の殿承認義務は解除、以後将軍決定・S-nn記帳。出典: fable_ruling_20260916_q58_override.md)
 
 ---
 
@@ -123,15 +120,12 @@ denyの壁を突破する必要が生じた場合でも、時間圧の下で破�
 
 - 出典: Q9(横断洗い出しのトリアージ基準)
 
-## 原則13: approval_queueは禁止操作の迂回路ではない(恒久ルール)
+## 原則13: approval_queue.mdは退役済み(D001-D008は依然絶対禁止)
 
-`mandate/approval_queue.md`への追記は、戻せない操作の実行前レビューを一元化
-するための仕組みであり、D001-D008(Destructive Operation Safety)で絶対禁止と
-定められた操作(Tier1)を実行してよいことにする迂回路では**ない**。Tier1該当
-操作はキューにも積まず、従来どおり拒否・報告する。この解釈を殿は恒久ルールと
-定めた(緩和・撤回不可)。
+`mandate/approval_queue.md`は2026-09-16のQ58全面上書きにより退役した(新規追記先は
+decisions_journal.mdのS-nn記帳)。D001-D008(Tier1)は退役の対象外で依然絶対禁止(緩和・撤回不可)。
 
-- 出典: decisions_journal.md 2026-08-04 RULEエントリ(cmd_145殿裁定追加①)
+- 出典: decisions_journal.md 2026-08-04 RULEエントリ(cmd_145①)、fable_ruling_20260916_q58_override.md(Q58)
 
 ## 原則14: 実運用でしか観測できない事象は、事前検証ではなく検知機構の併設で対処する
 
@@ -151,9 +145,16 @@ caveatを解除する。
   真陽性のdenyが作業中に発火したときの扱い」)、
   Q23(cmd_158の実経緯の成文化、2026-08-09)
 
+## 原則15: 記述の強制力は実装の実態を超えて謳わない
+
+設定・文書が謳う強制力の段階(off/observe/enforce等)は実装の実態を超えてはならない。
+不一致はfail-loudの逆(サイレントな過大表示)であり事故時の発見を遅らせる。
+
+- 出典: cmd_144議題1(D006記述)、cmd_194工程6(reversibility_check_enabledのenforce未実装、AQ-018詳細(b))、AQ-004採択(S-01、cmd_198工程12)
+
 ---
 
-(2026-08-04時点で14原則。統合・退役の実績なし)
-(2026-08-08追記: cmd_155-D週次蒸留初回実行。原則1/3/4へ出典追加4件を統合。新規原則候補1件は
-judgment_model.mdへ未反映のままapproval_queue.md AQ-004としてpending登録。統合・退役以外の
-原則新設・削除は無し)
+(2026-08-04時点で14原則。2026-08-08: cmd_155-D週次蒸留で原則1/3/4へ出典4件統合、新規候補1件は
+AQ-004としてpending登録。2026-09-16: Q58全面上書きでAQ-004採択→原則15新設、冒頭の恒久例外
+(旧CoDD Wave境界殿必須節)は退役、原則13はapproval_queue.md退役に伴い是正。出典:
+fable_ruling_20260916_q58_override.md、queue/tasks/ashigaru5.yaml subtask_198_2b)

@@ -362,35 +362,40 @@ L3はBloom分類上「機械的適用（定型修正・frontmatter一括修正�
 
 - **戻せる操作**（ローカル編集・ブランチへのcommit・テスト実行・docs生成等）:
   自動進行・個別報告不要とする（例外時ntfyは現行「ntfy完了通知の必須ルール」どおり）。
-- **戻せない操作**（push・公開・`published:true`化・DB破壊的変更・外部送信・
-  ファイル削除等）: 実行せず `mandate/approval_queue.md` へ追記して次タスクへ進む。
-  エントリ形式・doubt欄必須は `mandate/approval_queue.md` 本体の定義に従う。
+- **殿の承認を要する操作（2026-09-16 Q58全面上書き・以下3つのみ）**: D001〜D008・
+  push/公開（F007）・金銭を伴う操作。これらは実行せず殿へ到達させ判断を仰ぐ
+  （`mandate/approval_queue.md`は退役済み。到達経路は従来のntfy urgent等の
+  エスカレーション経路を用いる）。
+- **それ以外の一切**（機構の追加・修理・削除、設計判断、「対応しない」判定、
+  文書変更、リポジトリ内のファイル削除等gitで戻せる操作を含む）: 将軍が決め、
+  `mandate/decisions_journal.md`へ`S-nn`で記帳する（家老はtask YAMLを持たず、
+  分解・割当のみを担う。F001準拠）。
 
 **🔴上位規律の非上書き（CRITICAL）**: 本分岐は D001-D008（Destructive Operation
-Safety、CLAUDE.md）を一切緩めない。`approval_queue.md`への追記はD001 Tier1の
-代替経路では**ない**。Tier1該当操作はキューにも積まず、従来どおり拒否・報告する。
+Safety、CLAUDE.md）を一切緩めない。Tier1該当操作は将軍裁定の対象にもならず、
+従来どおり拒否・報告する。
 
 **既存F007（push低リスク5条件ファストレーン）との関係**: `instructions/common/
 forbidden_actions.md` F007の5条件（published:false・ドキュメントのみ・
 `--force`不使用・新規外向き主張なし・スコープ内）を満たすpushは、本ルール制定
 以前から存在する狭いスコープの事前承認済み経路（`mandate/judgment_model.md`
 原則10、出典Q16「commit済み・QC済みでスコープの狭い操作は事前承認済みとして
-扱ってよい」）として引き続き有効。本ルールが新設するのは「それ以外の戻せない
-操作」のデフォルト動作（実行せずキューへ）であり、F007を緩和・上書きしない。
+扱ってよい」）として引き続き有効。殿の承認を要するのは「それ以外のpush」である。
 
-**却下記録**: 殿がapproval_queue.mdのエントリを却下した場合、却下理由を
+**却下記録**: 殿が上記3カテゴリの申請を却下した場合、却下理由を
 `mandate/decisions_journal.md`へ**原文ママ**で追記する運用とする（種別REJECT）。
 
-**設計承認（CoDD Wave境界）の例外（cmd_145殿裁定追加②・非緩和）**: 設計承認は
-本分岐の対象外であり、従来どおり殿必須を維持する。`mandate/judgment_model.md`・
-`mandate/approval_queue.md` にも明記する（mandate層だけを読む者にも分かる形で）。
+**設計承認（CoDD Wave境界）の例外は退役（2026-09-16 Q58全面上書き）**: cmd_145
+殿裁定追加②が定めた殿必須の恒久例外は解除された。学習用Goコードに製品判断の
+防波堤は要らないとの補遺明記による。以後は将軍が決め、S-nnで記帳する。
 
-**新規feature flagの常用化判断（cmd_144議題5・cmd_147制定）**: 新規feature flagを
-「常用（恒久稼働・enforce化等）」へ切り替える判断は、本分岐の「戻せない操作」に
-準じ、`mandate/approval_queue.md`へ積んで殿が消化する運用へ統一する（出典:
-cmd_144議題5、cmd_147）。flag導入時のデフォルトoff（既存ルール）とは別の観点で
-あることに注意——本項が扱うのは「off/observeで導入済みのflagを、いつ・誰の判断で
-常用へ切り替えるか」である。
+**新規feature flagの常用化判断（cmd_144議題5・cmd_147制定、2026-09-16 Q58により
+運用先変更）**: 新規feature flagを「常用（恒久稼働・enforce化等）」へ切り替える
+判断は、上記3カテゴリ（D001-D008・push/公開・金銭）に該当しない限り将軍が決め、
+S-nnで記帳する（旧: approval_queue.mdへ積んで殿が消化。同ファイル退役に伴い
+運用先を変更、出典cmd_144議題5・cmd_147は経緯として不変）。flag導入時の
+デフォルトoff（既存ルール）とは別の観点であることに注意——本項が扱うのは
+「off/observeで導入済みのflagを、いつ・誰の判断で常用へ切り替えるか」である。
 
 ## Fast-Lane Exception（cmd_086 Part C 2026-07-10制定・2026-07-17再構成）
 
@@ -735,17 +740,16 @@ shogun.md「🔴適用線引き」節参照。
 1. `queue/shogun_to_karo.yaml`該当cmdの`notify_on_done`の値のみを見る。
    `true`→ntfy送信。`false`→dashboard.md更新のみで完結（ntfy省略）。
 
-#### (2) 承認の一元化 — approval_queue.mdキュー消化（cmd_145改訂）
+#### (2) 殿承認範囲の限定 — D001-D008・push/公開・金銭のみ（2026-09-16 Q58全面上書き）
 
-通常cmdの完了に伴う戻せない操作（push・公開等）の承認は、殿への都度提示を
-求めない点は従来どおりだが、提示方式を ~~セッション末の差分一括レビュー提示~~
-から**`mandate/approval_queue.md` へ追記し次タスクへ進む**運用へ改める
-（cmd_145 Part3。本節(2)が定めていた旧cmd_136「差分一括レビュー」運用を
-置換する）。分岐の詳細は「戻せる/戻せない操作の分岐（cmd_145制定）」節を正とする。
+通常cmdの完了に伴う操作のうち、殿の承認を要するのはD001-D008・push/公開（F007）・
+金銭を伴う操作の3カテゴリのみである。それ以外の戻せない操作（機構の追加・修理・
+削除、設計判断等）は将軍が決め、`mandate/decisions_journal.md`へ`S-nn`で記帳する
+（旧: `mandate/approval_queue.md`へ追記し次タスクへ進む運用〈cmd_145 Part3〉だったが、
+同ファイルはQ58により退役した）。分岐の詳細は「戻せる/戻せない操作の分岐」節を正とする。
 
-**🔴例外（緩和しない）**: 設計承認（CoDD Wave境界）は本キュー化の対象外。
-従来どおり各Wave境界で殿の承認を都度得ること（`mandate/judgment_model.md`・
-`mandate/approval_queue.md`にも非緩和項として明記、cmd_145殿裁定追加②）。
+**🔴例外は退役（2026-09-16 Q58全面上書き）**: 設計承認（CoDD Wave境界）の殿必須
+（cmd_145殿裁定追加②）は解除された。以後は将軍が決め、S-nnで記帳する。
 
 #### (3) 完了定義の機械化 — cmd Completion Check（Step 11.7）への追記
 
@@ -787,7 +791,9 @@ Step 11.7「cmd Completion Check」の判定に以下を追加する:
 
 用途: 後日の緩和・引締め判断のデータ。介入頻度が高い種別は線引きの見直し候補となる。
 
-> 陣仕舞い時の「停止準備完了」ntfy要件・approval_queue消化手順は `.claude/skills/army-shutdown-checklist/SKILL.md` を参照。
+> 陣仕舞い時の「停止準備完了」ntfy要件は `.claude/skills/army-shutdown-checklist/SKILL.md` を参照
+> （approval_queue消化手順は2026-09-16のQ58全面上書きによりapproval_queue.md自体が退役したため
+> 同skill側で陳腐化注記済み）。
 
 ## Skill Candidates
 
