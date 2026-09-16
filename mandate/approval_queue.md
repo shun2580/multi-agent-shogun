@@ -1385,3 +1385,10 @@ bash scripts/log_timing_event.sh lord_judgment_recorded <cmd_id> "" <agent> \
   する。条件3の評価母集団は、(a)(b)適用後に新規発生したWOULD-BLOCK
   イベントのうち`truncated=false`のものに限定し、そこから改めて数え
   直す。」
+
+  【追記 2026-09-16 cmd_198工程1(Q59①)】番兵`reversibility_check_enabled`
+  自体がFable裁定書(`~/fable_ruling_20260916_q53q59.md`Q59①、軍師棚卸し
+  `gunshi_report.yaml` task_id: subtask_198_1)により退役(コード・flag・
+  テスト・文書を削除)と判定された。本AQ-018が扱っていたenforce移行検討は
+  対象の番兵自体が消滅したため対象消失となる。過去記録は消さず、本注記を
+  もって「対応しない」として扱う(以後の再開・追跡は不要)。
