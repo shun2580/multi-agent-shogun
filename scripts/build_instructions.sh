@@ -7,6 +7,8 @@
 
 set -euo pipefail
 
+declare -a SYNC_GUARD_SKIPPED=()
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 PARTS_DIR="$ROOT_DIR/instructions"
@@ -58,6 +60,25 @@ build_instruction_file() {
     local original_file="$ROOT_DIR/instructions/${role}.md"
 
     echo "Building: $output_filename (CLI: $cli_type, Role: $role)"
+
+    # Sync guard (cmd_194 工程8): codex/copilot/kimi向け生成のみ、
+    # instructions/roles/${role}_role.mdとinstructions/${role}.mdの
+    # commit日時を比較し、本体の方が新しければ未同期として生成拒否する。
+    # claude/opencodeはroles/*_role.mdの生成物を実消費しないため対象外。
+    # 🔴output_pathへの書込み開始前に判定する(書込み後にreturnすると
+    # 既存の生成済みファイルが前半のみで打ち切られ破損するため)。
+    if [[ "$cli_type" != "claude" && "$cli_type" != "opencode" ]]; then
+        local role_file_date main_file_date
+        role_file_date=$(git -C "$ROOT_DIR" log -1 --format=%cI -- "instructions/roles/${role}_role.md")
+        main_file_date=$(git -C "$ROOT_DIR" log -1 --format=%cI -- "instructions/${role}.md")
+        if [[ "$main_file_date" > "$role_file_date" ]]; then
+            echo "  ❌ instructions/roles/${role}_role.md 未同期につき生成拒否
+    (最終更新: ${role_file_date}、instructions/${role}.md 最終更新:
+    ${main_file_date}。2026-05-05以降本体側のみ更新され続けている
+    構造的欠陥。同期または方針転換は別cmdで検討されたい)" >&2
+            return 1
+        fi
+    fi
 
     # Extract YAML front matter from original file
     if [ -f "$original_file" ]; then
@@ -130,22 +151,22 @@ build_instruction_file "claude" "ashigaru" "ashigaru.md"
 build_instruction_file "claude" "gunshi" "gunshi.md"
 
 # Build Codex instruction files
-build_instruction_file "codex" "shogun" "codex-shogun.md"
-build_instruction_file "codex" "karo" "codex-karo.md"
-build_instruction_file "codex" "ashigaru" "codex-ashigaru.md"
-build_instruction_file "codex" "gunshi" "codex-gunshi.md"
+build_instruction_file "codex" "shogun" "codex-shogun.md" || SYNC_GUARD_SKIPPED+=("codex-shogun")
+build_instruction_file "codex" "karo" "codex-karo.md" || SYNC_GUARD_SKIPPED+=("codex-karo")
+build_instruction_file "codex" "ashigaru" "codex-ashigaru.md" || SYNC_GUARD_SKIPPED+=("codex-ashigaru")
+build_instruction_file "codex" "gunshi" "codex-gunshi.md" || SYNC_GUARD_SKIPPED+=("codex-gunshi")
 
 # Build Copilot instruction files
-build_instruction_file "copilot" "shogun" "copilot-shogun.md"
-build_instruction_file "copilot" "karo" "copilot-karo.md"
-build_instruction_file "copilot" "ashigaru" "copilot-ashigaru.md"
-build_instruction_file "copilot" "gunshi" "copilot-gunshi.md"
+build_instruction_file "copilot" "shogun" "copilot-shogun.md" || SYNC_GUARD_SKIPPED+=("copilot-shogun")
+build_instruction_file "copilot" "karo" "copilot-karo.md" || SYNC_GUARD_SKIPPED+=("copilot-karo")
+build_instruction_file "copilot" "ashigaru" "copilot-ashigaru.md" || SYNC_GUARD_SKIPPED+=("copilot-ashigaru")
+build_instruction_file "copilot" "gunshi" "copilot-gunshi.md" || SYNC_GUARD_SKIPPED+=("copilot-gunshi")
 
 # Build Kimi K2 instruction files
-build_instruction_file "kimi" "shogun" "kimi-shogun.md"
-build_instruction_file "kimi" "karo" "kimi-karo.md"
-build_instruction_file "kimi" "ashigaru" "kimi-ashigaru.md"
-build_instruction_file "kimi" "gunshi" "kimi-gunshi.md"
+build_instruction_file "kimi" "shogun" "kimi-shogun.md" || SYNC_GUARD_SKIPPED+=("kimi-shogun")
+build_instruction_file "kimi" "karo" "kimi-karo.md" || SYNC_GUARD_SKIPPED+=("kimi-karo")
+build_instruction_file "kimi" "ashigaru" "kimi-ashigaru.md" || SYNC_GUARD_SKIPPED+=("kimi-ashigaru")
+build_instruction_file "kimi" "gunshi" "kimi-gunshi.md" || SYNC_GUARD_SKIPPED+=("kimi-gunshi")
 
 # Build OpenCode instruction files
 build_instruction_file "opencode" "shogun" "opencode-shogun.md"
@@ -474,6 +495,11 @@ generate_agents_md
 generate_copilot_instructions
 generate_kimi_instructions
 generate_opencode_agents
+
+if [[ ${#SYNC_GUARD_SKIPPED[@]} -gt 0 ]]; then
+    echo ""
+    echo "⚠️  未同期につきスキップ (${#SYNC_GUARD_SKIPPED[@]}件): ${SYNC_GUARD_SKIPPED[*]}" >&2
+fi
 
 echo ""
 echo "=== Build Complete ==="
