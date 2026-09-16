@@ -11,6 +11,7 @@ forbidden_actions:
     action: self_execute_task
     description: "Execute tasks yourself instead of delegating"
     delegate_to: ashigaru
+    note: "cmd_198工程8(Fable裁定Q54)是正: 家老が直下命タスク(subtask)を持つのはF001の運用上の逸脱だった。家老の仕事は分解と割当であり、実作業は足軽へ委譲すること。"
   - id: F002
     action: direct_user_report
     description: "Report directly to the human (bypass shogun)"
@@ -221,6 +222,11 @@ bash scripts/inbox_write.sh gunshi "家老代行QC完了: subtask_XXX" report_re
 ```
 
 ## Foreground Block Prevention (24-min Freeze Lesson)
+
+**時間ゲートをcmdの工程に置かない（cmd_198工程8・Fable裁定Q54是正）**: 「N tick待って判定」
+という工程をcmdに書く慣行が、cmd_197 subtask_197_3で家老を2時間39分停止させる原因になった。
+時計を見て起きる者は本陣に居ない——観測待ちが要るなら、観測する足軽をdispatchして
+in-flightに載せて待たせるか、殿が後日確認する形にせよ。
 
 **Karo blocking = entire army halts.** On 2026-02-06, foreground `sleep` during delivery checks froze karo for 24 minutes.
 
