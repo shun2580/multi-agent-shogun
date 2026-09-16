@@ -1,30 +1,70 @@
 task:
-  task_id: gunshi_qc_192_ongoing
-  parent_cmd: cmd_192
+  task_id: gunshi_qc_194_9
+  parent_cmd: cmd_194
   type: qc
   bloom_level: L5
   assigned_to: gunshi
-  status: idle  # 継続的QC役割。直近完了: gunshi_qc_192_7_3(2026-09-09T20:36:23)。家老が2026-09-09T20:46に入力衛生是正で更新(将軍指摘・stall誤報対応)
-  timestamp: "2026-09-09T20:46:29"
+  status: assigned
+  timestamp: "2026-09-16T15:20:00"
   description: |
-    【cmd_192 継続QC — ashigaru発の各サブタスク完了報告への品質チェック】
+    【cmd_194 工程9 QC — subtask_194_9(帳簿と再起動・最終工程・cmd_194
+    全体の最終QC)】
 
-    軍師は本cmdを通じ、各ashigaruが完了報告時にinbox_write経由で
-    直接依頼するQCを継続的にこなしている(Ashigaru→Gunshi直接通知フロー、
-    CLAUDE.md Report Flow表準拠)。個々のQC対象は各ashigaruの
-    inbox_write本文・queue/reports/gunshi_report.yamlを参照せよ。
+    足軽1号の実装(commit a584235、mandate/decisions_journal.md)を
+    QCせよ。本工程はcmd_194全13工程(工程0〜8・補遺1・6'・2(c))の
+    総括であるため、通常のQCより広く、cmd_194全体の整合性を最終確認する
+    位置づけとする。
 
-    🔴2026-09-09T20:45将軍指摘により是正: 本ファイルが2026-09-09T18:35以降
-    (task_id: gunshi_qc_192_2_karo_fix、status: done)一度も更新されて
-    いなかったため、stall/deadman監視機構が実在しないtask_id
-    (subtask_192_2_memory_karo_fix)を掴んだまま正常稼働中の軍師へ
-    誤nudge(nudge_sent×3・escalated_to_ntfy・deadman_fired)を送り続けて
-    いた。以後、軍師へQC作業が生じる都度、家老は本ファイルを実態に
-    合わせて更新する運用とする。
+    ■ 確認対象
 
+    (1) 総括journalエントリの正確性
+    `git show a584235 -- mandate/decisions_journal.md`を確認し、
+    `~/fable_ruling_20260914_q50q52.md`「残件13件の個別裁定」表
+    (72-89行目)を自分でも実読し、①〜⑬の逐語引用が正確であることを
+    確認せよ。
+
+    (2) 🔴🔴各項目のcommit hash・個別journal行番号の正確性(最重要)
+    記帳された13項目それぞれのcommit hash(b4d5ef3・69ff25c/088d6ca・
+    845f633・43d5740・c42255c・ca330ec・b20be2d・80050c1・843de43・
+    c2250ec・e6ee3f8・a837add等)を`git log -1 <hash>`で独立実測し、
+    各commitの内容(コミットメッセージ)が対応する工程の説明と一致する
+    ことを確認せよ。引用されている個別journal行番号(266・272・
+    275・278・279・280・282・284・286・288・290・292行目等)も
+    `mandate/decisions_journal.md`の現物と突合し正確か確認せよ。
+
+    (3) ⑪(reversibility enforce移行)の記述の誠実性(最重要)
+    「原裁定の想定どおりには完了していない」という記述が、工程6・
+    工程6'・補遺2で実際に起きた経緯(誤判定0件到達不能・enforceモード
+    未実装という前提食い違い・殿裁定補遺による状態化のみでの決着)を
+    省略・美化せず正確に反映しているか確認せよ。
+
+    (4) dashboard.mdのPID一覧・watcher状態記録の正確性
+    `ps -eo pid,lstart,cmd | grep "inbox_watcher.sh\|stall_watcher.sh\|
+    deadman_watcher.sh\|watcher_supervisor.sh"`を貴殿自身で実行し、
+    dashboard.md記載のPID・起動時刻(9体が08:52:16起動でcommit 43d5740
+    〈10:38:39〉より前=工程4新コード未反映、ashigaru3のみ14:47起動で
+    反映済み、stall/deadman/supervisorは工程2以降変更なく最新)が
+    正確であることを独立に確認せよ。
+
+    (5) 工程2の2tick観測が重複実施されていないことの確認
+    dashboard.mdの記述が「工程2の2tick観測(本日朝subtask_194_2_tick/
+    tick2)は完了済みで二重実施不要、今回必要なのは工程4分のみ」と
+    正確に区別できているか確認せよ。
+
+    (6) D006・禁止事項の遵守確認
+    watcherへのkill/pkill操作が一切行われていないこと、
+    `logs/timing_events.jsonl`の事後補正が無いこと、未push(F007)を
+    確認せよ。
+
+    (7) 🔴cmd_194全体のacceptance_criteria充足確認
+    `queue/shogun_to_karo.yaml` id: cmd_194のacceptance_criteria
+    6項目・補遺の各要求事項を通読し、工程0〜9・補遺1・6'・2(c)の
+    全実装がこれらを満たしているか最終確認せよ。未充足・懸念事項が
+    あれば具体的に指摘せよ。
+
+    ■ 完了後
+    queue/reports/gunshi_report.yamlへ記録し、家老へinbox_writeでPASS/FAIL通知せよ。
+    PASSの場合、家老はcmd_194全体をdone_with_caveat(watcher再起動待ち)で
+    closeし、殿へntfy報告する。
   completion:
     report_to: queue/reports/gunshi_report.yaml
-    note: |
-      各サブタスクのQC結果は個別のtask_idで
-      queue/reports/gunshi_report.yamlへ記録され、家老へinbox_writeで
-      通知される(既存フローどおり)。
