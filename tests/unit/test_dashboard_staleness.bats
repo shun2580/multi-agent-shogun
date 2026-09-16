@@ -103,6 +103,25 @@ run_urgent_escalation() {
     '
 }
 
+run_fleet_idle_message() {
+    run bash -c '
+        SCRIPT_DIR="'"$TEST_TMP"'"
+        export __INBOX_WATCHER_TESTING__=1
+        source "'"$WATCHER_SCRIPT"'" >/dev/null 2>&1
+        build_fleet_idle_message
+    '
+}
+
+# _snippet_fingerprint()(scripts/inbox_watcher.sh)と同一の計算をテスト側で
+# 再現する(sha256先頭12桁)。引数はブロック本文の先頭スニペット文字列
+# ("- "接頭辞込み・strip後)。
+snippet_fingerprint() {
+    "$PROJECT_ROOT/.venv/bin/python3" -c "
+import hashlib, sys
+print(hashlib.sha256(sys.argv[1].encode('utf-8')).hexdigest()[:12])
+" "$1"
+}
+
 # ═══════════════════════════════════════════════════════════════
 # ① セクション限定
 # ═══════════════════════════════════════════════════════════════
@@ -496,4 +515,141 @@ EOF
     ! grep -q "cooldown中のため抑止されるべき項目" "$NTFY_LOG"
     grep -qF "\"task_id\": \"${old_ts_b}\"" "$TIMING_LOG"
     grep -qF "\"extra\": \"notify_count=1\"" "$TIMING_LOG"
+}
+
+# ═══════════════════════════════════════════════════════════════
+# ⑤ cmd_194 工程4(+amendment): resolvedマーカーの巻き添え是正
+#   (duplicate-value型・orphan-bullet型の統一検知、is_orphan分岐)
+# ═══════════════════════════════════════════════════════════════
+
+@test "⑤-a: 純粋duplicate-value型(orphanなし)は複合キーで各ブロック独立にcooldown追跡される" {
+    local old_ts fp_a prev_notify_ts
+    old_ts="$(ts_minutes_ago 1600)"
+    cat > "$TEST_TMP/dashboard.md" <<EOF
+## 🚨 要対応
+<!-- created_at: ${old_ts} -->
+- 複合キー項目A(cooldown中のため抑止されるべき)
+<!-- created_at: ${old_ts} -->
+- 複合キー項目B(独立キーのため初回通知されるべき)
+EOF
+    fp_a="$(snippet_fingerprint '- 複合キー項目A(cooldown中のため抑止されるべき)')"
+    prev_notify_ts="$(ts_minutes_ago 100)"  # cooldown 360分未満
+    seed_notify_record "$prev_notify_ts" "${old_ts}#${fp_a}" 1
+    run_dashboard_staleness
+    [ "$status" -eq 0 ]
+    [ "$(grep -c '^NTFY' "$NTFY_LOG")" -eq 1 ]
+    grep -q "複合キー項目B" "$NTFY_LOG"
+    ! grep -q "複合キー項目A" "$NTFY_LOG"
+}
+
+@test "⑤-a-2: 純粋duplicate-value型で片方のみresolvedの場合は解決側が個別に除外される(既存④-7と同じ判定軸を2項目版で確認)" {
+    local old_ts
+    old_ts="$(ts_minutes_ago 1600)"
+    cat > "$TEST_TMP/dashboard.md" <<EOF
+## 🚨 要対応
+<!-- created_at: ${old_ts} -->
+- ~~複合キー・解決済み項目~~ ✅完了
+<!-- created_at: ${old_ts} -->
+- 複合キー・未解決項目(通知されるべき)
+EOF
+    run_dashboard_staleness
+    [ "$status" -eq 0 ]
+    [ "$(grep -c '^NTFY' "$NTFY_LOG")" -eq 1 ]
+    grep -q "複合キー・未解決項目(通知されるべき)" "$NTFY_LOG"
+    ! grep -q "複合キー・解決済み項目" "$NTFY_LOG"
+}
+
+@test "⑤-b: orphan-bullet型(1マーカー+3bullet・取消線なし)は3ブロックに分離され3件とも独立に通知される" {
+    local old_ts
+    old_ts="$(ts_minutes_ago 1600)"
+    cat > "$TEST_TMP/dashboard.md" <<EOF
+## 🚨 要対応
+<!-- created_at: ${old_ts} -->
+- orphan論点1(own_marker保持)
+- orphan論点2(own_markerなし)
+- orphan論点3(own_markerなし)
+EOF
+    run_dashboard_staleness
+    [ "$status" -eq 0 ]
+    [ "$(grep -c '^NTFY' "$NTFY_LOG")" -eq 3 ]
+    grep -q "orphan論点1" "$NTFY_LOG"
+    grep -q "orphan論点2" "$NTFY_LOG"
+    grep -q "orphan論点3" "$NTFY_LOG"
+}
+
+@test "⑤-b-2: orphan-bullet型は build_fleet_idle_message() の未起票残タスク件数でも過小集計されず3件とカウントされる(cmd_194実例(b)の実害再現)" {
+    local old_ts
+    old_ts="$(ts_minutes_ago 100)"
+    cat > "$TEST_TMP/dashboard.md" <<EOF
+## 📌 予定事項
+<!-- created_at: ${old_ts} -->
+- orphan予定事項1(own_marker保持)
+- orphan予定事項2(own_markerなし)
+- orphan予定事項3(own_markerなし)
+EOF
+    run_fleet_idle_message
+    [ "$status" -eq 0 ]
+    grep -qF "未起票残タスク件数: 3件" <<< "$output"
+}
+
+@test "⑤-c: DUPLICATE_CREATED_ATがlogs/dashboard_resolved_block_anomalies.jsonlへorphan_count付きで記録される" {
+    local old_ts
+    old_ts="$(ts_minutes_ago 1600)"
+    cat > "$TEST_TMP/dashboard.md" <<EOF
+## 🚨 要対応
+<!-- created_at: ${old_ts} -->
+- orphan記録論点1(own_marker保持)
+- orphan記録論点2(own_markerなし)
+- orphan記録論点3(own_markerなし)
+EOF
+    run_dashboard_staleness
+    [ "$status" -eq 0 ]
+    local anomaly_log="$TEST_TMP/logs/dashboard_resolved_block_anomalies.jsonl"
+    [ -f "$anomaly_log" ]
+    [ "$(wc -l < "$anomaly_log")" -eq 1 ]
+    run "$PROJECT_ROOT/.venv/bin/python3" -c "
+import json
+with open('$anomaly_log', encoding='utf-8') as f:
+    rec = json.loads(f.readline())
+assert rec['section'] == '要対応', rec
+assert rec['created_at'] == '$old_ts', rec
+assert rec['block_count'] == 3, rec
+assert rec['orphan_count'] == 2, rec
+assert len(rec['snippets']) == 3, rec
+"
+    [ "$status" -eq 0 ]
+}
+
+@test "⑤-d(回帰): ネスト項目(AQ-005型)は新ロジックでも従来どおり2独立ブロックに分離される" {
+    local ts_a ts_b
+    ts_a="$(ts_minutes_ago 1600)"
+    ts_b="$(ts_minutes_ago 1601)"
+    cat > "$TEST_TMP/dashboard.md" <<EOF
+## 🚨 要対応
+<!-- created_at: ${ts_a} -->
+- ~~AQ-005型・親項目(取消線・解決済み)~~ ✅完了
+  <!-- created_at: ${ts_b} -->
+  別件・入れ子の未解決項目(独立ブロックとして検出されるべき)
+EOF
+    run_dashboard_staleness
+    [ "$status" -eq 0 ]
+    [ "$(grep -c '^NTFY' "$NTFY_LOG")" -eq 1 ]
+    grep -q "別件・入れ子の未解決項目" "$NTFY_LOG"
+    ! grep -q "AQ-005型・親項目" "$NTFY_LOG"
+}
+
+@test "⑤-e(回帰): 単純な1マーカー1bulletの正常系は従来どおり判定され、DUPLICATE_CREATED_ATも記録されない" {
+    local old_ts
+    old_ts="$(ts_minutes_ago 1600)"
+    cat > "$TEST_TMP/dashboard.md" <<EOF
+## 🚨 要対応
+<!-- created_at: ${old_ts} -->
+- 通常の単独項目(重複なし)
+EOF
+    run_dashboard_staleness
+    [ "$status" -eq 0 ]
+    [ "$(grep -c '^NTFY' "$NTFY_LOG")" -eq 1 ]
+    grep -q "通常の単独項目(重複なし)" "$NTFY_LOG"
+    local anomaly_log="$TEST_TMP/logs/dashboard_resolved_block_anomalies.jsonl"
+    [ ! -s "$anomaly_log" ]
 }

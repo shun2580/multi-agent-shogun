@@ -1945,6 +1945,160 @@ def _is_resolved_block(text):
     body = _strip_leading_comments(text)
     body = re.sub(r'^[\s\-\*\d\.]+', '', body, count=1)
     return body.startswith('~~') and '~~' in body[2:]
+
+# cmd_194 工程4(残件6): resolvedマーカーの巻き添え是正。
+# 旧・マーカー間split(created_atマーカー出現位置から次の同マーカー出現位置
+# までを1ブロックとする)は、1個のマーカーが複数の箇条書き(^- )にまたがって
+# 共有される「orphan bullet」パターン(cmd_194実例(a)(b))を検出できず、
+# 2件目以降の論点が1件に埋もれて見えなくなる実害を持っていた。境界の単位を
+# 「マーカー間」から「箇条書き項目間」へ再定義しつつ、自身のマーカーを持つ
+# 入れ子項目(AQ-005本体+「別件」入れ子型)は従来どおり独立ブロックとして
+# 分離する(bulletのみに単純化すると入れ子項目自体が見えなくなる回帰を招く
+# ため)。
+_marker_re = re.compile(r'<!-- created_at: (\S+) -->')
+
+def _split_dashboard_blocks(section_text):
+    bullet_starts = [m.start() for m in re.finditer(r'^- ', section_text, re.MULTILINE)]
+    marker_matches = list(_marker_re.finditer(section_text))
+    if not bullet_starts and not marker_matches:
+        return []
+
+    def _next_bullet_start(pos):
+        for b in bullet_starts:
+            if b >= pos:
+                return b
+        return None
+
+    # マーカーを分類する: 直後(コメント・空白のみを挟んで)に箇条書きが
+    # 続くものは、その箇条書きの「先頭マーカー(own_marker)」として扱う
+    # (own_markersが複数あれば最後のものを採用する=後勝ち)。それ以外
+    # (間に実本文が挟まる、または後続の箇条書きが無い)は、既に始まって
+    # いる箇条書きの内部に現れた「ネストマーカー」とみなし、自身の
+    # 独立ブロックとして切り出す。
+    leading_for_bullet = {}
+    nested = []
+    for mm in marker_matches:
+        nb = _next_bullet_start(mm.end())
+        between = section_text[mm.end():nb] if nb is not None else section_text[mm.end():]
+        # re.DOTALL必須: cmd_193点検由来の解説コメント等、複数行にまたがる
+        # <!-- ... --> comment(改行を含む)を1マッチとして除去するため
+        # (単一行前提のregexだと改行で分断され、実際にはコメントのみが
+        # 挟まっているだけの正当なleading markerを誤ってnested扱いする)。
+        if nb is not None and re.sub(r'<!--.*?-->', '', between, flags=re.DOTALL).strip() == '':
+            leading_for_bullet[nb] = mm
+        else:
+            nested.append(mm)
+
+    nested_by_start = {mm.start(): mm for mm in nested}
+    boundaries = sorted(set(bullet_starts) | set(nested_by_start))
+    if not boundaries:
+        return []
+
+    entries = []
+    for b in boundaries:
+        own = nested_by_start.get(b)
+        if own is None:
+            own = leading_for_bullet.get(b)
+        entries.append((b, own))
+
+    blocks = []
+    last_value = None
+    for i, (start, own) in enumerate(entries):
+        text_start = own.end() if own is not None else start
+        if i + 1 < len(entries):
+            next_start, next_own = entries[i + 1]
+            text_end = next_own.start() if next_own is not None else next_start
+        else:
+            text_end = len(section_text)
+
+        if own is not None:
+            created_at = own.group(1)
+            is_orphan = False
+        else:
+            created_at = last_value
+            is_orphan = True
+
+        if created_at is not None:
+            last_value = created_at
+
+        blocks.append({
+            'created_at': created_at,
+            'block_text': section_text[text_start:text_end],
+            'start': start,
+            'is_orphan': is_orphan,
+        })
+    return blocks
+
+def _detect_duplicate_groups(blocks):
+    # created_at値ごとにブロック数を数え、2件以上のグループ(duplicate-value
+    # 型・orphan-bullet型いずれも、created_atが同値であることのみを条件に
+    # 自動的にここへ合流する)をDUPLICATE_CREATED_ATとして返す。
+    #
+    # cmd_194 工程4 amendment(gunshi_design_194_4_amend・質問1): グループを
+    # さらに「is_orphanを1件以上含むか」で分類する。own_markerを持つ
+    # ブロックは自身専用のテキスト境界が曖昧でないため、created_at値が
+    # 非一意というだけで一律「強制未解決」に倒すのは過剰是正——真に境界が
+    # 曖昧なorphan混在グループ(forced_values)のみを強制未解決の対象とし、
+    # 純粋duplicate-value型(全ブロックown_marker保持)は各ブロック独自の
+    # _is_resolved_block()判定を尊重させる(呼び出し側が dup_values と
+    # forced_values の差分を「純粋duplicate-value型」として扱う)。
+    counts = {}
+    for b in blocks:
+        v = b['created_at']
+        if v is None:
+            continue
+        counts[v] = counts.get(v, 0) + 1
+    dup_values = {v for v, c in counts.items() if c >= 2}
+    groups = []
+    forced_values = set()
+    for v in dup_values:
+        group_blocks = [b for b in blocks if b['created_at'] == v]
+        snippets = []
+        orphan_count = 0
+        for gb in group_blocks:
+            body = _strip_leading_comments(gb['block_text']).strip()
+            snippets.append((body.splitlines()[0] if body else '')[:80])
+            if gb['is_orphan']:
+                orphan_count += 1
+        if orphan_count > 0:
+            forced_values.add(v)
+        groups.append({
+            'created_at': v,
+            'block_count': len(group_blocks),
+            'snippets': snippets,
+            'orphan_count': orphan_count,
+        })
+    return dup_values, forced_values, groups
+
+def _snippet_fingerprint(block_text):
+    # cmd_194 工程4 amendment(質問2): 純粋duplicate-value型のnotify_history/
+    # log_timing_eventキー衝突(cooldown混線)対策。ブロック本文が変わらない
+    # 限り安定し、他ブロックとの衝突確率は実用上無視できる軽量指紋。
+    import hashlib
+    body = _strip_leading_comments(block_text).strip()
+    snippet = body.splitlines()[0] if body else ''
+    return hashlib.sha256(snippet.encode('utf-8')).hexdigest()[:12]
+
+def _log_duplicate_groups(section_label, groups, jsonl_path):
+    if not groups or not jsonl_path:
+        return
+    import datetime as _dt
+    import json as _json
+    ts = _dt.datetime.now().isoformat()
+    try:
+        with open(jsonl_path, 'a', encoding='utf-8') as f:
+            for g in groups:
+                rec = {
+                    'ts': ts,
+                    'section': section_label,
+                    'created_at': g['created_at'],
+                    'block_count': g['block_count'],
+                    'snippets': g['snippets'],
+                    'orphan_count': g['orphan_count'],
+                }
+                f.write(_json.dumps(rec, ensure_ascii=False) + '\n')
+    except Exception:
+        pass
 PYEOF
 
 _read_dashboard_staleness_setting() {
@@ -2001,6 +2155,7 @@ check_dashboard_staleness() {
     DASHBOARD_STALE_HOURS="$hours" \
     DASHBOARD_STALE_COOLDOWN_MIN="$cooldown_min" \
     TIMING_JSONL="${SCRIPT_DIR}/logs/timing_events.jsonl" \
+    DASHBOARD_ANOMALY_JSONL="${SCRIPT_DIR}/logs/dashboard_resolved_block_anomalies.jsonl" \
     "$SCRIPT_DIR/.venv/bin/python3" -c "
 import datetime, json, os, re
 
@@ -2010,6 +2165,7 @@ dashboard_path = os.environ['DASHBOARD_PATH']
 stale_hours = float(os.environ['DASHBOARD_STALE_HOURS'])
 cooldown_min = float(os.environ['DASHBOARD_STALE_COOLDOWN_MIN'])
 jsonl_path = os.environ['TIMING_JSONL']
+anomaly_jsonl_path = os.environ['DASHBOARD_ANOMALY_JSONL']
 
 try:
     with open(dashboard_path, encoding='utf-8') as f:
@@ -2072,46 +2228,66 @@ def stage_gap_min(prev_count):
         return 720.0
     return 1440.0
 
-# cmd_170: アイテムブロックの境界を、created_atマーカー出現位置から次の
-# 同マーカー出現位置(またはセクション終端)までと定義する(1セクション1
-# マーカーではなく1アイテム1マーカーへ移行)。スライスで全文を保持する
-# ため複数行にまたがる取消線も正しく判定できる(regexのMULTILINE/DOTALL
-# 問題を構造的に回避)。
-_marker_re = re.compile(r'<!-- created_at: (\S+) -->')
+# cmd_194 工程4: アイテムブロックの境界を、共通ヘルパー
+# _split_dashboard_blocks()(箇条書き項目間split・orphan bullet対応)で
+# 求める。
+# amendment(gunshi_design_194_4_amend): 同一created_at値を2件以上の
+# ブロックが共有する場合でも、is_orphanを1件も含まない純粋duplicate-value型
+# (forced_values外)は各ブロック独自のcarryover/_is_resolved_block()判定を
+# 尊重する(既存bats④-7が要求する挙動)。is_orphanを1件以上含む
+# forced_values群のみ、境界の帰属自体が曖昧なため「未解決」扱いに倒し、
+# notify_history(cooldown段階制御)も経由せず常に通知対象とする。
 _carryover_re = re.compile(r'^\s*<!--\s*carryover_approved:\s*true\s*-->', re.IGNORECASE)
-_markers = list(_marker_re.finditer(scan_content))
-for _idx, m in enumerate(_markers):
-    created_at_raw = m.group(1)
-    block_start = m.end()
-    block_end = _markers[_idx + 1].start() if _idx + 1 < len(_markers) else len(scan_content)
-    block_text = scan_content[block_start:block_end]
+_blocks = _split_dashboard_blocks(scan_content)
+_dup_values, _forced_values, _dup_groups = _detect_duplicate_groups(_blocks)
+_log_duplicate_groups('要対応', _dup_groups, anomaly_jsonl_path)
+_pure_dup_values = _dup_values - _forced_values
 
-    # 持ち越しマーカー: 殿の明示許可による管理された保留は放置ではない。
-    if _carryover_re.match(block_text):
+for _b in _blocks:
+    created_at_raw = _b['created_at']
+    if created_at_raw is None:
         continue
-    # 取消線除外: 既に解決済みの項目は放置ではない。
-    if _is_resolved_block(block_text):
-        continue
+    block_text = _b['block_text']
 
-    try:
-        created_at = datetime.datetime.fromisoformat(created_at_raw)
-    except Exception:
-        continue
-    age_hours = (now - created_at).total_seconds() / 3600
-    if age_hours < stale_hours:
-        continue
-    hist = notify_history.get(created_at_raw)
-    if hist is not None:
-        last_ts, prev_count = hist
-        elapsed_min = (now - last_ts).total_seconds() / 60
-        if elapsed_min < stage_gap_min(prev_count):
-            continue
-        next_count = prev_count + 1
-    else:
+    if created_at_raw in _forced_values:
+        key = created_at_raw
         next_count = 1
+    else:
+        # 持ち越しマーカー: 殿の明示許可による管理された保留は放置ではない。
+        if _carryover_re.match(block_text):
+            continue
+        # 取消線除外: 既に解決済みの項目は放置ではない。
+        if _is_resolved_block(block_text):
+            continue
+
+        try:
+            created_at = datetime.datetime.fromisoformat(created_at_raw)
+        except Exception:
+            continue
+        age_hours = (now - created_at).total_seconds() / 3600
+        if age_hours < stale_hours:
+            continue
+
+        # 純粋duplicate-value型(グループサイズ2以上・orphan無し)のみ、
+        # notify_history/log_timing_eventのキーを複合キー化してcooldown
+        # 混線を避ける。単独項目(大多数)は従来どおりcreated_at_raw単独。
+        if created_at_raw in _pure_dup_values:
+            key = f'{created_at_raw}#{_snippet_fingerprint(block_text)}'
+        else:
+            key = created_at_raw
+
+        hist = notify_history.get(key)
+        if hist is not None:
+            last_ts, prev_count = hist
+            elapsed_min = (now - last_ts).total_seconds() / 60
+            if elapsed_min < stage_gap_min(prev_count):
+                continue
+            next_count = prev_count + 1
+        else:
+            next_count = 1
     _snippet_body = _strip_leading_comments(block_text).strip()
     _snippet = _snippet_body.splitlines()[0] if _snippet_body else ''
-    print(f'{created_at_raw}\t{next_count}\t' + _snippet[:50])
+    print(f'{key}\t{next_count}\t' + _snippet[:50])
 " 2>/dev/null | while IFS=$'\t' read -r created_at_raw notify_count snippet; do
         [ -n "$created_at_raw" ] || continue
         bash "${SCRIPT_DIR}/scripts/ntfy.sh" "🚨 24時間放置: ${snippet}" >&2 || true
@@ -2400,6 +2576,7 @@ print(str(len(pending_ids)) + '\t' + ','.join(pending_ids))
     # 起票日情報を持たないため日付集計は予定事項側のみを対象とする
     # (正直な限定)。
     local dashboard_file="${SCRIPT_DIR}/dashboard.md"
+    local anomaly_jsonl_file="${SCRIPT_DIR}/logs/dashboard_resolved_block_anomalies.jsonl"
     local untriaged_out
     untriaged_out=$("$SCRIPT_DIR/.venv/bin/python3" -c "
 import re
@@ -2425,20 +2602,27 @@ def section_body(heading_match):
     return text[start:end]
 
 # 予定事項(両見出し共通prefix): created_at件数+最古日
-# cmd_170: check_dashboard_staleness()と同じ理由(取消線除外なし)で
-# 解決済み項目のcreated_atを誤カウントしていた同族欠陥を、共通ヘルパー
-# _is_resolved_block()を呼び出す設計で是正する。
+# cmd_194 工程4: check_dashboard_staleness()と同じ共通ヘルパー
+# _split_dashboard_blocks()を使う。マーカー間splitでは検出できなかった
+# orphan bullet(1マーカーが複数箇条書きを共有)も個別カウントすることで、
+# cmd_194実例(b)(1079行目マーカー配下3論点が従来1件としてしかカウント
+# されていなかった過小集計バグ)を是正する。
+# amendment(gunshi_design_194_4_amend): is_orphanを1件以上含む
+# forced_values群のみ常に未解決(=カウント対象)として扱う。is_orphanを
+# 含まない純粋duplicate-value型は各ブロック独自の_is_resolved_block()
+# 判定を尊重する(境界の帰属自体は曖昧でないため)。
 schedule_dates = []
 for h in re.finditer(r'^## 📌 予定事項.*\$', text, re.MULTILINE):
     body = section_body(h)
-    _markers = list(re.finditer(r'<!-- created_at: ([0-9T:-]+) -->', body))
-    for _idx, _m in enumerate(_markers):
-        _block_start = _m.end()
-        _block_end = _markers[_idx + 1].start() if _idx + 1 < len(_markers) else len(body)
-        _block_text = body[_block_start:_block_end]
-        if _is_resolved_block(_block_text):
+    _blocks = _split_dashboard_blocks(body)
+    _dup_values, _forced_values, _dup_groups = _detect_duplicate_groups(_blocks)
+    _log_duplicate_groups(h.group(0).strip(), _dup_groups, '${anomaly_jsonl_file}')
+    for _b in _blocks:
+        if _b['created_at'] is None:
             continue
-        schedule_dates.append(_m.group(1))
+        if _b['created_at'] not in _forced_values and _is_resolved_block(_b['block_text']):
+            continue
+        schedule_dates.append(_b['created_at'])
 
 # 建造キュー: 番号付き項目を段落分割し、自身の段落に✅完了を含まないものを未起票扱い
 # (罠: 完了済み項目の段落内に別件言及として'着手cmd未起票'という文言が
