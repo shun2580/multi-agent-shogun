@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # PreToolUse hook: git push機械ブロック (cmd_159)
 #
-# `git push` をPreToolUseでdenyし、mandate/approval_queue.md の承認済み
-# エントリ(状態: approved)を明示指定(AQ_APPROVED_ID環境変数)で消化する場合
-# のみ通す。承認状態が判定不能(環境変数なし・該当AQエントリ不在・状態欄が
-# approvedを含まない・approval_queue.md自体が読めない)は必ずdeny側へ倒す
+# `git push` をPreToolUseでdenyし、mandate/decisions_journal.md の
+# PUSH-APPROVEDエントリを明示指定(PUSH_APPROVED_ID環境変数)で消化する場合
+# のみ通す。承認状態が判定不能(環境変数なし・該当PUSH-APPROVEDエントリ不在・
+# decisions_journal.md自体が読めない)は必ずdeny側へ倒す
 # (judgment_model原則2: 破壊的操作はunknown時に保留)。
 #
 # 🔴適用範囲の限界: 本フックが検査するのはBashツール経由のトップレベル
@@ -32,7 +32,7 @@ SETTINGS="${GIT_PUSH_BLOCK_SETTINGS:-$SCRIPT_DIR/config/settings.yaml}"
 PYTHON_BIN="${GIT_PUSH_BLOCK_PYTHON:-$SCRIPT_DIR/.venv/bin/python3}"
 NTFY_SCRIPT="${GIT_PUSH_BLOCK_NTFY_SCRIPT:-$SCRIPT_DIR/scripts/ntfy.sh}"
 LOG_FILE="${GIT_PUSH_BLOCK_LOG:-$SCRIPT_DIR/logs/git_push_block.log}"
-APPROVAL_QUEUE="${GIT_PUSH_BLOCK_APPROVAL_QUEUE:-$SCRIPT_DIR/mandate/approval_queue.md}"
+APPROVAL_LEDGER="${GIT_PUSH_BLOCK_APPROVAL_LEDGER:-$SCRIPT_DIR/mandate/decisions_journal.md}"
 
 # ─── 反復DENY警報 (pretooluse_yaml_guard.sh check_repeated_deny_alert()の
 # 一般化流用) ───
@@ -216,40 +216,32 @@ if not any(GIT_PUSH_RE.search(seg) for seg in segments):
     sys.exit(0)
 
 # ─── 承認判定 ───
-# `AQ_APPROVED_ID=AQ-<数字>` という環境変数プレフィックスパターンをcommand
-# 文字列全体から探し、対応するAQエントリのブロックを approval_queue.md から
-# 抽出、状態欄が"approved"を含むかを確認する。両方が真の場合のみ承認扱い。
+# `PUSH_APPROVED_ID=P-<数字>` という環境変数プレフィックスパターンをcommand
+# 文字列全体から探し、対応するPUSH-APPROVEDエントリが decisions_journal.md
+# に行頭アンカー付きで実在するかを確認する。両方が真の場合のみ承認扱い。
 approved = False
-reason = "no AQ_APPROVED_ID prefix found in command"
+reason = "no PUSH_APPROVED_ID prefix found in command"
 
-m = re.search(r"AQ_APPROVED_ID=(AQ-\d+)", command)
+m = re.search(r"PUSH_APPROVED_ID=(P-\d+)", command)
 if m:
-    aq_id = m.group(1)
+    token = m.group(1)
     try:
-        with open("__APPROVAL_QUEUE__", "r", encoding="utf-8") as f:
-            aq_text = f.read()
+        with open("__APPROVAL_LEDGER__", "r", encoding="utf-8") as f:
+            journal_text = f.read()
     except OSError as e:
-        aq_text = None
-        reason = f"failed to read approval_queue.md: {type(e).__name__}: {e}"
+        journal_text = None
+        reason = f"failed to read decisions_journal.md: {type(e).__name__}: {e}"
 
-    if aq_text is not None:
-        block_match = re.search(
-            rf"^- ID: {re.escape(aq_id)}\b(.*?)(?=^- ID: AQ-\d+|\Z)",
-            aq_text,
-            re.MULTILINE | re.DOTALL,
+    if journal_text is not None:
+        entry_re = re.compile(
+            rf"^\S+\s*\|\s*PUSH-APPROVED\s*\|\s*{re.escape(token)}\b",
+            re.MULTILINE,
         )
-        if block_match is None:
-            reason = f"AQ entry {aq_id} not found in approval_queue.md"
+        if entry_re.search(journal_text):
+            approved = True
+            reason = f"decisions_journal.md contains PUSH-APPROVED entry for {token}"
         else:
-            block = block_match.group(0)
-            state_match = re.search(r"状態:\s*(.*)", block)
-            if state_match is None:
-                reason = f"AQ entry {aq_id} has no 状態: line"
-            elif "approved" in state_match.group(1):
-                approved = True
-                reason = f"AQ entry {aq_id} 状態 contains 'approved'"
-            else:
-                reason = f"AQ entry {aq_id} 状態 does not contain 'approved': {state_match.group(1)[:80]}"
+            reason = f"no PUSH-APPROVED entry for {token} found in decisions_journal.md"
 
 if approved:
     sys.exit(0)
@@ -264,7 +256,7 @@ print(json.dumps({
 sys.exit(0)
 PYEOF
 
-PYCODE="${PYCODE//__APPROVAL_QUEUE__/$APPROVAL_QUEUE}"
+PYCODE="${PYCODE//__APPROVAL_LEDGER__/$APPROVAL_LEDGER}"
 PYCODE="${PYCODE//__LIB_DIR__/$SCRIPT_DIR/lib}"
 
 ERR_TMP="$(mktemp)"

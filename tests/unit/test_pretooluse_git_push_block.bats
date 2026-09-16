@@ -14,7 +14,7 @@ setup() {
     LOG_FILE="$TEST_TMP/logs/git_push_block.log"
     NTFY_LOG="$TEST_TMP/ntfy.log"
     NTFY_STUB="$TEST_TMP/ntfy_stub.sh"
-    APPROVAL_QUEUE="$TEST_TMP/approval_queue.md"
+    APPROVAL_LEDGER="$TEST_TMP/decisions_journal.md"
 
     cat > "$SETTINGS_ENFORCE" <<'EOF'
 features:
@@ -24,11 +24,9 @@ EOF
 features:
   git_push_block_enabled: off
 EOF
-    cat > "$APPROVAL_QUEUE" <<'EOF'
-- ID: AQ-999 | 日付: 2026-08-27 | 操作内容: test entry
-  状態: approved(2026-08-27・承認者: test)
-- ID: AQ-998 | 日付: 2026-08-27 | 操作内容: not approved entry
-  状態: 条件付きpending据置
+    cat > "$APPROVAL_LEDGER" <<'EOF'
+2026-01-01T00:00:00 | PUSH-APPROVED | P-999 | test fixture | 出典: test
+2026-01-01T00:00:00 | RULE | some rule that happens to mention P-01 in its body text | 出典: test
 EOF
     cat > "$NTFY_STUB" <<EOF
 #!/usr/bin/env bash
@@ -47,7 +45,7 @@ run_guard_json() {
     run env \
         GIT_PUSH_BLOCK_SETTINGS="$settings" \
         GIT_PUSH_BLOCK_LOG="$LOG_FILE" \
-        GIT_PUSH_BLOCK_APPROVAL_QUEUE="$APPROVAL_QUEUE" \
+        GIT_PUSH_BLOCK_APPROVAL_LEDGER="$APPROVAL_LEDGER" \
         GIT_PUSH_BLOCK_NTFY_SCRIPT="$NTFY_STUB" \
         bash -c "cat '$json_file' | bash '$GUARD_SCRIPT'"
 }
@@ -105,21 +103,21 @@ with open(sys.argv[3], 'w') as f:
     run_guard_json "$TEST_TMP/p.json"
     [ "$status" -eq 0 ]
     [[ "$output" == *'"permissionDecision": "deny"'* ]]
-    [[ "$output" == *"no AQ_APPROVED_ID prefix found"* ]]
+    [[ "$output" == *"no PUSH_APPROVED_ID prefix found"* ]]
     run grep -c "^\[.*\] DENY .*session=s2 " "$LOG_FILE"
     [ "$output" -eq 1 ]
 }
 
-@test "real unapproved git push with unrelated AQ id not approved: DENY" {
-    write_payload "$TEST_TMP/p.json" "s2b" "AQ_APPROVED_ID=AQ-998 git push origin main"
+@test "real unapproved git push with unrelated PUSH_APPROVED_ID not in journal: DENY" {
+    write_payload "$TEST_TMP/p.json" "s2b" "PUSH_APPROVED_ID=P-998 git push origin main"
     run_guard_json "$TEST_TMP/p.json"
     [ "$status" -eq 0 ]
     [[ "$output" == *'"permissionDecision": "deny"'* ]]
-    [[ "$output" == *"does not contain 'approved'"* ]]
+    [[ "$output" == *"no PUSH-APPROVED entry for P-998 found"* ]]
 }
 
-@test "real git push with valid approved AQ id: ALLOW (regression check, unchanged behavior)" {
-    write_payload "$TEST_TMP/p.json" "s3" "AQ_APPROVED_ID=AQ-999 git push origin main"
+@test "real git push with valid approved PUSH_APPROVED_ID: ALLOW (regression check, unchanged behavior)" {
+    write_payload "$TEST_TMP/p.json" "s3" "PUSH_APPROVED_ID=P-999 git push origin main"
     run_guard_json "$TEST_TMP/p.json"
     [ "$status" -eq 0 ]
     [ -z "$output" ]
@@ -196,10 +194,10 @@ with open(sys.argv[3], 'w') as f:
     [[ "$output" == *'"permissionDecision": "deny"'* ]]
 }
 
-# (f) AQ_APPROVED_ID prefix付き素push: 承認判定レイヤーに影響しないこと
-#     (未承認AQなのでDENY維持、回帰なし)。
-@test "(f) AQ_APPROVED_ID=AQ-999 git push origin main: still detected then ALLOW via approval (regression check)" {
-    write_payload "$TEST_TMP/p.json" "qf" 'AQ_APPROVED_ID=AQ-999 git push origin main'
+# (f) PUSH_APPROVED_ID prefix付き素push: 承認判定レイヤーに影響しないこと
+#     (承認済みP-999なのでALLOW、回帰なし)。
+@test "(f) PUSH_APPROVED_ID=P-999 git push origin main: still detected then ALLOW via approval (regression check)" {
+    write_payload "$TEST_TMP/p.json" "qf" 'PUSH_APPROVED_ID=P-999 git push origin main'
     run_guard_json "$TEST_TMP/p.json"
     [ "$status" -eq 0 ]
     [ -z "$output" ]
@@ -228,4 +226,28 @@ with open(sys.argv[3], 'w') as f:
     run_guard_json "$TEST_TMP/p.json"
     [ "$status" -eq 0 ]
     [ -z "$output" ]
+}
+
+# --- cmd_198 S-05: approval_queue.md退役に伴うPUSH-APPROVED方式への追従 ---
+
+# 新規1: decisions_journal.mdが読めない(fail-safe deny)場合、判定不能として
+# 必ずdeny側へ倒れること。
+@test "(new-1) decisions_journal.md unreadable (permission denied): DENY with fail-safe reason" {
+    chmod 000 "$APPROVAL_LEDGER"
+    write_payload "$TEST_TMP/p.json" "qn1" 'PUSH_APPROVED_ID=P-999 git push origin main'
+    run_guard_json "$TEST_TMP/p.json"
+    chmod 644 "$APPROVAL_LEDGER"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+    [[ "$output" == *"failed to read decisions_journal.md"* ]]
+}
+
+# 新規2: トークンが非PUSH-APPROVED型エントリの本文中に言及されているだけの
+# 場合は承認と誤判定せずDENYすること(行頭アンカーによる偽造防止の回帰テスト)。
+@test "(new-2) token mentioned in prose within a non-PUSH-APPROVED entry: DENY" {
+    write_payload "$TEST_TMP/p.json" "qn2" 'PUSH_APPROVED_ID=P-01 git push origin main'
+    run_guard_json "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+    [[ "$output" == *"no PUSH-APPROVED entry for P-01 found"* ]]
 }
