@@ -60,6 +60,7 @@
 !lib/watcher_lifecycle.sh
 !lib/inflight_tasks.sh
 !lib/branch_policy.sh
+!lib/evidence_checks.py
 
 # Multi-CLI: Codex auto-load file
 !AGENTS.md
