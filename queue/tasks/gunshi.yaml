@@ -1,52 +1,63 @@
 task:
-  task_id: gunshi_qc_201_4
-  parent_cmd: cmd_201
+  task_id: gunshi_qc_200_7_2
+  parent_cmd: cmd_200
   type: qc
   bloom_level: L4
   assigned_to: gunshi
-  status: done  # PASS。cli_adapter処遇=維持(独立検証済み)。bats FAIL1/SKIP0確認。cmd_201工程A完全クローズ。
-  timestamp: "2026-09-22T17:36:00"
+  status: done  # PASS。8項目チェックリスト全項目独立再実行で一致(commit stat・journal3エントリ・verifiers.md180行削除の過不足なし・①②健在・dashboard pending0件・機構変更0件・見出し23→17・bats654件1FAIL(既知)SKIP0)。cmd_200工程7完全クローズ。
+  timestamp: "2026-09-22T23:45:00"
   description: |
-    【cmd_201 工程A QC: subtask_200_4是正版(足軽3号)+ cli_adapter 5件の
-    処遇検分(将軍の明示要求)】
+    【cmd_200 工程7-2 QC: 生きている条件式10件→2件への削減
+    (ashigaru3、commit b4c9408)】
 
-    一次資料: `queue/shogun_to_karo.yaml` id: cmd_201 全文。対象commit:
-    `ea3a3f0`(是正)・`d40dfe4`(cli_adapter/flag_silent_off判定、変更なし
-    のため是正版にも継承)。
+    一次資料: `queue/shogun_to_karo.yaml` id: cmd_200「━━━ 工程7 ━━━」節
+    (訂正後の受け入れ条件「10件→2件(−8)」を正とせよ)。ashigaru3の報告:
+    `queue/reports/ashigaru3_report.yaml`(task_id: subtask_200_7_2)。
+    比較元: 貴殿自身のgunshi_200_7_1報告(発見場所の行番号一覧)。
+
+    🔴🔴本工程は本日2度の over-deletion 事故(工程4の3ファイル誤削除・
+    工程1のcli_adapter判定混同)の直接の再発リスク工程として将軍が
+    名指しした箇所である。**独立再実行での裏取りを最優先せよ**
+    (Independent Verification Rule Step C)。
 
     ■ 確認事項
 
-    1. **@test件数の独立検算**(cmd_201受入基準・将軍実測との一致):
-       `grep -c '^@test' tests/unit/test_idle_flag.bats
-       tests/unit/test_phase3_instrumentation.bats
-       tests/unit/test_send_wakeup.bats`
-       を実行し、**8/7/60(計75件)**であることを確認せよ。将軍実測
-       (元9/8/65=82件→現8/7/60=75件、差分ちょうど7件)と一致するか。
-    2. 旧契約7件(T-003・T-P3-004・T-BUSY-001/003/004・T-CODEX-004・
-       T-OPENCODE-003)の`@test`ブロックが実在しないことを確認せよ。
-    3. 🔴**cli_adapter 5件の処遇を検分せよ(将軍の明示要求)**: commit
-       `d40dfe4`は`tests/unit/test_cli_adapter.bats`から32行を削除
-       している。足軽3号(subtask_200_4の事前調査)は「7件のケースと
-       決定的に違う——新規約(`instructions/generated/codex-*.md`等)を
-       検査する代替テストが現状どこにも存在しない」と指摘した上で
-       削除を選択した。この削除理由が妥当か、成果物(commit・
-       dashboard.md記述)に理由が明記されているかを検分せよ。
-       - 理由が立つ(削除後もカバレッジ0件化が正直に明記されている等)
-         → 削除維持で可。
-       - 理由が立たない、または「赤いから消した」型の説明不足がある
-         → **復旧を推奨**し、その旨を明確にPASSと切り分けて報告せよ。
-    4. `bats tests/unit/*.bats`を実行し、FAIL件数・SKIP件数を実測
-       記録せよ(足軽3号の報告: FAIL1件〈flag_silent_off、既知欠陥〉・
-       SKIP0件。本セッション開始時基準はFAIL13件)。
-    5. `mandate/decisions_journal.md`のINCIDENT記帳(2026-09-22付、
-       cmd_200工程4是正)が、経緯4段階(①巻き込み前提②誤翻訳③将軍
-       実測差し戻し④是正)と族「削る戦において削りすぎる」を含んで
-       いるか確認せよ。
-    6. `dashboard.md`「🙅 対応しない」欄が`@test`ブロック単位の記述へ
-       是正されているか確認せよ。
-    7. `git status --short`でpushされていないこと(F007)を確認せよ。
+    1. `git show --stat b4c9408`で変更ファイルが`mandate/verifiers.md`・
+       `mandate/decisions_journal.md`の2件のみであることを確認せよ
+       (家老の事前確認: +6/-0・+0/-180)。
+    2. `git show b4c9408 -- mandate/decisions_journal.md`で追記された
+       3エントリの内容が以下と一致するか確認せよ:
+       (a) ⑧「完了ゲートenforce移行条件」二重計上の経緯(commit 80cdc30が
+           既に該当節を削除済みだった事実)
+       (b) ⑪「cmd_192 skill初回読込caveat」の正しい件数は**12件**
+           (11件ではない)、「skillの実読込は一度も観測されなかった」の
+           文言を含むこと
+       (c) ③「工程別内訳(phase-breakdown)」の評価結果(unknown率53.5%)を
+           理由に閉じる旨
+    3. `git show b4c9408 -- mandate/verifiers.md`の削除内容(diff全体)を
+       読み、削除された6見出しが③④⑤⑥⑨⑩に過不足なく対応し、かつ
+       **削除範囲が見出し+本文段落のみ**(前後の無関係な内容を巻き込んで
+       いないか)を確認せよ。特に:
+       - ⑩条件式(c)削除後、親見出し「## 状態を持つ機構の三層構成則
+         (cmd_194・Q50(b))」(517-526行目相当)が**残置**されているか
+       - ④条件式(a)削除後、次に来る「### 条件式(b)」(①・残す2件)が
+         **無傷**か
+    4. `grep -n "条件式(b)\|🎯 真陽性実証" mandate/verifiers.md dashboard.md`
+       を独立再実行し、①②(残す2件)が両ファイルに存在することを確認せよ。
+    5. `dashboard.md`(git非追跡)から`| cmd_147 |`・`| cmd_192 |`で始まる
+       行が0件になっていることを`grep -c "^| cmd_147 \|^| cmd_192 " dashboard.md`
+       で確認せよ。またヘッダー行・「解除済み事例」表・
+       「🎯 真陽性実証」節が無傷であることも目視確認せよ。
+    6. 🔴**条件式が参照する機構・ログ・スクリプトへの変更が0件であること**
+       (今回の削除範囲との混同がないか)を`git status --short -- scripts/
+       lib/ config/settings.yaml`で確認せよ(差分が出れば即FAIL)。
+    7. `grep -c "^## \|^### " mandate/verifiers.md`で見出し数が
+       23→17(−6)になっていることを独立再実行で確認せよ。
+    8. `bats tests/unit/*.bats`を実行し、本工程がテストに影響していない
+       こと(FAIL/SKIP件数が工程4是正時点の値から変化していないこと)を
+       確認せよ。
 
     ■ 完了後
     bash /home/nishikawa/projects/multi-agent-shogun/scripts/inbox_write.sh karo \
-      "gunshi_qc_201_4完了: <PASS/FAIL>。cli_adapter処遇=<維持/復旧推奨>。bats FAIL<件数>/SKIP<件数>。" \
-      report_received gunshi --cmd_id=cmd_201 --task_id=gunshi_qc_201_4 --qc_result=<pass/fail>
+      "gunshi_qc_200_7_2完了: <PASS/FAIL>。<1行要約>。" \
+      report_received gunshi --cmd_id=cmd_200 --task_id=gunshi_qc_200_7_2 --qc_result=<pass/fail>
