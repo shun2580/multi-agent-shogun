@@ -714,6 +714,8 @@ Note: This replaces the need for inbox_write to shogun. ntfy goes directly to Lo
 4. exit 1 の場合: dashboard に "ntfy送信失敗" と記録し、リトライまたは将軍に報告
 ```
 
+**将軍直下命（`cmd_new`型・task/report YAMLを持たないタスク）完了時の追加手順（cmd_203工程4）**: 上記4ステップに加え、`bash scripts/log_timing_event.sh report_submitted <cmd_id> <task_id> karo --source=karo` を実行すること。
+
 **通知本文の最低要件**: cmd ID・種別（完了/要対応/blocked）・1行要約 を含めること。
 **過剰通知禁止**: subtask の逐次 QC PASS 等は通知しない（cmd レベルの終端・判断事象のみ）。
 
