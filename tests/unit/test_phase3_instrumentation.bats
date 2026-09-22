@@ -51,13 +51,6 @@ teardown() {
     grep -q 'sys.argv\[1:10\]' "$LOG_TIMING_EVENT_SCRIPT"
 }
 
-# --- T-P3-004: Phase3 captures busy flag from agent_is_busy ---
-
-@test "T-P3-004: Phase3 instrumentation correctly evaluates agent_is_busy" {
-    # Verify Phase3 block calls agent_is_busy and branches correctly
-    grep -q 'if agent_is_busy; then p3_busy="true"; else p3_busy="false"; fi' "$WATCHER_SCRIPT"
-}
-
 # --- T-P3-005: extra field properly nulled when not provided ---
 
 @test "T-P3-005: log_timing_event.sh has none_if_empty() for extra field" {

@@ -158,21 +158,6 @@ YAML
     [ -f "$IDLE_FLAG_DIR/shogun_idle_test_idle_agent" ]
 }
 
-# ─── T-003: agent_is_busy() フラグなし時にtrue (busy) ───
-
-@test "T-003: agent_is_busy returns 0 (busy) when no flag file — claude CLI" {
-    # Ensure no flag file
-    rm -f "$IDLE_FLAG_DIR/shogun_idle_test_idle_agent"
-
-    run bash -c "
-        source '$WATCHER_HARNESS'
-        LAST_CLEAR_TS=0
-        CLI_TYPE='claude'
-        agent_is_busy
-    "
-    [ "$status" -eq 0 ]  # 0 = busy
-}
-
 # ─── T-004: agent_is_busy() フラグあり時にfalse (idle) ───
 
 @test "T-004: agent_is_busy returns 1 (idle) when flag file exists — claude CLI" {

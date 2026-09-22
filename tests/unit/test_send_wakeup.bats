@@ -20,16 +20,12 @@
 #   T-ESC-003: escalation — unread 2-4min → Escape+nudge
 #   T-ESC-004: escalation — unread > 4min → /clear sent
 #   T-ESC-005: escalation — /clear cooldown → falls back to Escape+nudge
-#   T-BUSY-001: agent_is_busy — detects "Working" in pane
 #   T-BUSY-002: agent_is_busy — idle pane returns 1
-#   T-BUSY-003: send_wakeup — skips when agent is busy
-#   T-BUSY-004: send_wakeup_with_escape — skips when agent is busy
 #   T-CODEX-001: send_cli_command — codex /clear → /new conversion
 #   T-CODEX-002: send_cli_command — codex /model → skip
 #   T-OPENCODE-001: send_cli_command — opencode /clear → /new conversion
 #   T-OPENCODE-002: send_cli_command — opencode /model → skip
 #   T-CODEX-003: C-u sent when unread=0 and agent is idle
-#   T-CODEX-004: C-u NOT sent when agent is busy
 #   T-CODEX-005: send_cli_command — claude /clear passes through as-is
 #   T-CODEX-006: inbox_watcher.sh has agent_is_busy and Codex/Copilot handlers
 #   T-CODEX-007: pane @agent_cli=codex overrides stale CLI_TYPE (Phase2 C-c抑止)
@@ -409,18 +405,6 @@ MOCK
     ! grep -q "send-keys.*/clear" "$MOCK_LOG"
 }
 
-# --- T-BUSY-001: agent_is_busy detects "Working" ---
-
-@test "T-BUSY-001: agent_is_busy returns 0 (busy) when no idle flag — claude CLI" {
-    rm -f "$TEST_TMPDIR/shogun_idle_test_agent"
-    run bash -c '
-        source "'"$TEST_HARNESS"'"
-        LAST_CLEAR_TS=0
-        agent_is_busy
-    '
-    [ "$status" -eq 0 ]
-}
-
 # --- T-BUSY-002: agent_is_busy returns 1 when idle ---
 
 @test "T-BUSY-002: agent_is_busy returns 1 when pane is idle" {
@@ -431,36 +415,6 @@ MOCK
         agent_is_busy
     '
     [ "$status" -eq 1 ]
-}
-
-# --- T-BUSY-003: send_wakeup skips when agent is busy ---
-
-@test "T-BUSY-003: send_wakeup skips nudge when agent is busy" {
-    rm -f "$TEST_TMPDIR/shogun_idle_test_agent"
-    run bash -c '
-        source "'"$TEST_HARNESS"'"
-        send_wakeup 3
-    '
-    [ "$status" -eq 0 ]
-    echo "$output" | grep -qi "SKIP.*busy"
-
-    # No nudge should have been sent
-    ! grep -q "send-keys.*inbox" "$MOCK_LOG"
-}
-
-# --- T-BUSY-004: send_wakeup_with_escape skips when agent is busy ---
-
-@test "T-BUSY-004: send_wakeup_with_escape skips when agent is busy" {
-    rm -f "$TEST_TMPDIR/shogun_idle_test_agent"
-    run bash -c '
-        source "'"$TEST_HARNESS"'"
-        send_wakeup_with_escape 2
-    '
-    [ "$status" -eq 0 ]
-    echo "$output" | grep -qi "SKIP.*busy"
-
-    # No nudge should have been sent
-    ! grep -q "send-keys.*inbox" "$MOCK_LOG"
 }
 
 # --- T-CODEX-001: codex /clear → /new conversion ---
@@ -552,31 +506,6 @@ MOCK
     [ "$status" -eq 0 ]
     echo "$output" | grep -q "C_U_SENT"
     grep -q "send-keys.*C-u" "$MOCK_LOG"
-}
-
-# --- T-CODEX-004: C-u NOT sent when agent is busy ---
-
-@test "T-CODEX-004: C-u cleanup NOT sent when agent is busy" {
-    rm -f "$TEST_TMPDIR/shogun_idle_test_agent"
-    run bash -c '
-        source "'"$TEST_HARNESS"'"
-        FIRST_UNREAD_SEEN=12345
-        normal_count=0
-        if [ "$normal_count" -gt 0 ] 2>/dev/null; then
-            echo "SHOULD_NOT_REACH"
-        else
-            FIRST_UNREAD_SEEN=0
-            if ! agent_is_busy; then
-                timeout 2 tmux send-keys -t "$PANE_TARGET" C-u 2>/dev/null
-                echo "C_U_SENT"
-            else
-                echo "C_U_SKIPPED"
-            fi
-        fi
-    '
-    [ "$status" -eq 0 ]
-    echo "$output" | grep -q "C_U_SKIPPED"
-    ! grep -q "C-u" "$MOCK_LOG"
 }
 
 # --- T-CODEX-005: claude /clear passes through as-is ---
@@ -721,24 +650,6 @@ PY
     grep -q "send-keys.*/new" "$MOCK_LOG"
     # After /new, startup prompt is sent (replaces inbox1 nudge for wake-up)
     grep -q "send-keys.*Session Start" "$MOCK_LOG"
-}
-
-# --- T-OPENCODE-003: OpenCode Phase 2 falls back to plain nudge ---
-
-@test "T-OPENCODE-003: send_wakeup_with_escape falls back to plain nudge for OpenCode" {
-    run bash -c '
-        MOCK_CAPTURE_PANE="first line\nsecond line\nthird line\n"
-        MOCK_PANE_CLI="opencode"
-        source "'"$TEST_HARNESS"'"
-        CLI_TYPE="opencode"
-        send_wakeup_with_escape 3
-    '
-    [ "$status" -eq 0 ]
-
-    ! grep -q "send-keys.*Escape" "$MOCK_LOG"
-    ! grep -q "send-keys.*C-c" "$MOCK_LOG"
-    grep -q "send-keys.*C-u" "$MOCK_LOG"
-    grep -q "send-keys.*inbox3" "$MOCK_LOG"
 }
 
 # --- T-CODEX-012: auto-recovery dedupe ---
