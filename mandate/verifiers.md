@@ -109,64 +109,6 @@ QC結果自身（`gunshi_report.yaml` task_id: gunshi_qc_155_AB、issue説明文
 本節の`grep -oE`手順は原則引用回数専用（既存の月次集計コマンドに統合していない。理由:
 原則引用はtiming_eventsに記録されるイベントではなく、既存文書への静的走査でのみ検出可能）。
 
-## 工程別内訳（phase-breakdown）の評価条件（cmd_156）
-
-`scripts/analyze_timing.py --phase-breakdown`(裁定待ち/QC往復/実行の工程別時間内訳、
-検出規則・境界定義は本ファイル「原則引用回数の検出規則」節に隣接するcmd_155該当RULE
-エントリ〔`mandate/decisions_journal.md`〕を参照)の評価は、**「約10cmd分のデータ
-蓄積」という件数条件**を満たした時点で行う。🔴**暦日期限は設けない**
-(`judgment_model.md`原則4: 交通量と無関係な代理指標を避ける、の適用)。個別cmdごとの
-工程内訳報告は不要——評価はデータが十分溜まってからまとめて行う(出典: 殿の
-2026-08-08裁定・cmd_156。個別cmd報告不要の反映先は`instructions/karo.md`「省力化3点
-セット運用」節)。
-
-**初期サンプル(cmd_155実測値・消去禁止)**:
-
-| 工程 | 実測値 |
-|---|---|
-| 裁定待ち | 463s |
-| 実行 | 241s |
-| QC往復 | 958s |
-
-出典: `queue/shogun_to_karo.yaml` cmd_155 acceptance_criteria、`scripts/analyze_timing.py
---phase-breakdown`実測(cmd_155時点)。件数条件(約10cmd分)を満たすまでは本値を初期
-サンプル1件として保持する。
-
-**一次観測点(Q42-5遡及適用・cmd_178)**: `logs/timing_events.jsonl`の`cmd_id`フィールドの
-ユニーク件数(`grep -oE '"cmd_id": *"[^"]+"' logs/timing_events.jsonl | sort -u | wc -l`。
-`scripts/analyze_timing.py --phase-breakdown`内部の`by_cmd`グルーピングと同一キー)が
-約10件に達したことをもって評価条件充足とする。
-
-## Fast-Lane実運用評価条件（cmd_192工程3・ashigaru3起票）
-
-`instructions/karo.md`「Fast-Lane Exception」節はcmd_086 Part C制定時、「実cmd 3件の
-累積をもって常用可否を評価する」という試行運用パラグラフを含んでいたが、暦日期限
-のない件数条件であるにもかかわらずkaro.md本文に据え置かれ続けており、
-`mandate/verifiers.md`側の条件式集約箇所（本節）へ未収容だった。cmd_192工程3で
-karo.md本文から当該パラグラフを削除し、本節へ条件式として集約する
-（`judgment_model.md`原則4: 交通量と無関係な代理指標=暦日期限を避ける、の適用。
-「期日を持つ約束の起票禁止則」節（Q35）参照）。
-
-**評価条件**: `scope_check_fastlane_eligible()`による機械判定でexit 0（適格）と
-判定され、かつ実際にQC短縮フローが適用された実cmd事例が**3件累積**した時点で、
-本運用の常用化可否を評価する。🔴**暦日期限は設けない**。
-
-**現況（2026-09-09時点・ashigaru3実データ確認）**: `mandate/decisions_journal.md`
-（`grep -n "fastlane\|Fast-Lane" mandate/decisions_journal.md`）・`dashboard.md`
-（`grep -n "fast-lane.*件目\|fast-lane.*exit 0(適格)" dashboard.md`）を確認した
-限り、実際に適用され「適格」と記録された実cmd事例は**cmd_096（2026-07-17、
-「fast-lane検証実カウンタの記念すべき1件目」）の1件のみ**。cmd_089/091は消失
-原因究明・再配線作業であり適用実績ではない。cmd_094は不適格（exit 1）判定の
-ためカウント対象外。2026-08-27時点のdashboard.md記載（「タスク1(fast-lane常用
-可否): 実データ0件」）とも整合する。3件未満のため、本条件式は現時点未充足。
-
-**一次観測点**: `mandate/decisions_journal.md`と`dashboard.md`を対象に
-`grep -n "fast-lane" mandate/decisions_journal.md dashboard.md`を実行し、
-「実際に適格判定（exit 0）でQC短縮フローを適用した」旨が明記された実cmd事例の
-ユニーク件数を数える（消失調査・再配線・不適格判定の記述は含めない）。今後
-新たな適用事例が生じた際は、`mandate/decisions_journal.md`へ1行記帳することを
-推奨する（記帳が無いと本節の現況調査を都度手動で再実施することになる）。
-
 ## ntfyトピックローテーション完全手順（cmd_150）
 
 **選定理由**: 本ファイル冒頭の運用規則（機械的な手順は判断原則ではなく具体項目として
@@ -435,29 +377,6 @@ is-scope調査結果、`queue/reports/ashigaru5_report.yaml` task_id: subtask_19
 載せたまま据え置く——🔴**是正着手を禁ずる**(殿への通知を駆動しない本文文言依存箇所には
 手を出すな。出典: Fable裁定Q47、`~/fable_ruling_20260909_q46q49.md`47-49行目)。
 
-### 条件式(a): 取消線判定の撤去条件(Q47付帯・Q35準拠)
-
-「resolvedマーカー未付与の取消線項目が0件になった時点で取消線判定を撤去する」
-(出典: Fable裁定Q47付帯)。
-
-**一次観測点**: `dashboard.md`。
-1. `grep -n '~~' dashboard.md` で取消線(`~~...~~`)を含む行を全列挙する。
-2. 列挙した各取消線ブロックについて、ブロック先頭(`created_at`コメント直後、
-   [[持ち越しマーカー(carryover_approved)の記法(cmd_170)]]・
-   [[解決済みマーカー(resolved)の記法(cmd_190)]]と同じ位置)を
-   `grep -B5 <該当行番号> dashboard.md`等で確認し、`<!-- resolved: true -->`
-   マーカーが併記されているか判定する。
-3. マーカー未付与の取消線ブロック件数を数える。0件になった時点で本条件式充足——
-   `scripts/inbox_watcher.sh`の`_is_resolved_block()`(1935行目定義)から取消線分岐
-   `return body.startswith('~~') and '~~' in body[2:]`(1947行目)を撤去し、
-   本ファイル「解決済みマーカー(resolved)の記法(cmd_190)」節の「取消線との関係」
-   段落も合わせて更新する。
-
-**現況(2026-09-09時点・工程6着手時点の粗観測)**: `grep -c '~~' dashboard.md`は
-複数行ヒットあり、`grep -n "resolved: true" dashboard.md`のヒット数より多い
-(未精査・本条件式は未充足)。セッション開始点検スイープでの精査手順は上記1-3を
-用いる。
-
 ## 人の独立検証への依存・単一障害点の再評価条件(Q48)
 
 Fable裁定Q48: `scope_check.sh`のPreToolUse observe接続を最小の一手として実施
@@ -483,37 +402,6 @@ Fable裁定Q48: `scope_check.sh`のPreToolUse observe接続を最小の一手と
 INCIDENTエントリ(cmd_186)は軍師が捏造を「捕らえた」成功事例であり、本条件式が
 指す「すり抜けた」事故とは逆の性質のため該当しない。
 
-## scope_checkフック(pretooluse_scope_check.sh)のenforce移行条件(cmd_192工程5)
-
-`scripts/pretooluse_scope_check.sh`(cmd_192工程5新設、既定observe)の
-enforce移行は、以下4条件(Q6出典: `~/fable_ruling_20260727_q1q4.md`
-——yaml_guard_enabledのenforce移行時と同型)を**すべて**満たした時点で
-候補となる。🔴暦日期限は設けない(判断は将軍が別途行う)。
-
-1. 対象評価20件以上
-2. 稼働セッション2回以上に跨る
-3. 偽WOULD-DENYゼロ(allowed_paths内のはずのfile_pathが誤ってWOULD-DENYされた事例が無い)
-4. fail-open(FAIL-OPEN相当のクラッシュ・判定不能)ゼロ、またはfail-open発生時は全件原因説明済み
-
-**一次観測点(Q42-5細則)**: `logs/pretooluse_scope_check.log`を対象に
-以下を実行する。
-- 評価総数(条件1): `grep -cE "^\[.*\] (ALLOW|WOULD-DENY|DENY) " logs/pretooluse_scope_check.log`
-- セッション跨り(条件2): `grep -oE "session=[^ ]+" logs/pretooluse_scope_check.log | sort -u | wc -l`
-  (`session_id`が実際に複数稼働セッションに跨ることをdashboard.md等で追認する)
-- 偽WOULD-DENY(条件3): `grep "WOULD-DENY" logs/pretooluse_scope_check.log`の
-  各行についてfile_pathが実際に該当agentのallowed_paths外だったかを個別確認し、
-  誤判定(allowed_paths内なのにWOULD-DENYされた事例)が0件であることを示す
-  (機械集計不能・目視確認が必要な項目である旨も明記する)。
-- fail-open(条件4): 本フックはFAIL-OPENタグを出力しない設計(JSON解析失敗・
-  agent_id/TASK_YAML解決不能はすべて無ログexit 0のため)。よって本条件式は
-  「クラッシュ・異常終了(exit code非0)がpretooluse hookの実行ログ
-  (Claude Code側のhook実行エラー通知等)に記録されていないこと」を別途
-  確認する形になる——本フック固有の観測点は無いため、この点に留意する。
-
-セッション開始点検スイープ(a)条件式の評価対象として、次回セッション開始時から
-評価対象に加わる(出典: `queue/reports/ashigaru5_report.yaml` task_id:
-subtask_192_5、家老が反映)。
-
 ## 状態を持つ機構の三層構成則(cmd_194・Q50(b))
 
 状態を持つ機構は、今後 `config/settings.yaml`(現在値)／`dashboard.md`(現在値の
@@ -525,71 +413,3 @@ subtask_192_5、家老が反映)。
 記帳され、settings.yaml/dashboard.mdへ反映されなかったために生じた約5週間の
 帳簿と運用の乖離(2026-08-05〜2026-09-14)である。
 
-### 条件式(c): reversibility_check enforceモード実装の起票条件(補遺§(c))
-
-「(a)(b)適用後、切り詰め無しのWOULD-BLOCKが20件以上・セッション2回以上
-蓄積し、軍師の全件再判定で偽陽性0件」(出典: fable_ruling_20260916_cmd194_step6.md §(c))。
-
-**一次観測点**: `logs/reversibility_check.log`。
-🔴素朴な`grep -c`は使わない設計とする——gunshi_design_194_6のQCで実証した
-とおり、本ログは(i)自己言及汚染(ログを分析するコマンド自体がログに記録され、
-その中の文字列が誤って別エントリとしてカウントされる)と(ii)detail内埋め込み
-改行(複数行コマンドがログファイル上で複数物理行に分断される)の2つの罠を持つ。
-以下の位置アンカー方式を用いる:
-
-1. `grep -cE '^\[[^]]*\] WOULD-BLOCK .*category=push .*truncated=false' logs/reversibility_check.log`
-   で、タイムスタンプ直後の固定位置にLOGTOKENが来る行のみを対象に、切り詰め
-   無しのcategory=push WOULD-BLOCK件数を数える(工程6'(b)実装後にのみ有効な
-   `truncated=false`フィールドに依存する)。20件以上か判定。
-2. 上記行から`session=`フィールドを`grep -oE 'session=[a-zA-Z0-9-]+' | sort -u | wc -l`
-   で抽出しユニークセッション数を数える。2件以上か判定。
-3. 1・2がともに充足した時点で、「条件式(c)の機械判定可能な2要件(20件・
-   2セッション)を充足、軍師による全件再判定(偽陽性0件の確認)を要請せよ」と
-   セッション開始点検スイープが報告する(3つ目の「偽陽性0件」要件は軍師の
-   判断を要するため、機械化は1・2までに限定し、3の実行トリガーとして1・2の
-   充足を使う設計とする——条件式(a)のstep2が人間/エージェントの目視判定を
-   要するのと同型の設計)。
-
-**現況(2026-09-16時点、subtask_194_step6prime実装完了時)**: 工程6'(a)(b)は
-実装済みとなり`truncated=`フィールド自体はコード上存在するが、本番ログ
-(`logs/reversibility_check.log`)への`truncated=false`付きWOULD-BLOCK
-category=push件数の蓄積(条件1・2の20件・2セッション基準)はこれからであり、
-本条件式は現時点で未充足。
-
-充足時の扱いは`mandate/approval_queue.md` AQ-018の補遺§(c)条件式を参照
-(enforceモードの実装を起票し、実装後に原則4で移行を裁可する)。
-
-🔴**retire注記(2026-09-16・cmd_198工程1/工程12)**: `reversibility_check_enabled`機構自体
-(コード・flag・テスト・文書)がFable裁定書Q59①(軍師棚卸し`queue/reports/gunshi_report.yaml`
-task_id: subtask_198_1)によりretire(削除)と判定されたため、本条件式(c)は対象消失により
-以後の再開・追跡は不要となった。`mandate/approval_queue.md`自体もQ58全面上書きにより退役済み
-(新規追記先は`mandate/decisions_journal.md`のS-nn記帳)。AQ-018の裁定はS-03
-(decisions_journal.md、cmd_198工程12)を参照。
-
-### 条件式(d): 非Claudeエージェント復帰時のroles/*_role.md同期要否判断(残件10)
-
-条件文: 「非Claudeエージェント(codex/copilot/kimi)への復帰判断が発生した時、
-instructions/roles/*_role.mdの同期要否を判定する」(出典: cmd_194 工程8、
-`.claude/skills/dormant-cli-revival-and-non-claude-routing/SKILL.md`——
-休眠資産復帰手順の一部として本条件を位置づける)。
-
-**一次観測点**: 4ペア(role∈{shogun,karo,ashigaru,gunshi})の
-`git log -1 --format=%cI -- instructions/${role}.md`と
-`git log -1 --format=%cI -- instructions/roles/${role}_role.md`の比較。
-本工程8で新設した`scripts/build_instructions.sh`の未同期検知ガード
-(`build_instruction_file()`内、codex/copilot/kimi向け生成のみ対象)が
-実行時に同じ判定を行うため、`bash scripts/build_instructions.sh 2>&1 |
-grep -c "未同期につき生成拒否"`を実行し0件でなければ未同期ペアありという
-簡易確認も可(スイープでの機械判定は同じロジックの事前確認として位置づけられる)。
-
-**トリガー条件(いつ評価すべきか)**: 「非Claudeエージェントへの復帰判断が
-発生した時」。日常のセッション開始点検スイープでの常時評価は不要
-(現状フリートは全Claudeであり、このトリガー条件自体が滅多に発生しない
-ため。Q35「期日を持つ約束の起票禁止」に反しないよう、暦日での再測ではなく
-「復帰判断発生時」という事象トリガーとして本条件式を書いている)。
-
-**相互参照**: `.claude/skills/dormant-cli-revival-and-non-claude-routing/
-SKILL.md`(非Claudeエージェント復帰手順)を読む場面で本条件式も併せて
-参照する設計とする。
-
-出典: `queue/reports/gunshi_report.yaml` task_id: gunshi_design_194_8。
