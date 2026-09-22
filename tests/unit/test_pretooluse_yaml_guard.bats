@@ -234,7 +234,8 @@ run_guard_ver() {
     run_guard_with_settings "$SETTINGS_UNKNOWN" "$payload"
     [ "$status" -eq 0 ]
     [ -z "$output" ]
-    [ ! -s "$LOG_FILE" ]
+    run grep -c "^\[.*\] OFF mode=off$" "$LOG_FILE"
+    [ "$output" -eq 1 ]
 }
 
 @test "flag=enforce (new explicit value): broken YAML denied same as legacy true" {

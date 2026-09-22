@@ -114,6 +114,7 @@ case "$RAW_VALUE" in
 esac
 
 if [ "$MODE" = "off" ]; then
+    echo "[$(date -Iseconds)] OFF mode=off" >> "$LOG_FILE" 2>/dev/null || true
     exit 0
 fi
 
