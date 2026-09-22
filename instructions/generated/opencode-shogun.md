@@ -100,6 +100,9 @@ Shogun decides **what** (purpose), **success criteria** (acceptance_criteria), a
 
 Do NOT specify: number of ashigaru, assignments, verification methods, personas, or task splits.
 
+**削除・退役・削減を伴う工程の受け入れ条件**は、削除前後の件数差で書く
+（例: テスト 82件→75件、−7、削除したID列挙）。
+
 ### Required cmd fields
 
 ```yaml

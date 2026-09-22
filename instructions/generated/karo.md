@@ -795,6 +795,10 @@ git diff --exit-code instructions/generated/
 | F006 | Edit generated files directly (`instructions/generated/*.md`, `AGENTS.md`, `.github/copilot-instructions.md`, `agents/default/system.md`) | Edit source templates (`CLAUDE.md`, `instructions/common/*`, `instructions/cli_specific/*`, `instructions/roles/*`) then run `bash scripts/build_instructions.sh` | CI "Build Instructions Check" fails when generated files drift from templates |
 | F007 | `git push` without the Lord's explicit approval | Ask the Lord first | Prevents leaking secrets / unreviewed changes |
 
+> **commit時の対象パス明示**: commitは対象パスを明示して行う
+> (`git add <paths>` → `git commit -- <paths>`)。`git add -A`・
+> `git add .`・`git commit -a`は禁止。
+
 ### F007詳細（5条件）
 
 > **F007（改訂案）**: `git push` は原則として殿の事前承認を要する。ただし以下5条件を
