@@ -514,48 +514,6 @@ enforce移行は、以下4条件(Q6出典: `~/fable_ruling_20260727_q1q4.md`
 評価対象に加わる(出典: `queue/reports/ashigaru5_report.yaml` task_id:
 subtask_192_5、家老が反映)。
 
-## 完了ゲート(stop_hook_evidence.sh)のenforce移行条件(cmd_192工程8)
-
-`scripts/stop_hook_evidence.sh`(cmd_192工程8新設、既定observe、対象は
-足軽・軍師・家老・将軍は対象外)のenforce移行は、以下4条件(Q6出典:
-`~/fable_ruling_20260727_q1q4.md`——yaml_guard_enabled・scope_check_hook_enabled
-のenforce移行時と同型)を**すべて**満たした時点で候補となる。🔴暦日期限は
-設けない(判断は将軍が別途行う)。
-
-1. 対象評価20件以上
-2. 稼働セッション2回以上に跨る
-3. 偽WOULD-BLOCKゼロ((a)〜(d)いずれかの条件式が、実際には充足している
-   report(evidence記載済み・commit実在・SKIP0件)を誤ってWOULD-BLOCK
-   判定した事例が無い——(b)の`*_evidence`末尾一致検出・(c)の commit
-   ハッシュ抽出・(d)のSKIP非ゼロ検出、いずれも正規表現ヒューリスティックで
-   あり誤検知の可能性が構造的に残ることに留意)
-4. fail-open(FAIL-OPEN相当のクラッシュ・判定不能)ゼロ、またはfail-open
-   発生時は全件原因説明済み
-
-**一次観測点(Q42-5細則)**: `logs/stop_hook_evidence.log`および
-`logs/stop_hook_evidence_blocks/`を対象に以下を実行する。
-- 評価総数(条件1): `grep -cE "^\[.*\] (ALLOW-STOP|WOULD-BLOCK|BLOCK) " logs/stop_hook_evidence.log`
-- セッション跨り(条件2): 本フックはStop hook起動ごとに固有session_idを
-  ログへ含めない設計(stdinのsession_idはStop hook入力に含まれない場合が
-  あるため未実装)。dashboard.md・queue/reports/の当該agentタイムスタンプ
-  跨りで代替確認する(機械集計不能・目視確認が必要な項目である旨も明記する)。
-- 偽WOULD-BLOCK(条件3): `grep "WOULD-BLOCK" logs/stop_hook_evidence.log`の
-  各行についてreason=(a)〜(d)を特定し、該当report YAMLエントリを実際に
-  参照して充足済みだったか個別確認する(機械集計不能・目視確認が必要)。
-- fail-open(条件4): 本フックは判定不能時すべて無ログexit 0(fail-safe)で
-  通す設計。よって本条件式は「クラッシュ・異常終了(exit code非0)が
-  Stop hookの実行ログ(Claude Code側のhook実行エラー通知等)に記録されて
-  いないこと」を別途確認する形になる——本フック固有の観測点は無いため、
-  この点に留意する。
-
-🔴**併せて、工程8-2(6回連続block通知)がenforce運用下で誤発火しないことも
-確認する**: `logs/stop_hook_evidence_blocks/*.count`が実際の連続block回数
-(karo・軍師の目視確認)と一致していること。
-
-セッション開始点検スイープ(a)条件式の評価対象として、次回セッション開始時から
-評価対象に加わる(出典: `queue/reports/ashigaru3_report.yaml` task_id:
-subtask_192_8、家老が反映)。
-
 ## 状態を持つ機構の三層構成則(cmd_194・Q50(b))
 
 状態を持つ機構は、今後 `config/settings.yaml`(現在値)／`dashboard.md`(現在値の
