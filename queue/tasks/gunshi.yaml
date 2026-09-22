@@ -1,70 +1,52 @@
 task:
-  task_id: gunshi_qc_194_9
-  parent_cmd: cmd_194
+  task_id: gunshi_qc_201_4
+  parent_cmd: cmd_201
   type: qc
-  bloom_level: L5
+  bloom_level: L4
   assigned_to: gunshi
-  status: assigned
-  timestamp: "2026-09-16T15:20:00"
+  status: done  # PASS。cli_adapter処遇=維持(独立検証済み)。bats FAIL1/SKIP0確認。cmd_201工程A完全クローズ。
+  timestamp: "2026-09-22T17:36:00"
   description: |
-    【cmd_194 工程9 QC — subtask_194_9(帳簿と再起動・最終工程・cmd_194
-    全体の最終QC)】
+    【cmd_201 工程A QC: subtask_200_4是正版(足軽3号)+ cli_adapter 5件の
+    処遇検分(将軍の明示要求)】
 
-    足軽1号の実装(commit a584235、mandate/decisions_journal.md)を
-    QCせよ。本工程はcmd_194全13工程(工程0〜8・補遺1・6'・2(c))の
-    総括であるため、通常のQCより広く、cmd_194全体の整合性を最終確認する
-    位置づけとする。
+    一次資料: `queue/shogun_to_karo.yaml` id: cmd_201 全文。対象commit:
+    `ea3a3f0`(是正)・`d40dfe4`(cli_adapter/flag_silent_off判定、変更なし
+    のため是正版にも継承)。
 
-    ■ 確認対象
+    ■ 確認事項
 
-    (1) 総括journalエントリの正確性
-    `git show a584235 -- mandate/decisions_journal.md`を確認し、
-    `~/fable_ruling_20260914_q50q52.md`「残件13件の個別裁定」表
-    (72-89行目)を自分でも実読し、①〜⑬の逐語引用が正確であることを
-    確認せよ。
-
-    (2) 🔴🔴各項目のcommit hash・個別journal行番号の正確性(最重要)
-    記帳された13項目それぞれのcommit hash(b4d5ef3・69ff25c/088d6ca・
-    845f633・43d5740・c42255c・ca330ec・b20be2d・80050c1・843de43・
-    c2250ec・e6ee3f8・a837add等)を`git log -1 <hash>`で独立実測し、
-    各commitの内容(コミットメッセージ)が対応する工程の説明と一致する
-    ことを確認せよ。引用されている個別journal行番号(266・272・
-    275・278・279・280・282・284・286・288・290・292行目等)も
-    `mandate/decisions_journal.md`の現物と突合し正確か確認せよ。
-
-    (3) ⑪(reversibility enforce移行)の記述の誠実性(最重要)
-    「原裁定の想定どおりには完了していない」という記述が、工程6・
-    工程6'・補遺2で実際に起きた経緯(誤判定0件到達不能・enforceモード
-    未実装という前提食い違い・殿裁定補遺による状態化のみでの決着)を
-    省略・美化せず正確に反映しているか確認せよ。
-
-    (4) dashboard.mdのPID一覧・watcher状態記録の正確性
-    `ps -eo pid,lstart,cmd | grep "inbox_watcher.sh\|stall_watcher.sh\|
-    deadman_watcher.sh\|watcher_supervisor.sh"`を貴殿自身で実行し、
-    dashboard.md記載のPID・起動時刻(9体が08:52:16起動でcommit 43d5740
-    〈10:38:39〉より前=工程4新コード未反映、ashigaru3のみ14:47起動で
-    反映済み、stall/deadman/supervisorは工程2以降変更なく最新)が
-    正確であることを独立に確認せよ。
-
-    (5) 工程2の2tick観測が重複実施されていないことの確認
-    dashboard.mdの記述が「工程2の2tick観測(本日朝subtask_194_2_tick/
-    tick2)は完了済みで二重実施不要、今回必要なのは工程4分のみ」と
-    正確に区別できているか確認せよ。
-
-    (6) D006・禁止事項の遵守確認
-    watcherへのkill/pkill操作が一切行われていないこと、
-    `logs/timing_events.jsonl`の事後補正が無いこと、未push(F007)を
-    確認せよ。
-
-    (7) 🔴cmd_194全体のacceptance_criteria充足確認
-    `queue/shogun_to_karo.yaml` id: cmd_194のacceptance_criteria
-    6項目・補遺の各要求事項を通読し、工程0〜9・補遺1・6'・2(c)の
-    全実装がこれらを満たしているか最終確認せよ。未充足・懸念事項が
-    あれば具体的に指摘せよ。
+    1. **@test件数の独立検算**(cmd_201受入基準・将軍実測との一致):
+       `grep -c '^@test' tests/unit/test_idle_flag.bats
+       tests/unit/test_phase3_instrumentation.bats
+       tests/unit/test_send_wakeup.bats`
+       を実行し、**8/7/60(計75件)**であることを確認せよ。将軍実測
+       (元9/8/65=82件→現8/7/60=75件、差分ちょうど7件)と一致するか。
+    2. 旧契約7件(T-003・T-P3-004・T-BUSY-001/003/004・T-CODEX-004・
+       T-OPENCODE-003)の`@test`ブロックが実在しないことを確認せよ。
+    3. 🔴**cli_adapter 5件の処遇を検分せよ(将軍の明示要求)**: commit
+       `d40dfe4`は`tests/unit/test_cli_adapter.bats`から32行を削除
+       している。足軽3号(subtask_200_4の事前調査)は「7件のケースと
+       決定的に違う——新規約(`instructions/generated/codex-*.md`等)を
+       検査する代替テストが現状どこにも存在しない」と指摘した上で
+       削除を選択した。この削除理由が妥当か、成果物(commit・
+       dashboard.md記述)に理由が明記されているかを検分せよ。
+       - 理由が立つ(削除後もカバレッジ0件化が正直に明記されている等)
+         → 削除維持で可。
+       - 理由が立たない、または「赤いから消した」型の説明不足がある
+         → **復旧を推奨**し、その旨を明確にPASSと切り分けて報告せよ。
+    4. `bats tests/unit/*.bats`を実行し、FAIL件数・SKIP件数を実測
+       記録せよ(足軽3号の報告: FAIL1件〈flag_silent_off、既知欠陥〉・
+       SKIP0件。本セッション開始時基準はFAIL13件)。
+    5. `mandate/decisions_journal.md`のINCIDENT記帳(2026-09-22付、
+       cmd_200工程4是正)が、経緯4段階(①巻き込み前提②誤翻訳③将軍
+       実測差し戻し④是正)と族「削る戦において削りすぎる」を含んで
+       いるか確認せよ。
+    6. `dashboard.md`「🙅 対応しない」欄が`@test`ブロック単位の記述へ
+       是正されているか確認せよ。
+    7. `git status --short`でpushされていないこと(F007)を確認せよ。
 
     ■ 完了後
-    queue/reports/gunshi_report.yamlへ記録し、家老へinbox_writeでPASS/FAIL通知せよ。
-    PASSの場合、家老はcmd_194全体をdone_with_caveat(watcher再起動待ち)で
-    closeし、殿へntfy報告する。
-  completion:
-    report_to: queue/reports/gunshi_report.yaml
+    bash /home/nishikawa/projects/multi-agent-shogun/scripts/inbox_write.sh karo \
+      "gunshi_qc_201_4完了: <PASS/FAIL>。cli_adapter処遇=<維持/復旧推奨>。bats FAIL<件数>/SKIP<件数>。" \
+      report_received gunshi --cmd_id=cmd_201 --task_id=gunshi_qc_201_4 --qc_result=<pass/fail>
