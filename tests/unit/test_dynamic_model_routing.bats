@@ -1010,6 +1010,8 @@ print(len(doc.get('history', [])))
 
 @test "TC-FAM-001: 完全一致の足軽が存在 → ashigaru1 を返す（Spark）" {
     load_adapter_with "${TEST_TMP}/settings_mixed_cli.yaml"
+    # cmd_203工程5是正: 実ライブtmux状態(list-panes -a)への依存を排除し決定的化
+    tmux() { return 1; }
     result=$(find_agent_for_model "gpt-5.3-codex-spark")
     [ "$result" = "ashigaru1" ]
 }
@@ -1048,6 +1050,8 @@ print(len(doc.get('history', [])))
 
 @test "TC-FAM-007: 複数の同モデル足軽 → 番号最小を返す（ashigaru1）" {
     load_adapter_with "${TEST_TMP}/settings_all_spark.yaml"
+    # cmd_203工程5是正: 実ライブtmux状態(list-panes -a)への依存を排除し決定的化
+    tmux() { return 1; }
     result=$(find_agent_for_model "gpt-5.3-codex-spark")
     [ "$result" = "ashigaru1" ]
 }
@@ -1055,6 +1059,8 @@ print(len(doc.get('history', [])))
 @test "TC-FAM-008: capability_tiersなし設定でも動作する（後方互換）" {
     load_adapter_with "${TEST_TMP}/settings_no_tiers.yaml"
     # no_tiersでもagents定義がある場合はSpark足軽を探して返す
+    # cmd_203工程5是正: 実ライブtmux状態(list-panes -a)への依存を排除し決定的化
+    tmux() { return 1; }
     result=$(find_agent_for_model "gpt-5.3-codex-spark")
     [ "$result" = "ashigaru1" ]
 }
