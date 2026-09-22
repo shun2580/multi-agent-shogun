@@ -69,7 +69,7 @@ case "$TYPE" in
     cmd_new) _TIMING_EVENT="cmd_received" ;;
     task_assigned) _TIMING_EVENT="assigned" ;;
     report_received) _TIMING_EVENT="report_submitted" ;;
-    clear_command) _TIMING_EVENT="" ;;
+    clear_command) _TIMING_EVENT="assigned" ;;
     *) _TIMING_EVENT="" ;;
 esac
 if [ -n "$_ARG_REDO_OF" ]; then
@@ -206,6 +206,9 @@ except Exception as e:
                 # instead of surfacing as a 92%-unmeasurable E2E result later.
                 if [ -z "$_TIMING_CMD_ID" ] && [ "$_TIMING_EVENT" != "agent_started" ]; then
                     echo "[inbox_write] WARNING: cmd_id not resolved for timing event '$_TIMING_EVENT' (pass --cmd_id= explicitly)" >&2
+                fi
+                if [ -z "$_TIMING_TASK_ID" ] && [ "$_TIMING_EVENT" != "agent_started" ]; then
+                    echo "[inbox_write] WARNING: task_id not resolved for timing event '$_TIMING_EVENT' (pass --task_id= explicitly)" >&2
                 fi
                 bash "${SCRIPT_DIR}/scripts/log_timing_event.sh" "$_TIMING_EVENT" "$_TIMING_CMD_ID" "$_TIMING_TASK_ID" "$_TIMING_AGENT" --redo_of="$_ARG_REDO_OF" --qc_result="$_ARG_QC_RESULT" --source=inbox_write.sh 2>/dev/null || true
                 if [ "$_TIMING_EVENT" = "redo_dispatched" ]; then
