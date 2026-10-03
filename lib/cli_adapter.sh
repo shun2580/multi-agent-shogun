@@ -38,11 +38,11 @@ normalize_opencode_model() {
         gpt-5.4-mini|gpt-5.4|gpt-5.3-codex|gpt-5.3-codex-spark|gpt-5*)
             echo "openai/${model}"
             ;;
-        claude-opus-4-6|opus)
-            echo "anthropic/claude-opus-4-6"
+        claude-opus-5-5|opus)
+            echo "anthropic/claude-opus-5-5"
             ;;
-        claude-sonnet-4-6|sonnet)
-            echo "anthropic/claude-sonnet-4-6"
+        claude-sonnet-5-5|sonnet)
+            echo "anthropic/claude-sonnet-5-5"
             ;;
         claude-haiku-4-5-20251001|haiku)
             echo "anthropic/claude-haiku-4-5-20251001"
@@ -1174,7 +1174,7 @@ except Exception:
 #   エラー → "" (空文字)
 #
 # 使用例:
-#   agent=$(find_agent_for_model "claude-sonnet-4-6")
+#   agent=$(find_agent_for_model "claude-sonnet-5-5")
 #   case "$agent" in
 #     QUEUE) echo "待機キューに積む" ;;
 #     "")    echo "エラー" ;;

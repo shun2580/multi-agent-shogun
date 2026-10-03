@@ -10,16 +10,16 @@
 #   bash scripts/switch_cli.sh ashigaru3
 #
 #   # Codex Spark → Claude Sonnet に切替
-#   bash scripts/switch_cli.sh ashigaru3 --type claude --model claude-sonnet-4-6
+#   bash scripts/switch_cli.sh ashigaru3 --type claude --model claude-sonnet-5-5
 #
 #   # OpenCode で provider/model を直接指定（role 定義は --agent、モデル変更は再起動で反映）
 #   bash scripts/switch_cli.sh ashigaru3 --type opencode --model openai/gpt-5.4-mini
 #
 #   # 同一CLI内でモデルだけ変更（Sonnet → Opus）
-#   bash scripts/switch_cli.sh ashigaru3 --model claude-opus-4-6
+#   bash scripts/switch_cli.sh ashigaru3 --model claude-opus-5-5
 #
 #   # 全足軽を一括切替
-#   for i in $(seq 1 7); do bash scripts/switch_cli.sh ashigaru$i --type claude --model claude-sonnet-4-6; done
+#   for i in $(seq 1 7); do bash scripts/switch_cli.sh ashigaru$i --type claude --model claude-sonnet-5-5; done
 #
 # Flow:
 #   1. (Optional) settings.yaml を更新
@@ -60,7 +60,7 @@ usage() {
     echo ""
     echo "  agent_id   Agent configured in config/settings.yaml (e.g. karo, ashigaru1, gunshi)"
     echo "  --type     claude | codex | copilot | kimi | opencode | gemini"
-    echo "  --model    claude-sonnet-4-6 | claude-opus-4-6 | gpt-5.3-codex | openai/gpt-5.4-mini | etc."
+    echo "  --model    claude-sonnet-5-5 | claude-opus-5-5 | gpt-5.3-codex | openai/gpt-5.4-mini | etc."
     echo "  --force    Override fixed: true protection (emergency use only)"
     echo ""
     echo "If --type/--model omitted, uses current settings.yaml values."

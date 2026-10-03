@@ -284,7 +284,7 @@ total_today = sum(target_tokens.values())
 short = {}
 for k, v in target_tokens.items():
     name = k.replace('claude-', '')
-    for prefix in ('opus-4-6', 'opus-4-5', 'sonnet-4-5', 'haiku-4-5'):
+    for prefix in ('opus-5-5', 'opus-4-6', 'opus-4-5', 'sonnet-5-5', 'sonnet-4-5', 'haiku-4-5'):
         if name.startswith(prefix):
             name = prefix.split('-')[0]
             break
