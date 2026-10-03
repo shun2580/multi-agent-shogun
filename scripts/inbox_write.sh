@@ -80,6 +80,46 @@ fi
 _TIMING_CMD_ID="${_ARG_CMD_ID:-$(printf '%s' "$CONTENT" | grep -oE 'cmd_[0-9]+[a-zA-Z]*' | head -1)}"
 _TIMING_TASK_ID="${_ARG_TASK_ID:-$(printf '%s' "$CONTENT" | grep -oE 'subtask_[0-9]+[a-zA-Z0-9]*' | head -1)}"
 
+# Fix (cmd_206 工程1): the documented clear_command dispatch
+# (`inbox_write.sh ashigaru{N} "タスクYAMLを読んで作業開始せよ。" clear_command karo`,
+# instructions/karo.md STEP4) passes neither --cmd_id=/--task_id= nor CONTENT text that
+# matches the regexes above, so _TIMING_CMD_ID/_TIMING_TASK_ID stay empty and the
+# resulting timing_events.jsonl row is recorded with task_id=None. That row is silently
+# unusable: deadman_watcher.sh's own get_in_flight_tasks() requires a non-empty task_id
+# key to arm a task (lib/inflight_tasks.sh's stall_watcher.sh path is unaffected — cmd_194
+# already made it read queue/tasks/*.yaml status directly instead of timing_events.jsonl,
+# but that change explicitly left deadman_watcher.sh's separate function out of scope).
+# karo.md's dispatch STEP2 ("YAML-first principle") always writes queue/tasks/{TARGET}.yaml
+# with the new task_id/parent_cmd BEFORE STEP4 sends clear_command, so when both ids are
+# still unresolved for a dispatch-direction event, fall back to reading them from the
+# target's own task YAML. Only fires when the base event will actually be logged, and only
+# fills in whichever id is still missing — never overrides an explicitly resolved one.
+if [ -z "$_TIMING_CMD_ID" ] || [ -z "$_TIMING_TASK_ID" ]; then
+    case "$_TIMING_EVENT" in
+        assigned|redo_dispatched)
+            _TASK_YAML="$SCRIPT_DIR/queue/tasks/${TARGET}.yaml"
+            if [ -f "$_TASK_YAML" ]; then
+                _FALLBACK_IDS=$("$SCRIPT_DIR/.venv/bin/python3" -c "
+import yaml
+try:
+    with open('$_TASK_YAML') as f:
+        doc = yaml.safe_load(f) or {}
+    task = doc.get('task') or {}
+    print(task.get('task_id') or '')
+    print(task.get('parent_cmd') or '')
+except Exception:
+    print('')
+    print('')
+" 2>/dev/null)
+                _FB_TASK_ID=$(printf '%s\n' "$_FALLBACK_IDS" | sed -n '1p')
+                _FB_CMD_ID=$(printf '%s\n' "$_FALLBACK_IDS" | sed -n '2p')
+                [ -z "$_TIMING_TASK_ID" ] && [ -n "$_FB_TASK_ID" ] && _TIMING_TASK_ID="$_FB_TASK_ID"
+                [ -z "$_TIMING_CMD_ID" ] && [ -n "$_FB_CMD_ID" ] && _TIMING_CMD_ID="$_FB_CMD_ID"
+            fi
+            ;;
+    esac
+fi
+
 # Python literals for embedding into the message object (null when empty,
 # matching log_timing_event.sh's none_if_empty() convention).
 _PY_CMD_ID="None"
