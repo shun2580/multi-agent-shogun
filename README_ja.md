@@ -129,9 +129,9 @@ bash shutsujin_departure.sh                # 全エージェント起動
 
 | CLI | 特徴 | デフォルトモデル |
 |-----|------|-----------------|
-| **Claude Code** | tmux統合の実績、Memory MCP、専用ファイルツール（Read/Write/Edit/Glob/Grep） | Claude Sonnet 4.6 |
+| **Claude Code** | tmux統合の実績、Memory MCP、専用ファイルツール（Read/Write/Edit/Glob/Grep） | Claude Sonnet 5.5 |
 | **OpenAI Codex** | サンドボックス実行、JSONL構造化出力、`codex exec` ヘッドレスモード | gpt-5.3-codex |
-| **GitHub Copilot** | GitHub MCP組込、4種の特化エージェント（Explore/Task/Plan/Code-review）、`/delegate` | Claude Sonnet 4.6 |
+| **GitHub Copilot** | GitHub MCP組込、4種の特化エージェント（Explore/Task/Plan/Code-review）、`/delegate` | Claude Sonnet 5.5 |
 | **Kimi Code** | 無料プランあり、多言語サポート | Kimi k2 |
 | **OpenCode** | `AGENTS.md` 自動読込、`--agent` によるロール別エージェント定義、`/new` でのコンテキストリセット、モデル変更は再起動のみ、決定的な対話型 TUI 起動、`--model provider/model` ルーティング | provider/model |
 
@@ -628,7 +628,7 @@ cli:
       model: gpt-5.5
     ashigaru2:
       type: claude
-      model: claude-sonnet-4-6
+      model: claude-sonnet-5-5
     # ashigaru3-7, gunshi, karo も同様
 ```
 
@@ -647,7 +647,7 @@ OpenCode 選択時は `lib/cli_adapter.sh` が `--agent <role>` と、リポジ�
 途中で切り替えたい場合は `scripts/switch_cli.sh` を使います：
 
 ```bash
-bash scripts/switch_cli.sh ashigaru3 --type claude --model claude-sonnet-4-6
+bash scripts/switch_cli.sh ashigaru3 --type claude --model claude-sonnet-5-5
 bash scripts/switch_cli.sh ashigaru3 --type opencode --model openrouter/openai/gpt-4o-mini
 ```
 
@@ -1171,7 +1171,7 @@ SayTaskは個人の生産性を担当（キャプチャ → スケジュール �
 | 将軍 | Opus | **有効（high）** | 殿の参謀。`--shogun-no-thinking` で中継専用モードに |
 | 家老 | Sonnet | 有効 | タスク分配・簡易QC・ダッシュボード管理 |
 | 軍師 | Opus | 有効 | 深い分析・設計レビュー・アーキテクチャ評価 |
-| 足軽1-7 | Sonnet 4.6 | 有効 | 実装：コード・リサーチ・ファイル操作 |
+| 足軽1-7 | Sonnet 5.5 | 有効 | 実装：コード・リサーチ・ファイル操作 |
 
 **Thinking制御**: `config/settings.yaml` でエージェントごとに `thinking: true/false` を設定可能。`thinking: false` の場合、`MAX_THINKING_TOKENS=0` で起動しExtended Thinkingを無効化。ペインボーダーにはThinking有効時に `+T` サフィックスが表示される（例: `Sonnet+T`、`Opus+T`）。
 
@@ -1220,10 +1220,10 @@ capability_tiers:
   gpt-5.3-codex:
     max_bloom: 4       # L1–L4: + 分析・デバッグ
     cost_group: chatgpt_pro
-  claude-sonnet-4-6:
+  claude-sonnet-5-5:
     max_bloom: 5       # L1–L5: + 設計評価
     cost_group: claude_max
-  claude-opus-4-6:
+  claude-opus-5-5:
     max_bloom: 6       # L1–L6: + 新規アーキテクチャ・戦略
     cost_group: claude_max
 ```

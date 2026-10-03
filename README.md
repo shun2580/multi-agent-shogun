@@ -129,9 +129,9 @@ Shogun isn't locked to one vendor. The system supports 5 CLI tools, each with un
 
 | CLI | Key Strength | Default Model |
 |-----|-------------|---------------|
-| **Claude Code** | Battle-tested tmux integration, Memory MCP, dedicated file tools (Read/Write/Edit/Glob/Grep) | Claude Sonnet 4.6 |
+| **Claude Code** | Battle-tested tmux integration, Memory MCP, dedicated file tools (Read/Write/Edit/Glob/Grep) | Claude Sonnet 5.5 |
 | **OpenAI Codex** | Sandbox execution, JSONL structured output, `codex exec` headless mode, **per-model `--model` flag** | gpt-5.3-codex / **gpt-5.3-codex-spark** |
-| **GitHub Copilot** | Built-in GitHub MCP, 4 specialized agents (Explore/Task/Plan/Code-review), `/delegate` to coding agent | Claude Sonnet 4.6 |
+| **GitHub Copilot** | Built-in GitHub MCP, 4 specialized agents (Explore/Task/Plan/Code-review), `/delegate` to coding agent | Claude Sonnet 5.5 |
 | **Kimi Code** | Free tier available, strong multilingual support | Kimi k2 |
 | **OpenCode** | Shared `AGENTS.md` instructions, role-specific agent definitions via `--agent`, `/new` context reset, restart-only model changes, deterministic interactive TUI launch, provider-qualified `--model` routing | provider/model |
 
@@ -624,7 +624,7 @@ cli:
       model: gpt-5.5
     ashigaru2:
       type: claude
-      model: claude-sonnet-4-6
+      model: claude-sonnet-5-5
     # Same for ashigaru3-7, gunshi, karo
 ```
 
@@ -643,7 +643,7 @@ When OpenCode is selected, `lib/cli_adapter.sh` launches it with `--agent <role>
 To switch on the fly, use `scripts/switch_cli.sh`:
 
 ```bash
-bash scripts/switch_cli.sh ashigaru3 --type claude --model claude-sonnet-4-6
+bash scripts/switch_cli.sh ashigaru3 --type claude --model claude-sonnet-5-5
 bash scripts/switch_cli.sh ashigaru3 --type opencode --model openrouter/openai/gpt-4o-mini
 ```
 
@@ -1226,7 +1226,7 @@ SayTask handles personal productivity (capture → schedule → remind). The cmd
 | Shogun | Opus | **Enabled (high)** | Strategic advisor to the Lord. Use `--shogun-no-thinking` for relay-only mode |
 | Karo | Sonnet | Enabled | Task distribution, simple QC, dashboard management |
 | Gunshi | Opus | Enabled | Deep analysis, design review, architecture evaluation |
-| Ashigaru 1–7 | Sonnet 4.6 | Enabled | Implementation: code, research, file operations |
+| Ashigaru 1–7 | Sonnet 5.5 | Enabled | Implementation: code, research, file operations |
 
 **Thinking control**: Set `thinking: true/false` per agent in `config/settings.yaml`. When `thinking: false`, the agent starts with `MAX_THINKING_TOKENS=0` to disable Extended Thinking. Pane borders show `+T` suffix when Thinking is enabled (e.g., `Sonnet+T`, `Opus+T`).
 
@@ -1275,10 +1275,10 @@ capability_tiers:
   gpt-5.3-codex:
     max_bloom: 4       # L1–L4: + analysis and debugging
     cost_group: chatgpt_pro
-  claude-sonnet-4-6:
+  claude-sonnet-5-5:
     max_bloom: 5       # L1–L5: + design evaluation
     cost_group: claude_max
-  claude-opus-4-6:
+  claude-opus-5-5:
     max_bloom: 6       # L1–L6: + novel architecture, strategy
     cost_group: claude_max
 ```

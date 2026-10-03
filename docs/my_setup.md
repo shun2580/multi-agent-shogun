@@ -67,21 +67,21 @@ Claude Max 5x（$100/月）にアップグレードし、自分のPCスペック
 │
 │ 自然言語で指示・承認のみ
 ▼
-将軍 ── Claude Code（Sonnet 4.6）
+将軍 ── Claude Code（Sonnet 5.5）
 │　　　戦略判断・タスク分解・統括
 ▼
-家老 ── Claude Code（Sonnet 4.6）
+家老 ── Claude Code（Sonnet 5.5）
 │　　　タスク分解・足軽への割当・品質判定
 │
 ▼
-軍師 ── Claude Code（Sonnet 4.6）
+軍師 ── Claude Code（Sonnet 5.5）
 │　　　品質チェック・ダッシュボード更新
 │
 ├──────────┬──────────┬──────────┬──────────┬──────────┬──────────┐
 ▼          ▼          ▼          ▼          ▼          ▼          ▼
 足軽1      足軽2      足軽3      足軽4      足軽5      足軽6      足軽7
 Sonnet     Sonnet     Sonnet     Sonnet     Sonnet     Haiku      Haiku
-4.6        4.6        4.6        4.6        4.6        4.5        4.5
+5.5        5.5        5.5        5.5        5.5        4.5        4.5
 （重量）   （重量）   （重量）   （重量）   （重量）   （軽量）   （軽量）
 ```
 
@@ -89,10 +89,10 @@ Sonnet     Sonnet     Sonnet     Sonnet     Sonnet     Haiku      Haiku
 
 | エージェント | CLI | モデル | 役割 |
 |---|---|---|---|
-| 将軍（Shogun） | Claude Code | claude-opus-5 | 戦略決定・家老へのcmd下達 |
-| 家老（Karo） | Claude Code | claude-sonnet-5 | タスク分解・足軽への割当・品質判定 |
-| 軍師（Gunshi） | Claude Code | claude-sonnet-5 | 品質チェック・ダッシュボード更新 |
-| 足軽1-5（Ashigaru1-5） | Claude Code | claude-sonnet-5 | 重量実行タスク（常時稼働） |
+| 将軍（Shogun） | Claude Code | claude-opus-5-5 | 戦略決定・家老へのcmd下達 |
+| 家老（Karo） | Claude Code | claude-sonnet-5-5 | タスク分解・足軽への割当・品質判定 |
+| 軍師（Gunshi） | Claude Code | claude-sonnet-5-5 | 品質チェック・ダッシュボード更新 |
+| 足軽1-5（Ashigaru1-5） | Claude Code | claude-sonnet-5-5 | 重量実行タスク（常時稼働） |
 | 足軽6/7（Ashigaru6/7） | Claude Code | claude-haiku-4-5-20251001 | 高速軽量タスク（Haiku枠） |
 
 > 🔴cmd_133是正: 足軽3/4の行はOpenCode+OpenRouter/Ollama時代のまま放置され、
@@ -224,9 +224,9 @@ Claude Code・Gemini CLI・OpenCode はそれぞれ異なるインターフェ�
 
 | エージェント | モデル | 備考 |
 |---|---|---|
-| 将軍 | claude-opus-5 (effort: high) | Opus維持は意図的な設計判断 |
-| 家老・軍師 | claude-sonnet-5 (effort: high) | cmd_109でeffort明示（暗黙継承事故予防） |
-| 足軽1〜5 | claude-sonnet-5 (effort: high) | Sonnet帯5席化（cmd_145 Part1a, 2026-08-04殿裁定） |
+| 将軍 | claude-opus-5-5 (effort: high) | Opus維持は意図的な設計判断 |
+| 家老・軍師 | claude-sonnet-5-5 (effort: high) | cmd_109でeffort明示（暗黙継承事故予防） |
+| 足軽1〜5 | claude-sonnet-5-5 (effort: high) | Sonnet帯5席化（cmd_145 Part1a, 2026-08-04殿裁定） |
 | 足軽6/7 | claude-haiku-4-5-20251001 | 軽量枠 |
 
 - **Sonnet×5＋Haiku×2** が現行ロースター。cmd_133のSonnet帯4席化（足軽3/4昇格）を経て、cmd_145 Part1aで足軽5を追加昇格（席1-5/6-7の連続性維持）。
