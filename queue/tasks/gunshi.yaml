@@ -1,57 +1,64 @@
 task:
-  task_id: gunshi_qc_203_2
-  parent_cmd: cmd_203
+  task_id: gunshi_qc_205_6
+  parent_cmd: cmd_205
   type: qc
   bloom_level: L4
   assigned_to: gunshi
-  status: done  # PASS。commit stat/diff一致・実挙動独立再現(a穴A是正/b4パターン回帰無し/c警告非破壊性)・フルbats654件0 not ok・get_in_flight_tasks_with_agent残留0件・git status clean、全6項目一致。工程2完全クローズ。
-  timestamp: "2026-09-23T01:40:00"
+  status: done  # PASS。6観点中5観点(1,3,4,5,6)はashigaru5報告と完全一致。観点2(家老の判定再検証)は
+    # 史実/バックアップ例外という判定の実質は妥当と確認、ただしashigaru5報告の「6件」は算術ミスで
+    # 正しくは9件とadvisory訂正(対象9行は全てgit非追跡・push対象4コミットに含まれずrevert不要)。
+    # 全体PASS。詳細はqueue/reports/gunshi_report.yaml task_id: gunshi_qc_205_6参照。
+  timestamp: "2026-10-03T22:40:00"
   description: |
-    【cmd_203 工程2 QC: 穴A是正(clear_command→assigned)+task_id警告追加
-    (ashigaru1、commit b11623c)——全エージェント下達の本番経路への
-    変更・最重要注意工程】
+    【cmd_205 工程6(b): push後の事後QC(S-06組み替えにより軍師QCをpushの後ろへ回している)】
 
-    一次資料: `queue/shogun_to_karo.yaml` id: cmd_203「━━━ 工程2 ━━━」節、
-    将軍裁定(2026-09-23T01:20:52④)。ashigaru1の報告:
-    `queue/reports/ashigaru1_report.yaml`(task_id: subtask_203_2)。
+    🔴本件は既にpush済み(origin/main==HEAD確認済み、commit群 c7b4620/b445ed6/
+    45ffb23/1c32ffa、`mandate/decisions_journal.md` P-07エントリ記帳済み)。
+    将軍裁定S-06(同journal 2026-10-03T22:16:03付RULEエントリ)により、機械検証
+    (bats3本+grep)が安全網として十分であり、かつpushは戻せる操作(revert可)との
+    理由でQCをpushの後ろへ回す組み替えが行われた。**本QCの役割は事後の独立検証
+    であり、FAILが出た場合はrevert commitでの是正を前提とする。**
 
-    🔴🔴**極めて重要**: `scripts/inbox_write.sh`は全エージェントへの下達が
-    通る唯一の本番経路である。誤りがあれば全軍の指示配達が止まる。
+    一次資料:
+    - `queue/shogun_to_karo.yaml` id: cmd_205(本文・acceptance_criteria全文)
+    - `queue/reports/ashigaru{1,2,3,4,5,6}_report.yaml`(各task_id: subtask_205_1〜205_6)
+    - `mandate/decisions_journal.md`(2026-10-03付の全cmd_205関連エントリ: 工程1実機確認
+      CORRECT×2件、S-06 RULE、過剰分解CORRECT、P-07 PUSH-APPROVED)
 
-    ■ 変更内容(確認済みの前提・結論のみ検証すればよい)
-    - 69-74行目付近: `clear_command`のTYPE分岐を`_TIMING_EVENT="assigned"`
-      へ変更(従来は空文字で記帳されなかった=穴A)
-    - 207-209行目付近: `_TIMING_TASK_ID`が空の場合の警告echoを追加
-      (既存の`_TIMING_CMD_ID`版と同型、fail-loudのみ・配達停止ロジックなし)
+    ■ QC観点(judgment_model.md原則11: diffだけでなく変更意図・複数Part間の整合性を確認)
+    1. acceptance_criteriaの各項目を実データで再確認せよ(推奨: 独立に以下を再実行し
+       ashigaru5の報告値と一致するか照合):
+       ```bash
+       git grep -nE 'claude-(opus|sonnet)-(4-[0-9]|5)([^-0-9]|$)'
+       grep -rnE 'claude-(opus|sonnet)-(4-[0-9]|5)([^-0-9]|$)' config/ .claude/ memory/
+       bats tests/unit/test_cli_adapter.bats tests/unit/test_dynamic_model_routing.bats tests/unit/test_switch_cli.bats
+       ```
+    2. 🔴**家老(karo)が自ら下した判定の再検証**: 観点2(非追跡grep)で検出された
+       memory/配下6件(`memory/MEMORY.md:153`changelog注記・`161-162`史実記述・
+       `memory/MEMORY.md.bak-20260909_174128`内3件)について、家老は「cmd_205
+       工程4(c)の史実・経緯記述/バックアップ例外に該当する」と判定しPASS扱いとした。
+       この判定の妥当性を独立に再検証せよ(判定が甘かった場合、何が問題かを明記)。
+    3. `lib/cli_adapter.sh`のcase文是正(工程3)と`config/settings.yaml`の値(工程2、
+       git非追跡のためcommitなし・現物のみ確認可)・テスト期待値(工程5)の三者が
+       相互に矛盾していないかを確認せよ。
+    4. 工程4是正分(subtask_205_4b)で`skills/shogun-model-list/SKILL.md`等3ファイルに
+       付与された「未確認」標識(価格・SWE-bench数値の削除箇所)が、judgment_model.md
+       原則3(推定値記入禁止)に沿って適切に処理されているか確認せよ。
+    5. P-07エントリ(decisions_journal.md)の秘匿値走査記述(`MAX_THINKING_TOKENS`の
+       部分一致のみ・実秘匿値0件)が実際にそのとおりか、`git log origin/main..HEAD -p`
+       相当の範囲(既にpush済みのため`git log <push前のbase>..<push後HEAD> -p`で
+       該当4コミットを対象に)独立に再走査せよ。
+    6. TC-FAM-002のflaky扱い(既知・スコープ外・ID不一致起因ではない)が
+       `dashboard.md`・`decisions_journal.md`の既存記述と整合しているか確認せよ。
 
-    ■ 確認事項
-
-    1. `git show --stat b11623c`で変更が`scripts/inbox_write.sh`1ファイル
-       のみ(+4/-1)であることを確認せよ。
-    2. `git show b11623c`のdiff内容を読み、変更が上記2箇所のみ(意図通り
-       最小)であることを確認せよ。
-    3. 🔴**実挙動の独立再現(最優先)**: ashigaru1と同様、本番agentの
-       inboxへ直接影響しない隔離環境(`TEST_TMP`方式、`tests/unit/
-       test_urgent_escalation_e2e.bats`等の既存隔離パターンに倣う。
-       `TIMING_EVENT_SYNTHETIC=1`宣言を忘れるな)を用いて、貴殿自身の手で
-       以下を再現せよ:
-       (a) `clear_command`型(`--redo_of`無し)の下達 → `assigned`イベントが
-           記帳されることを確認(是正前後の対比)
-       (b) regression確認: `task_assigned`(redo無/有)・`clear_command`
-           (redo有)・`report_received`の4パターンが従来どおり動作する
-           ことを確認
-       (c) `--task_id`省略時に新規警告が出力され、かつ配達(inboxへの
-           実書き込み)が正常に成功する(止まらない)ことを確認
-    4. `bats tests/unit/*.bats`を独立再実行し、not ok集合が是正前
-       (TC-FAM-001/007/008の3件のみ、既知flaky)から変化していないことを
-       確認せよ。
-    5. `bash -c 'source lib/inflight_tasks.sh; get_in_flight_tasks_with_agent'`
-       を実行し、完了済みタスクが1件も残っていないことを確認せよ
-       (cmd_203全体の受け入れ条件の1つ)。
-    6. `git status --porcelain`で`scripts/inbox_write.sh`に差分が残って
-       いないことを確認せよ。
+    ■ 判定
+    - 全観点PASSなら`gunshi_report.yaml`にPASSと記帳し、家老へ報告せよ。
+    - いずれかFAILなら、revertで是正可能な範囲かを明記した上でFAILと報告せよ
+      (pushは既に完了済みのため、是正は新規commit+push、または既存commitの
+      revertで対応することになる。本QC自体はrevert操作を行わない)。
 
     ■ 完了後
-    bash /home/nishikawa/projects/multi-agent-shogun/scripts/inbox_write.sh karo \
-      "gunshi_qc_203_2完了: <PASS/FAIL>。<1行要約>。" \
-      report_received gunshi --cmd_id=cmd_203 --task_id=gunshi_qc_203_2 --qc_result=<pass/fail>
+    ```bash
+    bash scripts/inbox_write.sh karo "gunshi_qc_205_6完了: <PASS/FAIL>。<1行要約>" \
+      report_received gunshi --cmd_id=cmd_205 --task_id=gunshi_qc_205_6
+    ```
