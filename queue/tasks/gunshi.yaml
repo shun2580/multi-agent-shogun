@@ -1,64 +1,74 @@
 task:
-  task_id: gunshi_qc_205_6
-  parent_cmd: cmd_205
+  task_id: gunshi_qc_206
+  parent_cmd: cmd_206
   type: qc
   bloom_level: L4
   assigned_to: gunshi
-  status: done  # PASS。6観点中5観点(1,3,4,5,6)はashigaru5報告と完全一致。観点2(家老の判定再検証)は
-    # 史実/バックアップ例外という判定の実質は妥当と確認、ただしashigaru5報告の「6件」は算術ミスで
-    # 正しくは9件とadvisory訂正(対象9行は全てgit非追跡・push対象4コミットに含まれずrevert不要)。
-    # 全体PASS。詳細はqueue/reports/gunshi_report.yaml task_id: gunshi_qc_205_6参照。
-  timestamp: "2026-10-03T22:40:00"
+  status: done  # PASS。10観点全てPASS、FAILなし。commit前進を推奨。詳細はqueue/reports/gunshi_report.yaml
+    # task_id: gunshi_qc_206参照。家老が独立に全文を確認済み。
+  timestamp: "2026-10-03T23:20:00"
   description: |
-    【cmd_205 工程6(b): push後の事後QC(S-06組み替えにより軍師QCをpushの後ろへ回している)】
-
-    🔴本件は既にpush済み(origin/main==HEAD確認済み、commit群 c7b4620/b445ed6/
-    45ffb23/1c32ffa、`mandate/decisions_journal.md` P-07エントリ記帳済み)。
-    将軍裁定S-06(同journal 2026-10-03T22:16:03付RULEエントリ)により、機械検証
-    (bats3本+grep)が安全網として十分であり、かつpushは戻せる操作(revert可)との
-    理由でQCをpushの後ろへ回す組み替えが行われた。**本QCの役割は事後の独立検証
-    であり、FAILが出た場合はrevert commitでの是正を前提とする。**
+    【cmd_206 工程4(b): 全工程統合QC(commit前・pushは本cmd不裁可)】
 
     一次資料:
-    - `queue/shogun_to_karo.yaml` id: cmd_205(本文・acceptance_criteria全文)
-    - `queue/reports/ashigaru{1,2,3,4,5,6}_report.yaml`(各task_id: subtask_205_1〜205_6)
-    - `mandate/decisions_journal.md`(2026-10-03付の全cmd_205関連エントリ: 工程1実機確認
-      CORRECT×2件、S-06 RULE、過剰分解CORRECT、P-07 PUSH-APPROVED)
+    - `queue/shogun_to_karo.yaml` id: cmd_206(本文・acceptance_criteria全文)
+    - `queue/reports/ashigaru1_report.yaml`(task_id: subtask_206_1〈工程1是正〉・
+      subtask_206_4〈受け入れ条件一括検証〉)
+    - `queue/reports/ashigaru2_report.yaml`(task_id: subtask_206_23〈工程2+3〉・
+      subtask_206_2c〈S-07・karo.md自己clear例是正〉)
+    - `mandate/decisions_journal.md`(2026-10-03付cmd_206関連エントリ: S-06〈前cmd_205の
+      教訓参照用〉・S-07〈karo.md自己clear例是正の裁定〉・自己clear経路の事実記録)
+
+    🔴本cmdは**pushしない**(殿裁定・commitのみで閉じ、push〈P-09〉は次の陣仕舞いcmdへ
+    持ち越し)。本QCはcommit前の最終ゲートである。
 
     ■ QC観点(judgment_model.md原則11: diffだけでなく変更意図・複数Part間の整合性を確認)
-    1. acceptance_criteriaの各項目を実データで再確認せよ(推奨: 独立に以下を再実行し
-       ashigaru5の報告値と一致するか照合):
-       ```bash
-       git grep -nE 'claude-(opus|sonnet)-(4-[0-9]|5)([^-0-9]|$)'
-       grep -rnE 'claude-(opus|sonnet)-(4-[0-9]|5)([^-0-9]|$)' config/ .claude/ memory/
-       bats tests/unit/test_cli_adapter.bats tests/unit/test_dynamic_model_routing.bats tests/unit/test_switch_cli.bats
-       ```
-    2. 🔴**家老(karo)が自ら下した判定の再検証**: 観点2(非追跡grep)で検出された
-       memory/配下6件(`memory/MEMORY.md:153`changelog注記・`161-162`史実記述・
-       `memory/MEMORY.md.bak-20260909_174128`内3件)について、家老は「cmd_205
-       工程4(c)の史実・経緯記述/バックアップ例外に該当する」と判定しPASS扱いとした。
-       この判定の妥当性を独立に再検証せよ(判定が甘かった場合、何が問題かを明記)。
-    3. `lib/cli_adapter.sh`のcase文是正(工程3)と`config/settings.yaml`の値(工程2、
-       git非追跡のためcommitなし・現物のみ確認可)・テスト期待値(工程5)の三者が
-       相互に矛盾していないかを確認せよ。
-    4. 工程4是正分(subtask_205_4b)で`skills/shogun-model-list/SKILL.md`等3ファイルに
-       付与された「未確認」標識(価格・SWE-bench数値の削除箇所)が、judgment_model.md
-       原則3(推定値記入禁止)に沿って適切に処理されているか確認せよ。
-    5. P-07エントリ(decisions_journal.md)の秘匿値走査記述(`MAX_THINKING_TOKENS`の
-       部分一致のみ・実秘匿値0件)が実際にそのとおりか、`git log origin/main..HEAD -p`
-       相当の範囲(既にpush済みのため`git log <push前のbase>..<push後HEAD> -p`で
-       該当4コミットを対象に)独立に再走査せよ。
-    6. TC-FAM-002のflaky扱い(既知・スコープ外・ID不一致起因ではない)が
-       `dashboard.md`・`decisions_journal.md`の既存記述と整合しているか確認せよ。
+    1. **工程1(scripts/inbox_write.sh是正)**: `git diff scripts/inbox_write.sh`を
+       確認し、fallback追加が既存の`_TIMING_EVENT`決定ロジック(68-79行)・
+       `--redo_of`昇格ロジックを変更していないこと、assigned/redo_dispatched以外の
+       イベント型(cmd_received/report_submitted)には影響しないことを確認せよ。
+       `bats tests/unit/test_inbox_write_clear_command_timing.bats`を独立に
+       再実行し、R-001〜R-006が全てokであることを確認せよ。
+    2. **二重記帳回避(殿裁定の条件1)**: R-004の設計(--redo_of付きでassigned相当が
+       2件並ばない)を独立に再検証せよ。
+    3. **通し確認(殿裁定の条件2)**: ashigaru1報告の隔離sandboxログ(STAGE1〜4)が
+       本番環境を変更していないこと(`git status --porcelain`に該当ファイルの
+       変更が無いこと)を確認せよ。
+    4. **監視プロセス再起動要否(殿裁定の条件3)**: 「いずれの稼働中watcherも
+       inbox_write.shをsource/読込していない」という結論を、
+       `grep -n "^source\|^\. " scripts/stall_watcher.sh scripts/deadman_watcher.sh scripts/watcher_supervisor.sh scripts/inbox_watcher.sh`
+       で独立に再確認せよ。
+    5. **🚨要対応件数の照合(工程2(a))**: ashigaru1・ashigaru2双方が「6→5件」との
+       結論に至ったが、両者とも「単一の機械的grepには落とし込めない」という
+       caveatを明記している。この分類の妥当性を独立に評価し、軍師自身の判断で
+       PASS/FAILを下せ(機械的な件数判定が存在しないこと自体は欠陥ではなく、
+       殿のdashboard巻き込み作業の性質上避けられない旨の記録で足りるかを判断せよ)。
+    6. **README/README_ja同期**: 軍師=Sonnet 5.5・足軽6-7=Haiku 4.5内訳明記・
+       将軍/家老=世代明記、かつリリースノート節・pane表示例が未変更であることを
+       `git diff README.md README_ja.md`で直接確認せよ。
+    7. **gunshi.md persona.professional_options**: `git diff instructions/gunshi.md`で
+       値(professional_optionsのリスト内容)が一切変更されておらず、注記コメントのみ
+       追加されていることを確認せよ。
+    8. **karo.md自己clear例の是正(S-07)**: `git diff instructions/karo.md`で、
+       例文が非空の「起こす言葉」へ変更され、CONTENT空禁止理由の注記が追加されて
+       いることを確認せよ。🔴`scripts/inbox_write.sh`22行目の引数検証自体が
+       変更されていないこと(緩められていないこと)を必ず確認せよ(将軍が明示的に
+       「緩めるな」と裁定済み)。
+    9. **instructions/generated/配下の差分の切り分け**: `git diff --stat -- instructions/generated/ .opencode/`
+       の全差分を確認し、(a)本cmd_206の意図した編集由来の差分、(b)過去の
+       commit済み編集(instructions/karo.md・shogun.md)がbuild_instructions.sh再実行で
+       初めて可視化された無関係な追従差分、の2種を正しく切り分けられているかを
+       確認せよ(dashboard.md📌「instructions/generated/配下の追従差分」項との整合)。
+    10. F006(instructions/generated/*直接編集禁止)・史実記述不変更・
+        instructions/roles/*_role.md無変更・scope_check.sh強制化条件無追加・
+        restart_watchers.sh等の新規スクリプト無建造、をいずれも確認せよ。
 
     ■ 判定
     - 全観点PASSなら`gunshi_report.yaml`にPASSと記帳し、家老へ報告せよ。
-    - いずれかFAILなら、revertで是正可能な範囲かを明記した上でFAILと報告せよ
-      (pushは既に完了済みのため、是正は新規commit+push、または既存commitの
-      revertで対応することになる。本QC自体はrevert操作を行わない)。
+    - いずれかFAILなら、是正要否と対象ファイルを明記した上でFAILと報告せよ。
 
     ■ 完了後
     ```bash
-    bash scripts/inbox_write.sh karo "gunshi_qc_205_6完了: <PASS/FAIL>。<1行要約>" \
-      report_received gunshi --cmd_id=cmd_205 --task_id=gunshi_qc_205_6
+    bash scripts/inbox_write.sh karo "gunshi_qc_206完了: <PASS/FAIL>。<1行要約>" \
+      report_received gunshi --cmd_id=cmd_206 --task_id=gunshi_qc_206
     ```
