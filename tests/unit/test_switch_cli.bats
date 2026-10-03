@@ -15,26 +15,26 @@ cli:
   agents:
     karo:
       type: claude
-      model: claude-sonnet-4-6
+      model: claude-sonnet-5-5
       thinking: true
     ashigaru1:
       type: claude
-      model: claude-sonnet-4-6
+      model: claude-sonnet-5-5
       thinking: true
     ashigaru2:
       type: claude
-      model: claude-sonnet-4-6
+      model: claude-sonnet-5-5
       thinking: false
     ashigaru3:
       type: codex
       model: gpt-5.3-codex-spark
     ashigaru5:
       type: claude
-      model: claude-opus-4-6
+      model: claude-opus-5-5
       thinking: true
     gunshi:
       type: claude
-      model: claude-opus-4-6
+      model: claude-opus-5-5
       thinking: true
 YAML
 
@@ -164,7 +164,7 @@ path = "${TEST_TMP}/settings_update2.yaml"
 with open(path, 'r') as f:
     data = yaml.safe_load(f) or {}
 
-data['cli']['agents']['ashigaru1']['model'] = 'claude-opus-4-6'
+data['cli']['agents']['ashigaru1']['model'] = 'claude-opus-5-5'
 
 with open(path, 'w') as f:
     yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
@@ -174,7 +174,7 @@ PYEOF
     source "${PROJECT_ROOT}/lib/cli_adapter.sh"
 
     result=$(build_cli_command "ashigaru1")
-    [[ "$result" == *"claude-opus-4-6"* ]]
+    [[ "$result" == *"claude-opus-5-5"* ]]
     [[ "$result" == *"--dangerously-skip-permissions"* ]]
 }
 
@@ -257,7 +257,7 @@ cli:
   agents:
     ashigaru1:
       type: claude
-      model: claude-opus-4-6
+      model: claude-opus-5-5
       thinking: true
 YAML
     export CLI_ADAPTER_SETTINGS="${TEST_TMP}/settings_switched.yaml"
@@ -279,7 +279,7 @@ cli:
   agents:
     ashigaru3:
       type: claude
-      model: claude-sonnet-4-6
+      model: claude-sonnet-5-5
       thinking: true
 YAML
     export CLI_ADAPTER_SETTINGS="${TEST_TMP}/settings_codex_to_claude.yaml"

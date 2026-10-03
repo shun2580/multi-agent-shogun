@@ -30,7 +30,7 @@ capability_tiers:
   claude-sonnet-4-5-20250929:
     max_bloom: 5
     cost_group: claude_max
-  claude-opus-4-6:
+  claude-opus-5-5:
     max_bloom: 6
     cost_group: claude_max
 YAML
@@ -63,7 +63,7 @@ capability_tiers:
   gpt-5.3-codex-spark:
     max_bloom: 3
     cost_group: chatgpt_pro
-  claude-opus-4-6:
+  claude-opus-5-5:
     max_bloom: 6
     cost_group: claude_max
 YAML
@@ -92,7 +92,7 @@ capability_tiers:
   gpt-5.3-codex-spark:
     max_bloom: 3
     cost_group: chatgpt_pro
-  claude-opus-4-6:
+  claude-opus-5-5:
     max_bloom: 6
     cost_group: claude_max
 YAML
@@ -105,7 +105,7 @@ capability_tiers:
   claude-sonnet-4-5-20250929:
     max_bloom: 5
     cost_group: claude_max
-  claude-opus-4-6:
+  claude-opus-5-5:
     max_bloom: 6
     cost_group: claude_max
 YAML
@@ -139,7 +139,7 @@ capability_tiers:
   claude-sonnet-4-5-20250929:
     max_bloom: 5
     cost_group: claude_max
-  claude-opus-4-6:
+  claude-opus-5-5:
     max_bloom: 6
     cost_group: claude_max
 YAML
@@ -160,7 +160,7 @@ capability_tiers:
   claude-sonnet-4-5-20250929:
     max_bloom: 5
     cost_group: claude_max
-  claude-opus-4-6:
+  claude-opus-5-5:
     max_bloom: 6
     cost_group: claude_max
 YAML
@@ -239,16 +239,16 @@ cli:
       model: gpt-5.3-codex-spark
     ashigaru4:
       type: claude
-      model: claude-sonnet-4-6
+      model: claude-sonnet-5-5
     ashigaru5:
       type: claude
-      model: claude-sonnet-4-6
+      model: claude-sonnet-5-5
     ashigaru6:
       type: claude
-      model: claude-opus-4-6
+      model: claude-opus-5-5
     ashigaru7:
       type: claude
-      model: claude-opus-4-6
+      model: claude-opus-5-5
     gunshi:
       type: claude
       model: opus
@@ -256,10 +256,10 @@ capability_tiers:
   gpt-5.3-codex-spark:
     max_bloom: 3
     cost_group: chatgpt_pro
-  claude-sonnet-4-6:
+  claude-sonnet-5-5:
     max_bloom: 5
     cost_group: claude_max
-  claude-opus-4-6:
+  claude-opus-5-5:
     max_bloom: 6
     cost_group: claude_max
 bloom_routing: "manual"
@@ -297,10 +297,10 @@ capability_tiers:
   gpt-5.3:
     max_bloom: 5
     cost_group: chatgpt_pro
-  claude-sonnet-4-6:
+  claude-sonnet-5-5:
     max_bloom: 5
     cost_group: claude_max
-  claude-opus-4-6:
+  claude-opus-5-5:
     max_bloom: 6
     cost_group: claude_max
 bloom_model_preference:
@@ -312,11 +312,11 @@ bloom_model_preference:
     - gpt-5.3-codex-spark
     - claude-haiku-4-5-20251001
   L4-L5:
-    - claude-sonnet-4-6
+    - claude-sonnet-5-5
     - gpt-5.3
   L6:
-    - claude-opus-4-6
-    - claude-sonnet-4-6
+    - claude-opus-5-5
+    - claude-sonnet-5-5
 YAML
 
     # bloom_model_preference テスト用: 1番目capability不足 → 2番目fallback
@@ -325,13 +325,13 @@ capability_tiers:
   gpt-5.3-codex-spark:
     max_bloom: 3
     cost_group: chatgpt_pro
-  claude-sonnet-4-6:
+  claude-sonnet-5-5:
     max_bloom: 5
     cost_group: claude_max
 bloom_model_preference:
   L4-L5:
     - gpt-5.3-codex-spark
-    - claude-sonnet-4-6
+    - claude-sonnet-5-5
 YAML
 
     # bloom_model_preference テスト用: preference全滅 → cost_priorityへfallback
@@ -343,7 +343,7 @@ capability_tiers:
   claude-haiku-4-5-20251001:
     max_bloom: 3
     cost_group: claude_max
-  claude-sonnet-4-6:
+  claude-sonnet-5-5:
     max_bloom: 5
     cost_group: claude_max
 bloom_model_preference:
@@ -363,7 +363,7 @@ capability_tiers:
   claude-haiku-4-5-20251001:
     max_bloom: 3
     cost_group: claude_max
-  claude-sonnet-4-6:
+  claude-sonnet-5-5:
     max_bloom: 5
     cost_group: claude_max
 bloom_model_preference:
@@ -440,7 +440,7 @@ load_adapter_with() {
 
 @test "TC-DMR-013: FR-02 Opus Thinking → 6" {
     load_adapter_with "${TEST_TMP}/settings_with_tiers.yaml"
-    result=$(get_capability_tier "claude-opus-4-6")
+    result=$(get_capability_tier "claude-opus-5-5")
     [ "$result" = "6" ]
 }
 
@@ -505,7 +505,7 @@ load_adapter_with() {
 @test "TC-DMR-025: FR-03 L6 → Opus Thinking" {
     load_adapter_with "${TEST_TMP}/settings_with_tiers.yaml"
     result=$(get_recommended_model 6)
-    [ "$result" = "claude-opus-4-6" ]
+    [ "$result" = "claude-opus-5-5" ]
 }
 
 @test "TC-DMR-026: FR-03 capability_tiersセクション不在 → 空文字" {
@@ -544,7 +544,7 @@ load_adapter_with() {
 
 @test "TC-DMR-031: FR-04 Opus → claude_max" {
     load_adapter_with "${TEST_TMP}/settings_with_tiers.yaml"
-    result=$(get_cost_group "claude-opus-4-6")
+    result=$(get_cost_group "claude-opus-5-5")
     [ "$result" = "claude_max" ]
 }
 
@@ -693,7 +693,7 @@ load_adapter_with() {
 @test "TC-DMR-113: FR-06 bloom=6でOpusに到達" {
     load_adapter_with "${TEST_TMP}/settings_with_tiers.yaml"
     result=$(get_switch_recommendation "gpt-5.3-codex-spark" 6)
-    [[ "$result" == *"claude-opus-4-6"* ]]
+    [[ "$result" == *"claude-opus-5-5"* ]]
 }
 
 # --- TC-DMR-120〜121: NFR-02 応答速度 ---
@@ -736,7 +736,7 @@ load_adapter_with() {
 @test "TC-DMR-140: NFR-04 L3にOpus不使用" {
     load_adapter_with "${TEST_TMP}/settings_with_tiers.yaml"
     result=$(get_recommended_model 3)
-    [ "$result" != "claude-opus-4-6" ]
+    [ "$result" != "claude-opus-5-5" ]
 }
 
 @test "TC-DMR-141: NFR-04 chatgpt_pro優先" {
@@ -1018,13 +1018,13 @@ print(len(doc.get('history', [])))
 
 @test "TC-FAM-002: Sonnet足軽が存在 → ashigaru4 を返す" {
     load_adapter_with "${TEST_TMP}/settings_mixed_cli.yaml"
-    result=$(find_agent_for_model "claude-sonnet-4-6")
+    result=$(find_agent_for_model "claude-sonnet-5-5")
     [ "$result" = "ashigaru4" ]
 }
 
 @test "TC-FAM-003: Opus足軽が存在 → ashigaru6 を返す" {
     load_adapter_with "${TEST_TMP}/settings_mixed_cli.yaml"
-    result=$(find_agent_for_model "claude-opus-4-6")
+    result=$(find_agent_for_model "claude-opus-5-5")
     [ "$result" = "ashigaru6" ]
 }
 
@@ -1088,9 +1088,9 @@ print(len(doc.get('history', [])))
 @test "TC-PREF-002: first preference capability insufficient → fallback to second" {
     load_adapter_with "${TEST_TMP}/settings_preference_cap_fallback.yaml"
     # bloom_level=4, L4-L5の1番目はgpt-5.3-codex-spark(max_bloom=3 < 4) → skip
-    # 2番目はclaude-sonnet-4-6(max_bloom=5 >= 4) → 選択
+    # 2番目はclaude-sonnet-5-5(max_bloom=5 >= 4) → 選択
     result=$(get_recommended_model 4)
-    [ "$result" = "claude-sonnet-4-6" ]
+    [ "$result" = "claude-sonnet-5-5" ]
 }
 
 @test "TC-PREF-003: no preference defined → legacy cost_priority behavior" {
@@ -1112,9 +1112,9 @@ print(len(doc.get('history', [])))
 @test "TC-PREF-005: all preferred models unavailable → fallback to cost_priority with warning" {
     load_adapter_with "${TEST_TMP}/settings_preference_all_fail.yaml"
     # bloom=4, L4-L5: [spark(max3<4), haiku(max3<4)] → 全滅 → fallback
-    # cost_priority fallback: claude-sonnet-4-6(mb5,claude_max)のみ候補
+    # cost_priority fallback: claude-sonnet-5-5(mb5,claude_max)のみ候補
     result=$(get_recommended_model 4 2>/dev/null)
-    [ "$result" = "claude-sonnet-4-6" ]
+    [ "$result" = "claude-sonnet-5-5" ]
     # stderr に WARNING が出力される
     run bash -c "export CLI_ADAPTER_SETTINGS='${TEST_TMP}/settings_preference_all_fail.yaml'; export CLI_ADAPTER_PROJECT_ROOT='${PROJECT_ROOT}'; source '${PROJECT_ROOT}/lib/cli_adapter.sh' 2>/dev/null; get_recommended_model 4 2>&1 1>/dev/null"
     [[ "$output" =~ "WARNING" ]]

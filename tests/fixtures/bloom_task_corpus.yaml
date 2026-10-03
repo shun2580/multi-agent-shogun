@@ -202,7 +202,7 @@ bloom_tasks:
     description: |
       Bloom Taxonomy に基づくモデルルーティングの有効性について、以下の主張を評価せよ:
       「L5タスク (設計評価) を gpt-5.3-codex-spark (max_bloom=3) で実行しても、
-      プロンプトを工夫すれば品質は claude-sonnet-4-6 と変わらない」
+      プロンプトを工夫すれば品質は claude-sonnet-5-5 と変わらない」
       この主張の妥当性を、理論的根拠と実証的検証方法を含めて評価せよ。
     expected_output_type: argument_evaluation
     verifiable_condition: "evaluation includes: capability limitation argument, empirical test proposal, nuanced conclusion"

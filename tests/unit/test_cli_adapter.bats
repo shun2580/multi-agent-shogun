@@ -139,7 +139,7 @@ cli:
       model: gpt-5.4
     gunshi:
       type: opencode
-      model: anthropic/claude-opus-4-6
+      model: anthropic/claude-opus-5-5
     ashigaru1:
       type: opencode
       model: k2.5
@@ -148,7 +148,7 @@ cli:
       model: moonshot-k2.5
     ashigaru3:
       type: opencode
-      model: claude-sonnet-4-6
+      model: claude-sonnet-5-5
     ashigaru4:
       type: opencode
       model: gpt-5.3-codex-spark
@@ -169,8 +169,8 @@ YAML
     load_adapter_with "${TEST_TMP}/settings_opencode.yaml"
     [ "$(normalize_opencode_model gpt-5.4-mini)" = "openai/gpt-5.4-mini" ]
     [ "$(normalize_opencode_model gpt-5.3-codex-spark)" = "openai/gpt-5.3-codex-spark" ]
-    [ "$(normalize_opencode_model opus)" = "anthropic/claude-opus-4-6" ]
-    [ "$(normalize_opencode_model sonnet)" = "anthropic/claude-sonnet-4-6" ]
+    [ "$(normalize_opencode_model opus)" = "anthropic/claude-opus-5-5" ]
+    [ "$(normalize_opencode_model sonnet)" = "anthropic/claude-sonnet-5-5" ]
     [ "$(normalize_opencode_model haiku)" = "anthropic/claude-haiku-4-5-20251001" ]
     [ "$(normalize_opencode_model k2.5)" = "moonshot/kimi-k2.5" ]
     [ "$(normalize_opencode_model moonshot-k2.5)" = "moonshot/kimi-k2.5" ]
@@ -180,7 +180,7 @@ YAML
 
 @test "normalize_opencode_model: provider-qualified と未知モデルはそのまま" {
     load_adapter_with "${TEST_TMP}/settings_opencode.yaml"
-    [ "$(normalize_opencode_model anthropic/claude-sonnet-4-6)" = "anthropic/claude-sonnet-4-6" ]
+    [ "$(normalize_opencode_model anthropic/claude-sonnet-5-5)" = "anthropic/claude-sonnet-5-5" ]
     [ "$(normalize_opencode_model custom-provider/custom-model)" = "custom-provider/custom-model" ]
     [ "$(normalize_opencode_model unknown-model)" = "unknown-model" ]
 }
@@ -430,7 +430,7 @@ load_adapter_with() {
     result=$(build_cli_command "gunshi")
     expected_tui_config=$(_cli_adapter_shell_quote "${PROJECT_ROOT}/config/opencode-tui.json")
     [[ "$result" == "OPENCODE_AGENT_ID=gunshi OPENCODE_TUI_CONFIG=$expected_tui_config"* ]]
-    [[ "$result" == *'opencode --model anthropic/claude-opus-4-6 --agent gunshi'* ]]
+    [[ "$result" == *'opencode --model anthropic/claude-opus-5-5 --agent gunshi'* ]]
     [[ "$result" != *'OPENCODE_CONFIG_CONTENT'* ]]
     [[ "$result" != *'--prompt'* ]]
 }
@@ -442,7 +442,7 @@ load_adapter_with() {
     expected_tui_config=$(_cli_adapter_shell_quote "${PROJECT_ROOT}/config/opencode-tui.json")
     [[ "$first" == "$second" ]]
     [[ "$first" == "OPENCODE_AGENT_ID=ashigaru3 OPENCODE_TUI_CONFIG=$expected_tui_config"* ]]
-    [[ "$first" == *'opencode --model anthropic/claude-sonnet-4-6 --agent ashigaru3'* ]]
+    [[ "$first" == *'opencode --model anthropic/claude-sonnet-5-5 --agent ashigaru3'* ]]
     [[ "$first" != *'OPENCODE_CONFIG_CONTENT'* ]]
     [[ "$first" != *'--prompt'* ]]
 }
@@ -740,7 +740,7 @@ cli:
   agents:
     ashigaru1:
       type: claude
-      model: claude-sonnet-4-6
+      model: claude-sonnet-5-5
       thinking: true
 YAML
     load_adapter_with "${TEST_TMP}/settings_display.yaml"
@@ -755,7 +755,7 @@ cli:
   agents:
     gunshi:
       type: claude
-      model: claude-opus-4-6
+      model: claude-opus-5-5
       thinking: true
 YAML
     load_adapter_with "${TEST_TMP}/settings_display.yaml"
@@ -785,7 +785,7 @@ cli:
   agents:
     ashigaru3:
       type: claude
-      model: claude-sonnet-4-6
+      model: claude-sonnet-5-5
 YAML
     load_adapter_with "${TEST_TMP}/settings_display.yaml"
     result=$(get_model_display_name "ashigaru3")
@@ -841,11 +841,11 @@ cli:
   agents:
     ashigaru1:
       type: claude
-      model: claude-sonnet-4-6
+      model: claude-sonnet-5-5
       thinking: true
     ashigaru2:
       type: claude
-      model: claude-opus-4-6
+      model: claude-opus-5-5
       thinking: false
     ashigaru3:
       type: claude
@@ -877,12 +877,12 @@ cli:
   agents:
     ashigaru1:
       type: claude
-      model: claude-sonnet-4-6
+      model: claude-sonnet-5-5
       thinking: true
 YAML
     load_adapter_with "${TEST_TMP}/settings_thinking.yaml"
     result=$(build_cli_command "ashigaru1")
-    [ "$result" = "claude --model claude-sonnet-4-6 --dangerously-skip-permissions" ]
+    [ "$result" = "claude --model claude-sonnet-5-5 --dangerously-skip-permissions" ]
 }
 
 @test "build_cli_command: thinking:false → MAX_THINKING_TOKENS=0 prefix" {
@@ -892,12 +892,12 @@ cli:
   agents:
     ashigaru1:
       type: claude
-      model: claude-sonnet-4-6
+      model: claude-sonnet-5-5
       thinking: false
 YAML
     load_adapter_with "${TEST_TMP}/settings_thinking.yaml"
     result=$(build_cli_command "ashigaru1")
-    [ "$result" = "MAX_THINKING_TOKENS=0 claude --model claude-sonnet-4-6 --dangerously-skip-permissions" ]
+    [ "$result" = "MAX_THINKING_TOKENS=0 claude --model claude-sonnet-5-5 --dangerously-skip-permissions" ]
 }
 
 @test "build_cli_command: thinking未設定 → MAX_THINKING_TOKENS=0 なし (デフォルトThinking ON)" {
@@ -907,11 +907,11 @@ cli:
   agents:
     ashigaru1:
       type: claude
-      model: claude-sonnet-4-6
+      model: claude-sonnet-5-5
 YAML
     load_adapter_with "${TEST_TMP}/settings_thinking.yaml"
     result=$(build_cli_command "ashigaru1")
-    [ "$result" = "claude --model claude-sonnet-4-6 --dangerously-skip-permissions" ]
+    [ "$result" = "claude --model claude-sonnet-5-5 --dangerously-skip-permissions" ]
 }
 
 @test "build_cli_command: codex + thinking:false → MAX_THINKING_TOKENS=0 なし (Codexには無関係)" {

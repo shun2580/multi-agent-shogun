@@ -53,7 +53,7 @@
 | TC-DMR-010 | FR-02 Spark → 3 | L1 | model="gpt-5.3-codex-spark" | "3" |
 | TC-DMR-011 | FR-02 Codex 5.3 → 4 | L1 | model="gpt-5.3" | "4" |
 | TC-DMR-012 | FR-02 Sonnet → 5 | L1 | model="claude-sonnet-4-5-20250929" | "5" |
-| TC-DMR-013 | FR-02 Opus → 6 | L1 | model="claude-opus-4-6" | "6" |
+| TC-DMR-013 | FR-02 Opus → 6 | L1 | model="claude-opus-5-5" | "6" |
 | TC-DMR-014 | FR-02 未定義モデル → 6 | L1 | model="unknown-model" | "6" |
 | TC-DMR-015 | FR-02 セクション不在 → 6 | L1 | capability_tiers未定義 | "6" |
 | TC-DMR-016 | FR-02 YAML破損 → 6 | L1 | 壊れたYAML | "6" |
@@ -68,7 +68,7 @@
 | TC-DMR-022 | FR-03 L3 → Spark | L1 | bloom_level=3 | "gpt-5.3-codex-spark" |
 | TC-DMR-023 | FR-03 L4 → Codex 5.3 | L1 | bloom_level=4 | "gpt-5.3" |
 | TC-DMR-024 | FR-03 L5 → Sonnet | L1 | bloom_level=5 | "claude-sonnet-4-5-20250929" |
-| TC-DMR-025 | FR-03 L6 → Opus | L1 | bloom_level=6 | "claude-opus-4-6" |
+| TC-DMR-025 | FR-03 L6 → Opus | L1 | bloom_level=6 | "claude-opus-5-5" |
 | TC-DMR-026 | FR-03 セクション不在 → 空 | L1 | capability_tiers未定義 | "" (空文字列) |
 | TC-DMR-027 | FR-03 範囲外(0) → exit 1 | L1 | bloom_level=0 | exit code 1 |
 | TC-DMR-028 | FR-03 範囲外(7) → exit 1 | L1 | bloom_level=7 | exit code 1 |
@@ -79,7 +79,7 @@
 | TC ID | 要件 | レベル | 入力 | 期待値 |
 |---|---|---|---|---|
 | TC-DMR-030 | FR-04 Spark → chatgpt_pro | L1 | model="gpt-5.3-codex-spark" | "chatgpt_pro" |
-| TC-DMR-031 | FR-04 Opus → claude_max | L1 | model="claude-opus-4-6" | "claude_max" |
+| TC-DMR-031 | FR-04 Opus → claude_max | L1 | model="claude-opus-5-5" | "claude_max" |
 | TC-DMR-032 | FR-04 未定義 → unknown | L1 | model="unknown" | "unknown" |
 | TC-DMR-033 | FR-04 セクション不在 → unknown | L1 | capability_tiers未定義 | "unknown" |
 

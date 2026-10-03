@@ -18,8 +18,8 @@ OUTPUT="${PROJECT_ROOT}/queue/reports/dim_d_quality_report.yaml"
 echo "══ Dim D: 出力品質比較実験 ══"
 echo "タスク種別: L5 (Evaluate) — 実装案比較・推奨"
 echo "非対応モデル: claude-haiku-4-5-20251001 (max_bloom=3)"
-echo "対応モデル:   claude-sonnet-4-6         (max_bloom=5)"
-echo "評価者:       claude-opus-4-6           (max_bloom=6)"
+echo "対応モデル:   claude-sonnet-5-5         (max_bloom=5)"
+echo "評価者:       claude-opus-5-5           (max_bloom=6)"
 echo ""
 
 python3 << PYEOF
@@ -104,7 +104,7 @@ def evaluate(response, model_label, timeout=90):
         return {"score": 0, "error": "no response"}
     prompt = EVALUATOR_PROMPT_TEMPLATE + response[:3000]
     print(f"\n[Gunshi/Opus評価] {model_label}の回答を採点中...", flush=True)
-    raw = run_model('claude-opus-4-6', prompt, timeout=timeout)
+    raw = run_model('claude-opus-5-5', prompt, timeout=timeout)
     if not raw:
         return {"score": 0, "error": "evaluator failed"}
     # JSON抽出
@@ -127,7 +127,7 @@ if haiku_response:
     print(f"  出力 ({len(haiku_response)} chars): {haiku_response[:200]}...")
 
 print("\n── Step 2/3: Sonnet 4.6 (max_bloom=5, L5タスクに対応) ──")
-sonnet_response = run_model('claude-sonnet-4-6', L5_TASK)
+sonnet_response = run_model('claude-sonnet-5-5', L5_TASK)
 if sonnet_response:
     print(f"  出力 ({len(sonnet_response)} chars): {sonnet_response[:200]}...")
 
@@ -175,7 +175,7 @@ report = {
                 'response_preview': (haiku_response or '')[:500],
             },
             'appropriate': {
-                'model': 'claude-sonnet-4-6',
+                'model': 'claude-sonnet-5-5',
                 'max_bloom': 5,
                 'score': sonnet_score,
                 'evaluation': sonnet_eval,
