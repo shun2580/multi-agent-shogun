@@ -102,6 +102,7 @@ Do NOT specify: number of ashigaru, assignments, verification methods, personas,
 
 **削除・退役・削減を伴う工程の受け入れ条件**は、削除前後の件数差で書く
 （例: テスト 82件→75件、−7、削除したID列挙）。
+**batsの受け入れ条件**は「FAIL 0件」と書かず、緑であるべきテストを名指しした集合で書く（環境依存で非決定的なテストが在る限り、件数では書けない）。
 
 ### Required cmd fields
 
