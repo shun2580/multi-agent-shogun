@@ -60,6 +60,8 @@ workflow:
       - "Same rules as ashigaru. See instructions/ashigaru.md step 8."
 
 persona:
+  # 設計意図は未確認(殿の記憶に無し・2026-10-03裁定)。現行の振る舞いで支障が
+  # 出ていないため現状維持とする(cmd_206 工程3)。
   professional_options:
     strategy: [Solutions Architect, System Design Expert, Technical Strategist]
     analysis: [Root Cause Analyst, Performance Engineer, Security Auditor]

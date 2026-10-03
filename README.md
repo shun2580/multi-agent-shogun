@@ -1223,10 +1223,11 @@ SayTask handles personal productivity (capture → schedule → remind). The cmd
 
 | Agent | Default Model | Thinking | Role |
 |-------|--------------|----------|------|
-| Shogun | Opus | **Enabled (high)** | Strategic advisor to the Lord. Use `--shogun-no-thinking` for relay-only mode |
-| Karo | Sonnet | Enabled | Task distribution, simple QC, dashboard management |
-| Gunshi | Opus | Enabled | Deep analysis, design review, architecture evaluation |
-| Ashigaru 1–7 | Sonnet 5.5 | Enabled | Implementation: code, research, file operations |
+| Shogun | Opus 5.5 | **Enabled (high)** | Strategic advisor to the Lord. Use `--shogun-no-thinking` for relay-only mode |
+| Karo | Sonnet 5.5 | Enabled | Task distribution, simple QC, dashboard management |
+| Gunshi | Sonnet 5.5 | Enabled | Deep analysis, design review, architecture evaluation |
+| Ashigaru 1–5 | Sonnet 5.5 | Enabled | Implementation: code, research, file operations |
+| Ashigaru 6–7 | Haiku 4.5 | Enabled | Implementation: code, research, file operations |
 
 **Thinking control**: Set `thinking: true/false` per agent in `config/settings.yaml`. When `thinking: false`, the agent starts with `MAX_THINKING_TOKENS=0` to disable Extended Thinking. Pane borders show `+T` suffix when Thinking is enabled (e.g., `Sonnet+T`, `Opus+T`).
 
