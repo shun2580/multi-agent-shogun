@@ -605,6 +605,8 @@ Note: This replaces the need for inbox_write to shogun. ntfy goes directly to Lo
 4. exit 1 の場合: dashboard に "ntfy送信失敗" と記録し、リトライまたは将軍に報告
 ```
 
+**将軍直下命（`cmd_new`型・task/report YAMLを持たないタスク）完了時の追加手順（cmd_203工程4）**: 上記4ステップに加え、`bash scripts/log_timing_event.sh report_submitted <cmd_id> <task_id> karo --source=karo` を実行すること。
+
 **通知本文の最低要件**: cmd ID・種別（完了/要対応/blocked）・1行要約 を含めること。
 **過剰通知禁止**: subtask の逐次 QC PASS 等は通知しない（cmd レベルの終端・判断事象のみ）。
 
@@ -968,8 +970,13 @@ Use Gunshi for tasks that genuinely need deep thinking — don't over-route triv
 3. **No unread inbox**: `queue/inbox/karo.yaml` has zero `read: false` entries
 
 ```bash
-bash scripts/inbox_write.sh karo "" clear_command karo
+bash scripts/inbox_write.sh karo "自己コンテキストをリセットした。CLAUDE.md Session Start手順(自己識別→memory→judgment_model→instructions/karo.md)で復旧し、queue/から状態を再構築せよ。" clear_command karo
 ```
+
+🔴**CONTENTを空にしてはならない理由**: CONTENTはwatcherが`/clear`送信後に
+「起こす言葉」として送る本文である。空文字では`scripts/inbox_write.sh`の
+引数検証(`[ -z "$CONTENT" ]`)でexit 1し、文脈を消された家老が誰にも
+起こされぬまま座ることになる。検証自体は緩めず、例文側を直すこと。
 
 トリガー条件:
 - コンテキスト使用量が多くなってきたと感じたとき（目安: 長い作業の中盤以降）
