@@ -29,7 +29,7 @@ allowed-tools: Bash(bash scripts/switch_cli.sh *), Read, Edit
 settings.yaml (source of truth)
     │
     ├─ cli.agents.{id}.type      → claude | codex | copilot | kimi
-    ├─ cli.agents.{id}.model     → claude-sonnet-4-6 | claude-opus-4-6 | ...
+    ├─ cli.agents.{id}.model     → claude-sonnet-5-5 | claude-opus-5-5 | ...
     └─ cli.agents.{id}.thinking  → true | false
          │
          ├── build_cli_command()
@@ -45,8 +45,8 @@ settings.yaml (source of truth)
 
 | model (settings.yaml) | 表示名 | +Thinking |
 |---|---|---|
-| claude-sonnet-4-6 | Sonnet | Sonnet+T |
-| claude-opus-4-6 | Opus | Opus+T |
+| claude-sonnet-5-5 | Sonnet | Sonnet+T |
+| claude-opus-5-5 | Opus | Opus+T |
 | claude-haiku-4-5-20251001 | Haiku | Haiku+T |
 | gpt-5.3-codex | Codex | — |
 | gpt-5.3-codex-spark | Spark | — |
@@ -60,10 +60,10 @@ settings.yaml (source of truth)
 bash scripts/switch_cli.sh ashigaru3
 
 # モデル変更（settings.yaml も自動更新）
-bash scripts/switch_cli.sh ashigaru3 --model claude-opus-4-6
+bash scripts/switch_cli.sh ashigaru3 --model claude-opus-5-5
 
 # CLI種別ごと変更（Codex → Claude）
-bash scripts/switch_cli.sh ashigaru3 --type claude --model claude-sonnet-4-6
+bash scripts/switch_cli.sh ashigaru3 --type claude --model claude-sonnet-5-5
 
 # Claude → Codex Spark
 bash scripts/switch_cli.sh ashigaru5 --type codex --model gpt-5.3-codex-spark
@@ -74,7 +74,7 @@ bash scripts/switch_cli.sh ashigaru5 --type codex --model gpt-5.3-codex-spark
 ```bash
 # 全足軽をSonnetに
 for i in $(seq 1 7); do
-    bash scripts/switch_cli.sh ashigaru$i --type claude --model claude-sonnet-4-6
+    bash scripts/switch_cli.sh ashigaru$i --type claude --model claude-sonnet-5-5
 done
 
 # 全足軽をSparkに
@@ -98,7 +98,7 @@ cli:
   agents:
     ashigaru3:
       type: claude
-      model: claude-opus-4-6
+      model: claude-opus-5-5
       thinking: false  # ← MAX_THINKING_TOKENS=0 で起動
 ```
 
@@ -116,7 +116,7 @@ Thinking ON/OFF の切替手順:
 
 ```bash
 # 家老が足軽のCLIを切り替える場合
-bash scripts/inbox_write.sh ashigaru3 "--type claude --model claude-opus-4-6" cli_restart karo
+bash scripts/inbox_write.sh ashigaru3 "--type claude --model claude-opus-5-5" cli_restart karo
 ```
 
 inbox_watcher が `cli_restart` type を検知し、switch_cli.sh を自動実行する。

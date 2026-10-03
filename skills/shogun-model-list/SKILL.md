@@ -46,7 +46,7 @@ Output the reference tables below directly to the user. No tool calls required.
 
 ### Subscription Plans
 
-| Plan | Monthly | Opus 4.6 | Sonnet 4.6 | Haiku 4.5 | Extended Thinking |
+| Plan | Monthly | Opus 5.5 | Sonnet 5.5 | Haiku 4.5 | Extended Thinking |
 |------|---------|----------|------------|-----------|-------------------|
 | Free | $0 | ✗ | ✓ | ✓ | ✗ |
 | Pro | $20 | ✓ | ✓ | ✓ | ✓ |
@@ -60,8 +60,8 @@ Output the reference tables below directly to the user. No tool calls required.
 | Model | Bloom Max | Best For | Notes |
 |-------|-----------|----------|-------|
 | `claude-haiku-4-5-20251001` | **L3** | High-volume L1-L3 tasks, fast responses | $1/$5/M; SWE-bench 73.3% (4pp below Sonnet 4.5); extended thinking available |
-| `claude-sonnet-4-6` | **L5** | Code review, analysis, orchestration | Best balance — $3/$15/M; SWE-bench 79.6%, 1M context |
-| `claude-opus-4-6` | **L6** | Novel design, strategy, architecture | $5/$25/M; SWE-bench 80.8% (only 1.2pp above Sonnet 4.6); use for true L6 only |
+| `claude-sonnet-5-5` | **L5** | Code review, analysis, orchestration | Best balance — 価格・ベンチマーク未確認（5.5世代） |
+| `claude-opus-5-5` | **L6** | Novel design, strategy, architecture | 価格・ベンチマーク未確認（5.5世代）; use for true L6 only |
 
 > **Extended Thinking** (available Pro+): Adds ~1 Bloom level of effective capability on complex reasoning tasks.
 
@@ -69,9 +69,9 @@ Output the reference tables below directly to the user. No tool calls required.
 
 | Agent | Recommended Model | Bloom Use | Reason |
 |-------|------------------|-----------|--------|
-| Shogun (You) | `claude-opus-4-6` | L6 | Strategic decisions, final review |
-| Karo (Manager) | `claude-sonnet-4-6` | L4-L5 | Task orchestration; Opus is overkill here |
-| Gunshi (Strategist) | `claude-opus-4-6` | L5-L6 | Deep QC, architecture evaluation |
+| Shogun (You) | `claude-opus-5-5` | L6 | Strategic decisions, final review |
+| Karo (Manager) | `claude-sonnet-5-5` | L4-L5 | Task orchestration; Opus is overkill here |
+| Gunshi (Strategist) | `claude-opus-5-5` | L5-L6 | Deep QC, architecture evaluation |
 | Ashigaru 1–7 | Configured via `capability_tiers` | L1-L3 | Workers — routed by Bloom level |
 
 ---
@@ -109,9 +109,9 @@ Output the reference tables below directly to the user. No tool calls required.
 | `claude-haiku-4-5-20251001` | Claude Code | **L3** | Claude Free | Best Claude cost-efficiency; SWE-bench 73.3% |
 | `gpt-5.3-codex-spark` | Codex CLI | L3 | **ChatGPT Pro** | 1000+ tok/s; Terminal-Bench 58.4% |
 | `gpt-5.3-codex` | Codex CLI | L4 | ChatGPT Plus | Terminal-Bench 77.3%; 400K+ context |
-| `claude-sonnet-4-6` | Claude Code | L5 | Claude Free | $3/$15/M; SWE-bench 79.6%; 1M context; math +27pt vs Sonnet 4.5 |
+| `claude-sonnet-5-5` | Claude Code | L5 | Claude Free | 価格・ベンチマーク未確認（5.5世代） |
 | `gpt-5.1-codex-max` | Codex CLI | L5 | ChatGPT Plus | Highest Codex capability |
-| `claude-opus-4-6` | Claude Code | L6 | Claude Pro | $5/$25/M; SWE-bench 80.8%; reserve for true L6 tasks |
+| `claude-opus-5-5` | Claude Code | L6 | Claude Pro | 価格・ベンチマーク未確認（5.5世代）; reserve for true L6 tasks |
 
 ---
 
