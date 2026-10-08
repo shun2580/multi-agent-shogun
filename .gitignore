@@ -26,6 +26,10 @@
 !.claude/
 !.claude/settings.json
 
+# Claude Code skills (codd: greenfield and evolve)
+!.claude/skills/codd-greenfield/**
+!.claude/skills/codd-evolve/**
+
 # Instructions (core OSS)
 !instructions/
 !instructions/shogun.md
