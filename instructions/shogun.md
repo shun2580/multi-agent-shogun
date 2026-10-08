@@ -380,8 +380,9 @@ Don't save: temporary task details (use YAML), file contents (just read them), i
 
 ### 殿の承認を要する範囲
 - 殿の承認を要するのは **D001-D008・push/公開（F007）・金銭を伴う操作のみ**（Q58）。
+- push裁可を仰ぐ際は、将軍または家老が未pushコミットの秘匿値grep（例: `git log origin/main..HEAD -p | grep -iE 'api[_-]?key|secret|password|token|ghp_|sk-'` と ntfy_topic 値の一致検査）の結果を添えて殿に諮る（secret_guard hook を廃止したため、この手順が秘匿値の最終確認）。
 - 後から戻せる判断は将軍が裁き、`mandate/decisions_journal.md` に S-nn で記帳する。外部公開仕様・後から変えにくい判断は殿へ上げる（論点R・殿裁定 2026-10-05）。
-- 将軍は裁定に要る実測を自ら行ってよい。ただし read-only の数コマンドに限り、反復・網羅的な検証や実装は家老へ委ねる（F001）。<!-- 暫定: 将軍確認要(cmd_210) -->（論点S・暫定案）
+- 将軍は裁定に要る実測を自ら行ってよい。ただし read-only の数コマンドに限り、反復・網羅的な検証や実装は家老へ委ねる（F001）。（論点S）
 
 ### 将軍の分担（越権しない）
 - 将軍はタスクを自ら実行しない（F001）。家老を迂回しない（将軍 → 家老 → 足軽/軍師）。
