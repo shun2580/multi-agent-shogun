@@ -23,19 +23,31 @@ usage() {
 }
 
 # 終端 status (空白区切り)。これらの値を持つ status 行は done.sh が一切書き換えない (cmd_215)。
+# 終端 = 『TERMINAL_STATUSES との完全一致』または『TERMINAL_PREFIXES のいずれかで始まる値』
+# (superseded_by_cmd_075 等を保持)。done_ 前方一致は採らない (done_with_caveat は完全一致のみ)。
+# paused / idle / blocked 等は非終端のまま (従来どおり done へ置換)。
+# 判定は is_terminal() と status_awk 内 terminal() の2箇所に在る。規則を変えるときは必ず両方を揃えること。
 TERMINAL_STATUSES="done done_with_caveat superseded cancelled failed"
+TERMINAL_PREFIXES="superseded_ cancelled_ failed_"
 
 is_terminal() {
-  [[ -n "${1:-}" && " $TERMINAL_STATUSES " == *" $1 "* ]]
+  local v="${1:-}" p
+  [[ -n "$v" ]] || return 1
+  [[ " $TERMINAL_STATUSES " == *" $v "* ]] && return 0
+  for p in $TERMINAL_PREFIXES; do
+    [[ "$v" == "$p"* ]] && return 0
+  done
+  return 1
 }
 
 # 最初の status: 行を対象に (対象行の選び方は mode: block|nested=インデント2 / top=行頭)、
 #   action=set (既定): 終端でなければ done へ置換、終端なら行を無変更で出力。標準入力→標準出力。
 #   action=get       : その行の status 値 (status: 直後の最初の語。先頭の引用符は除く) だけを出力。
-# 値の判定は完全一致 (done_with_caveat を done と誤判定しない)。対象行が無ければ何も変えない/何も出さない。
+# 終端の判定は 完全一致 または 接頭辞一致 (is_terminal 参照。done_with_caveat を done と誤判定しない)。
+# 対象行が無ければ何も変えない/何も出さない。
 # 引数 $1=mode, $2=action
 status_awk() {
-  awk -v mode="$1" -v action="${2:-set}" -v terms="$TERMINAL_STATUSES" -v q="'" '
+  awk -v mode="$1" -v action="${2:-set}" -v terms="$TERMINAL_STATUSES" -v prefixes="$TERMINAL_PREFIXES" -v q="'" '
     function value(line,   v) {
       v = line
       sub(/^ *status:[ \t]*/, "", v)
@@ -47,6 +59,8 @@ status_awk() {
       if (v == "") return 0
       n = split(terms, t, " ")
       for (i = 1; i <= n; i++) if (t[i] == v) return 1
+      n = split(prefixes, t, " ")
+      for (i = 1; i <= n; i++) if (substr(v, 1, length(t[i])) == t[i]) return 1
       return 0
     }
     !seen && ((mode == "top" && /^status:/) || (mode != "top" && /^  status:/)) {

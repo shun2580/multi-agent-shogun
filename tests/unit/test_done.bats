@@ -307,3 +307,51 @@ YAML
   [ "$status" -eq 0 ]
   cmp "$report" "$BATS_TEST_TMPDIR/q.orig"
 }
+
+# ---- cmd_215 追補 (QC F-1): 接頭辞一致の終端 (superseded_by_* 等) も保持する ----
+
+@test "(i) cmd: superseded_by_cmd_075 / superseded_by_fable_q15 は archive 先でも元の値のまま" {
+  for st in superseded_by_cmd_075 superseded_by_fable_q15 cancelled_by_lord failed_timeout; do
+    make_body_with_status cmd_t215 "$st"
+    run bash "$SCRIPT_PATH" cmd cmd_t215
+    [ "$status" -eq 0 ]
+    archive="$DONE_ROOT/queue/archive/cmds/cmd_t215.yaml"
+    grep -qx "  status: $st" "$archive"
+    ! grep -qx '  status: done' "$archive"
+    ! grep -q '^- id: cmd_t215$' "$BODY"
+    [[ "$output" == *"status 保持: $st"* ]]
+    rm -f "$archive"
+  done
+}
+
+@test "(i2) report (インデント付き/top-level): superseded_by_* は書き換えられない" {
+  for st in superseded_by_cmd_075 superseded_by_fable_q15; do
+    nested="$DONE_ROOT/queue/reports/pn_$st.yaml"
+    flat="$DONE_ROOT/queue/reports/pf_$st.yaml"
+    printf 'report:\n  task_id: subtask_x\n  status: %s\n' "$st" > "$nested"
+    printf 'status: %s  # 理由あり\nnote: x\n' "$st" > "$flat"
+    for r in "$nested" "$flat"; do
+      cp "$r" "$BATS_TEST_TMPDIR/pre.orig"
+      run bash "$SCRIPT_PATH" report "$r"
+      [ "$status" -eq 0 ]
+      cmp "$r" "$BATS_TEST_TMPDIR/pre.orig"
+      [[ "$output" == *"(status: $st)"* ]]
+    done
+  done
+}
+
+@test "(i3) 非終端 (paused/idle/blocked/done_x) は cmd・report とも done へ置換される" {
+  for st in paused idle blocked done_partial; do
+    make_body_with_status cmd_t215 "$st"
+    run bash "$SCRIPT_PATH" cmd cmd_t215
+    [ "$status" -eq 0 ]
+    archive="$DONE_ROOT/queue/archive/cmds/cmd_t215.yaml"
+    grep -qx '  status: done' "$archive"
+    rm -f "$archive"
+    report="$DONE_ROOT/queue/reports/nt_$st.yaml"
+    printf 'report:\n  status: %s\n' "$st" > "$report"
+    run bash "$SCRIPT_PATH" report "$report"
+    [ "$status" -eq 0 ]
+    grep -qx '  status: done' "$report"
+  done
+}
