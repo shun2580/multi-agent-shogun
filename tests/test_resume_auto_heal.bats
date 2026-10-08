@@ -2,6 +2,7 @@
 # test_resume_auto_heal.bats — resume_auto_heal.sh unit tests (cmd_194 工程1)
 #
 # 生成→解除→再生成の1サイクルを検証する。
+# 一時ルート(BATS_TEST_TMPDIR)内で完結し、本番の logs/ には触れない(cmd_212)。
 # テスト専用の架空agent_id(test_agent_194_1)のみを使用し、実agent
 # (karo/ashigaru1-7/gunshi/shogun)のauto_heal挙動には一切触れない。
 
@@ -9,7 +10,14 @@ TEST_AGENT="test_agent_194_1"
 NONEXISTENT_AGENT="test_agent_194_1_does_not_exist"
 
 setup() {
-    PROJECT_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
+    REAL_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
+
+    # cmd_212: 本番の logs/ に依存しない・触れないよう、スクリプトを一時ルートへ
+    # コピーして実行する(resume_auto_heal.sh は自身の位置から logs/ を解決する)。
+    PROJECT_ROOT="$BATS_TEST_TMPDIR/root"
+    mkdir -p "$PROJECT_ROOT/scripts" "$PROJECT_ROOT/logs"
+    cp "$REAL_ROOT/scripts/resume_auto_heal.sh" "$PROJECT_ROOT/scripts/"
+
     RESUME_SCRIPT="$PROJECT_ROOT/scripts/resume_auto_heal.sh"
     PAUSED_DIR="$PROJECT_ROOT/logs/auto_heal_paused"
     EVENTS_LOG="$PROJECT_ROOT/logs/auto_heal_events.jsonl"
@@ -18,11 +26,13 @@ setup() {
     # Baseline: no dummy flag, no dummy event lines leaked from a prior run.
     rm -f "${PAUSED_DIR}/${TEST_AGENT}"
     EVENTS_LOG_LINES_BEFORE=0
-    [ -f "$EVENTS_LOG" ] && EVENTS_LOG_LINES_BEFORE=$(wc -l < "$EVENTS_LOG")
+    if [ -f "$EVENTS_LOG" ]; then
+        EVENTS_LOG_LINES_BEFORE=$(wc -l < "$EVENTS_LOG")
+    fi
 }
 
 teardown() {
-    # Leave no dummy flag or dummy event lines behind.
+    # Leave no dummy flag or dummy event lines behind (一時ルートは bats が破棄する).
     rm -f "${PAUSED_DIR}/${TEST_AGENT}"
     if [ -f "$EVENTS_LOG" ]; then
         grep -v "\"agent\":\"${TEST_AGENT}\"" "$EVENTS_LOG" > "${EVENTS_LOG}.tmp" || true
