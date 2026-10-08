@@ -1,19 +1,18 @@
 #!/usr/bin/env bash
 # SayTask通知 — ntfy.sh経由でスマホにプッシュ通知
 # FR-066: ntfy認証対応 (Bearer token / Basic auth)
+# cmd_213: topic/認証は ~/.config/multi-agent-shogun/secrets.env (SHOGUN_SECRETS_FILEで上書き可)
+#          から読む。topic値は画面にもlogs/ntfy.logにも出さない。
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SETTINGS="$SCRIPT_DIR/config/settings.yaml"
 
 # ntfy_auth.sh読み込み
 # shellcheck source=../lib/ntfy_auth.sh
 source "$SCRIPT_DIR/lib/ntfy_auth.sh"
 
-TOPIC=$(grep 'ntfy_topic:' "$SETTINGS" | awk '{print $2}' | tr -d '"')
-if [ -z "$TOPIC" ]; then
-  echo "ntfy_topic not configured in settings.yaml" >&2
-  exit 1
-fi
+# fail-loud: secrets.env が無い/NTFY_TOPIC が空なら理由(パスのみ)をstderrへ出して非0終了
+# (サイレントに通知が消える状態を作らない)
+TOPIC="$(ntfy_get_topic)" || exit 1
 
 # 送信抑止(dry-run)判定 (cmd_119/cmd_117欠陥2、cmd_122で設計反転):
 # - 明示指定: NTFY_DRY_RUN=1 (または true)
@@ -49,7 +48,7 @@ esac
 AUTH_ARGS=()
 while IFS= read -r line; do
     [ -n "$line" ] && AUTH_ARGS+=("$line")
-done < <(ntfy_get_auth_args "$SCRIPT_DIR/config/ntfy_auth.env")
+done < <(ntfy_get_auth_args)
 
 LOG_FILE="$SCRIPT_DIR/logs/ntfy.log"
 mkdir -p "$SCRIPT_DIR/logs"
@@ -57,7 +56,7 @@ TIMESTAMP=$(date '+%Y-%m-%dT%H:%M:%S')
 MSG_SUMMARY="${1:0:80}"
 
 if [ "$DRY_RUN" -eq 1 ]; then
-    echo "[$TIMESTAMP] DRY-RUN (no send) topic=$TOPIC msg=$MSG_SUMMARY" >> "$LOG_FILE"
+    echo "[$TIMESTAMP] DRY-RUN (no send) msg=$MSG_SUMMARY" >> "$LOG_FILE"
     exit 0
 fi
 
@@ -69,15 +68,15 @@ HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
 CURL_EXIT=$?
 
 if [ $CURL_EXIT -ne 0 ]; then
-    echo "[$TIMESTAMP] FAIL (curl error=$CURL_EXIT) topic=$TOPIC msg=$MSG_SUMMARY" >> "$LOG_FILE"
+    echo "[$TIMESTAMP] FAIL (curl error=$CURL_EXIT) msg=$MSG_SUMMARY" >> "$LOG_FILE"
     echo "ntfy送信失敗: curl exit=$CURL_EXIT" >&2
     exit 1
 fi
 
 if [[ "$HTTP_STATUS" != 2* ]]; then
-    echo "[$TIMESTAMP] FAIL (HTTP $HTTP_STATUS) topic=$TOPIC msg=$MSG_SUMMARY" >> "$LOG_FILE"
+    echo "[$TIMESTAMP] FAIL (HTTP $HTTP_STATUS) msg=$MSG_SUMMARY" >> "$LOG_FILE"
     echo "ntfy送信失敗: HTTP status=$HTTP_STATUS" >&2
     exit 1
 fi
 
-echo "[$TIMESTAMP] OK (HTTP $HTTP_STATUS) topic=$TOPIC msg=$MSG_SUMMARY" >> "$LOG_FILE"
+echo "[$TIMESTAMP] OK (HTTP $HTTP_STATUS) msg=$MSG_SUMMARY" >> "$LOG_FILE"

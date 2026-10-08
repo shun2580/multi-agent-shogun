@@ -4,11 +4,11 @@
 # Streams messages from ntfy topic, writes to inbox YAML, wakes shogun.
 # NOT polling — uses ntfy's streaming endpoint (long-lived HTTP connection).
 # FR-066: ntfy認証対応 (Bearer token / Basic auth)
+# cmd_213: topic/認証は ~/.config/multi-agent-shogun/secrets.env から読む。
+#          topic・トークンの値はログ(stderr)に出さない。
 # ═══════════════════════════════════════════════════════════════
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SETTINGS="$SCRIPT_DIR/config/settings.yaml"
-TOPIC=$(grep 'ntfy_topic:' "$SETTINGS" | awk '{print $2}' | tr -d '"')
 INBOX="$SCRIPT_DIR/queue/ntfy_inbox.yaml"
 LOCKFILE="${INBOX}.lock"
 CORRUPT_DIR="$SCRIPT_DIR/logs/ntfy_inbox_corrupt"
@@ -17,10 +17,8 @@ CORRUPT_DIR="$SCRIPT_DIR/logs/ntfy_inbox_corrupt"
 # shellcheck source=../lib/ntfy_auth.sh
 source "$SCRIPT_DIR/lib/ntfy_auth.sh"
 
-if [ -z "$TOPIC" ]; then
-    echo "[ntfy_listener] ntfy_topic not configured in settings.yaml" >&2
-    exit 1
-fi
+# fail-loud: secrets.env が無い/NTFY_TOPIC が空なら理由(パスのみ)をstderrへ出して非0終了
+TOPIC="$(ntfy_get_topic)" || { echo "[ntfy_listener] cannot start: topic unavailable" >&2; exit 1; }
 
 # トピック名セキュリティ検証
 ntfy_validate_topic "$TOPIC" || true
@@ -34,7 +32,14 @@ fi
 AUTH_ARGS=()
 while IFS= read -r line; do
     [ -n "$line" ] && AUTH_ARGS+=("$line")
-done < <(ntfy_get_auth_args "$SCRIPT_DIR/config/ntfy_auth.env")
+done < <(ntfy_get_auth_args)
+
+# 認証方式の表示用ラベル(値は出さない)
+case "${AUTH_ARGS[0]:-}" in
+    -H) AUTH_LABEL="token" ;;
+    -u) AUTH_LABEL="basic" ;;
+    *)  AUTH_LABEL="none" ;;
+esac
 
 # JSON field extractor (python3 — jq not available)
 parse_json() {
@@ -137,7 +142,7 @@ PY
     ) 200>"$LOCKFILE"
 }
 
-echo "[$(date)] ntfy listener started — topic: $TOPIC (auth: ${NTFY_TOKEN:+token}${NTFY_USER:+basic}${NTFY_TOKEN:-${NTFY_USER:-none}})" >&2
+echo "[$(date)] ntfy listener started — topic: <設定済み> (auth: $AUTH_LABEL)" >&2
 
 while true; do
     # Stream new messages (long-lived connection, blocks until message arrives)

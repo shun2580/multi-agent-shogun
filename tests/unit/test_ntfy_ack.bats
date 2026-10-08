@@ -11,6 +11,9 @@
 #   T-ACK-006: keepaliveイベント → ACKスキップ
 #   T-ACK-007: append_ntfy_inbox失敗 → ACK・inbox_write両方スキップ
 #   T-ACK-008: 特殊文字がinbox_writeに保持される
+#   T-ACK-009: リスナーの出力(stderr)にtopic値・認証値が出ない (cmd_213)
+#   T-ACK-010: secrets.env不在ならリスナーは非0で起動せず、理由を出す (cmd_213)
+#   T-ACK-011: リスナーはダミーtopicを購読URLに使う (cmd_213・curlスタブで検証)
 
 setup_file() {
     export PROJECT_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
@@ -30,13 +33,11 @@ setup() {
     mkdir -p "$MOCK_PROJECT/.venv/bin"
     mkdir -p "$MOCK_BIN"
 
-    # settings.yaml
-    cat > "$MOCK_PROJECT/config/settings.yaml" << 'YAML'
-ntfy_topic: "test-ack-topic-12345"
-YAML
-
-    # 空の認証ファイル
-    touch "$MOCK_PROJECT/config/ntfy_auth.env"
+    # cmd_213: 秘匿値はダミーの secrets.env (SHOGUN_SECRETS_FILE で差し替え)
+    export SHOGUN_SECRETS_FILE="$TEST_TMPDIR/secrets.env"
+    export DUMMY_TOPIC="test-ack-topic-12345"
+    export DUMMY_TOKEN="tk_dummy_ack_token_0001"
+    printf 'NTFY_TOPIC=%s\nNTFY_TOKEN=%s\n' "$DUMMY_TOPIC" "$DUMMY_TOKEN" > "$SHOGUN_SECRETS_FILE"
 
     # 本物のntfy_auth.shをコピー
     cp "$PROJECT_ROOT/lib/ntfy_auth.sh" "$MOCK_PROJECT/lib/"
@@ -105,6 +106,11 @@ teardown() {
 
 run_listener() {
     timeout 3 bash "$MOCK_PROJECT/ntfy_listener_test.sh" 2>/dev/null || true
+}
+
+# stderrをファイルへ捕捉して実行する (cmd_213: ログ漏えい検証用)
+run_listener_capture_stderr() {
+    timeout 3 bash "$MOCK_PROJECT/ntfy_listener_test.sh" 2>"$TEST_TMPDIR/listener_stderr.log" || true
 }
 
 # ═══════════════════════════════════════════════════════════════
@@ -221,4 +227,50 @@ JSON
     [ ! -s "$ACK_LOG" ]
     [ -s "$INBOX_LOG" ]
     grep -q "shogun" "$INBOX_LOG"
+}
+
+# ═══════════════════════════════════════════════════════════════
+# T-ACK-009: リスナーの出力にtopic値・認証値が出ない (cmd_213)
+# ═══════════════════════════════════════════════════════════════
+
+@test "T-ACK-009: listener output never contains the topic or auth values" {
+    cat > "$MOCK_CURL_OUTPUT" << 'JSON'
+{"event":"message","id":"msg009","time":1234567890,"message":"hello","tags":[]}
+JSON
+    run_listener_capture_stderr
+    [ -s "$TEST_TMPDIR/listener_stderr.log" ]
+    grep -q "ntfy listener started" "$TEST_TMPDIR/listener_stderr.log"
+    ! grep -qF "$DUMMY_TOPIC" "$TEST_TMPDIR/listener_stderr.log"
+    ! grep -qF "$DUMMY_TOKEN" "$TEST_TMPDIR/listener_stderr.log"
+    # 認証方式のラベルだけは出る
+    grep -q "auth: token" "$TEST_TMPDIR/listener_stderr.log"
+}
+
+# ═══════════════════════════════════════════════════════════════
+# T-ACK-010: secrets.env不在ならリスナーは起動せず fail-loud (cmd_213)
+# ═══════════════════════════════════════════════════════════════
+
+@test "T-ACK-010: listener refuses to start without secrets.env and reports why" {
+    export SHOGUN_SECRETS_FILE="$TEST_TMPDIR/does_not_exist.env"
+    run timeout 3 bash "$MOCK_PROJECT/ntfy_listener_test.sh"
+    [ "$status" -ne 0 ]
+    [ "$status" -ne 124 ]
+    [[ "$output" == *"secrets.env not found"* ]]
+    [[ "$output" != *"$DUMMY_TOPIC"* ]]
+    [ ! -s "$INBOX_LOG" ]
+}
+
+# ═══════════════════════════════════════════════════════════════
+# T-ACK-011: ダミーtopicが購読URLに使われる (cmd_213)
+# ═══════════════════════════════════════════════════════════════
+
+@test "T-ACK-011: listener subscribes to the topic read from secrets.env" {
+    cat > "$MOCK_BIN/curl" << 'CURL_MOCK'
+#!/bin/bash
+echo "$@" >> "$MOCK_PROJECT/curl_args.txt"
+CURL_MOCK
+    chmod +x "$MOCK_BIN/curl"
+    run_listener
+    grep -qF "https://ntfy.sh/$DUMMY_TOPIC/json" "$MOCK_PROJECT/curl_args.txt"
+    grep -qF "Authorization: Bearer $DUMMY_TOKEN" "$MOCK_PROJECT/curl_args.txt"
 }

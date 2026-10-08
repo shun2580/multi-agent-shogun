@@ -20,8 +20,11 @@ setup() {
     git -C "$TEST_REPO" update-ref refs/remotes/origin/main HEAD
     git -C "$TEST_REPO" update-ref refs/remotes/origin/codd/demo-20000101 HEAD
 
+    # cmd_213: ntfy topic は settings.yaml ではなく secrets.env (ダミー値) から読む
+    export SHOGUN_SECRETS_FILE="$TEST_TMPDIR/secrets.env"
+    printf 'NTFY_TOPIC=test-topic-12345\n' > "$SHOGUN_SECRETS_FILE"
+
     cat > "$TEST_SETTINGS" <<EOF
-ntfy_topic: "test-topic-12345"
 branch_policy:
   allowed_long_lived:
     - main
@@ -61,4 +64,28 @@ teardown() {
     [[ "$output" == *"[CANDIDATE]"* ]]
     [[ "$output" == *"[DRY-RUN] would merge origin/codd/demo-20000101 into main"* ]]
     git -C "$TEST_REPO" show-ref --verify --quiet refs/remotes/origin/codd/demo-20000101
+}
+
+# cmd_213: branch_policy の ntfy topic 読出しは secrets.env から (settings.yaml は見ない)
+@test "branch_policy_query ntfy_topic reads NTFY_TOPIC from secrets.env" {
+    run bash -c 'source "$1/lib/branch_policy.sh"; branch_policy_query ntfy_topic' _ "$PROJECT_ROOT"
+    [ "$status" -eq 0 ]
+    [ "$output" = "test-topic-12345" ]
+}
+
+@test "branch_policy_query ntfy_topic ignores a legacy ntfy_topic in settings.yaml" {
+    printf 'ntfy_topic: "legacy-topic-in-settings"\n' >> "$TEST_SETTINGS"
+    printf 'NTFY_TOPIC=from-secrets-env-1\n' > "$SHOGUN_SECRETS_FILE"
+    run env BRANCH_POLICY_SETTINGS="$TEST_SETTINGS" \
+        bash -c 'source "$1/lib/branch_policy.sh"; branch_policy_query ntfy_topic' _ "$PROJECT_ROOT"
+    [ "$status" -eq 0 ]
+    [ "$output" = "from-secrets-env-1" ]
+}
+
+@test "branch_policy_query ntfy_topic fails loud when secrets.env is missing (no value printed)" {
+    export SHOGUN_SECRETS_FILE="$TEST_TMPDIR/none.env"
+    run bash -c 'source "$1/lib/branch_policy.sh"; branch_policy_query ntfy_topic' _ "$PROJECT_ROOT"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"secrets.env not found"* ]]
+    [[ "$output" != *"test-topic-12345"* ]]
 }

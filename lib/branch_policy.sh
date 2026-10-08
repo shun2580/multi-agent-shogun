@@ -4,6 +4,10 @@
 BRANCH_POLICY_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BRANCH_POLICY_SETTINGS="${BRANCH_POLICY_SETTINGS:-$BRANCH_POLICY_ROOT/config/settings.yaml}"
 
+# cmd_213: ntfy topic は settings.yaml ではなく secrets.env (lib/ntfy_auth.sh 経由) から読む
+# shellcheck source=ntfy_auth.sh
+source "$BRANCH_POLICY_ROOT/lib/ntfy_auth.sh"
+
 branch_policy_python() {
     if [[ -x "$BRANCH_POLICY_ROOT/.venv/bin/python3" ]]; then
         printf '%s\n' "$BRANCH_POLICY_ROOT/.venv/bin/python3"
@@ -15,6 +19,12 @@ branch_policy_python() {
 branch_policy_query() {
     local query="$1"
     local python_bin
+
+    if [[ "$query" == "ntfy_topic" ]]; then
+        ntfy_get_topic
+        return $?
+    fi
+
     python_bin="$(branch_policy_python)"
 
     "$python_bin" - "$BRANCH_POLICY_SETTINGS" "$query" <<'PY'
@@ -71,10 +81,6 @@ elif query == "repos":
     if not paths:
         raise SystemExit("branch_policy.monitored_repos has no valid path entries")
     print("\n".join(paths))
-elif query == "ntfy_topic":
-    topic = settings.get("ntfy_topic")
-    if topic:
-        print(str(topic))
 else:
     raise SystemExit(f"unknown branch_policy query: {query}")
 PY
@@ -118,9 +124,9 @@ branch_policy_notify() {
     fi
 
     local topic
-    topic="$(branch_policy_query ntfy_topic)"
+    topic="$(branch_policy_query ntfy_topic)" || topic=""
     if [[ -z "$topic" ]]; then
-        printf 'ntfy_topic not configured; notification skipped: %s\n' "$message" >&2
+        printf 'NTFY_TOPIC not configured in secrets.env; notification skipped: %s\n' "$message" >&2
         return 1
     fi
 

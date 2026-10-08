@@ -4,8 +4,9 @@
 #   1. Copy this file to config/settings.yaml
 #   2. Fill in every <placeholder> with your own value
 #   3. config/settings.yaml is NOT tracked by git (whitelist .gitignore,
-#      explicit deny — it contains ntfy_topic, a secret used as your
-#      notification channel's de-facto access token)
+#      explicit deny)
+#   4. Secrets (ntfy topic / auth) do NOT live here — see config/secrets.env.sample
+#      (cmd_213: ~/.config/multi-agent-shogun/secrets.env, outside the repo)
 #
 # This file mirrors the full key structure of config/settings.yaml but
 # contains no real operational values — see each project doc / instructions/
@@ -70,7 +71,7 @@ cli:
       effort: <low|medium|high>
   default: <claude|codex|opencode|copilot|kimi>
 language: <ja|en>
-ntfy_topic: <your-private-ntfy-topic-here>
+# ntfy topic: 値は ~/.config/multi-agent-shogun/secrets.env の NTFY_TOPIC (settings.yamlには書かない)
 logging:
   level: <debug|info|warn|error>
   path: <absolute-path-to-logs-dir>

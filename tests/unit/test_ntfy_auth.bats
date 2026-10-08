@@ -15,8 +15,11 @@
 #   T-AUTH-010: ntfy_validate_topic — 空トピック名
 #   T-AUTH-011: ntfy.sh — 認証ありで送信 (モック)
 #   T-AUTH-012: ntfy_listener.sh — 認証ありでストリーミング (モック)
-#   T-AUTH-013: ntfy_auth.env.sample — サンプルファイル存在確認
-#   T-AUTH-014: ntfy_auth.env — git非追跡確認
+#   T-AUTH-013: secrets.env.sample — サンプルファイル存在確認 (cmd_213: ntfy_auth.env.sampleから改称)
+#   T-AUTH-014: secrets.env / ntfy_auth.env — git非追跡確認
+#   T-AUTH-015: ntfy_secret_get / ntfy_get_topic — secrets.envのパース (cmd_213)
+#   T-AUTH-016: ntfy_validate_topic — 警告にtopic値を出さない (cmd_213)
+#   T-AUTH-017: ntfy_get_auth_args — 余計な式を含むsecrets.envを実行しない (cmd_213)
 
 # --- セットアップ ---
 
@@ -35,6 +38,7 @@ setup() {
     unset NTFY_TOKEN
     unset NTFY_USER
     unset NTFY_PASS
+    unset SHOGUN_SECRETS_FILE
 
     # ライブラリ読み込み
     source "$NTFY_AUTH_LIB"
@@ -95,7 +99,7 @@ teardown() {
 # --- T-AUTH-005: env file読み込み ---
 
 @test "T-AUTH-005: ntfy_get_auth_args loads credentials from env file" {
-    local auth_file="$TEST_TMPDIR/ntfy_auth.env"
+    local auth_file="$TEST_TMPDIR/secrets.env"
     cat > "$auth_file" << 'EOF'
 NTFY_TOKEN=tk_from_file_12345
 EOF
@@ -152,15 +156,12 @@ EOF
 @test "T-AUTH-011: ntfy.sh includes auth header in curl when token configured" {
     # テスト用のモック環境を構築
     local mock_dir="$TEST_TMPDIR/project"
-    mkdir -p "$mock_dir/config" "$mock_dir/scripts" "$mock_dir/lib"
+    mkdir -p "$mock_dir/scripts" "$mock_dir/lib" "$mock_dir/logs" "$mock_dir/bin"
 
-    # settings.yaml
-    cat > "$mock_dir/config/settings.yaml" << 'EOF'
-ntfy_topic: "test-topic-12345"
-EOF
-
-    # ntfy_auth.env with token
-    cat > "$mock_dir/config/ntfy_auth.env" << 'EOF'
+    # secrets.env (ダミー値) を SHOGUN_SECRETS_FILE で差し替え
+    export SHOGUN_SECRETS_FILE="$TEST_TMPDIR/secrets.env"
+    cat > "$SHOGUN_SECRETS_FILE" << 'EOF'
+NTFY_TOPIC=test-topic-12345
 NTFY_TOKEN=tk_mock_token_test
 EOF
 
@@ -169,33 +170,21 @@ EOF
 
     # curlモック: 引数をファイルに記録
     local curl_log="$TEST_TMPDIR/curl_args.log"
-    cat > "$mock_dir/mock_curl" << MOCK
+    cat > "$mock_dir/bin/curl" << MOCK
 #!/bin/bash
 echo "\$@" > "$curl_log"
+echo "200"
 MOCK
-    chmod +x "$mock_dir/mock_curl"
+    chmod +x "$mock_dir/bin/curl"
 
-    # ntfy.shのテスト用コピー（curlをモックに差し替え）
-    cp "$PROJECT_ROOT/scripts/ntfy.sh" "$mock_dir/scripts/ntfy.sh"
-    # SCRIPT_DIRの解決先をmock_dirに変更
-    sed "s|SETTINGS=.*|SETTINGS=\"$mock_dir/config/settings.yaml\"|" "$mock_dir/scripts/ntfy.sh" > "$mock_dir/scripts/ntfy.sh.tmp" && mv "$mock_dir/scripts/ntfy.sh.tmp" "$mock_dir/scripts/ntfy.sh"
+    # 本物のntfy.shをコピーしてSCRIPT_DIRをmock_dirに差し替え
+    sed "s|^SCRIPT_DIR=.*|SCRIPT_DIR=\"$mock_dir\"|" \
+        "$PROJECT_ROOT/scripts/ntfy.sh" > "$mock_dir/scripts/ntfy.sh"
 
-    # ntfy_auth.shをsource + curlモック化
-    cat > "$mock_dir/scripts/ntfy_test.sh" << TESTSH
-#!/bin/bash
-source "$mock_dir/lib/ntfy_auth.sh"
-SETTINGS="$mock_dir/config/settings.yaml"
-TOPIC=\$(grep 'ntfy_topic:' "\$SETTINGS" | awk '{print \$2}' | tr -d '"')
-AUTH_ARGS=\$(ntfy_get_auth_args "$mock_dir/config/ntfy_auth.env")
-# shellcheck disable=SC2086
-"$mock_dir/mock_curl" -s \$AUTH_ARGS -H "Tags: outbound" -d "hello" "https://ntfy.sh/\$TOPIC"
-TESTSH
-    chmod +x "$mock_dir/scripts/ntfy_test.sh"
-
-    run bash "$mock_dir/scripts/ntfy_test.sh"
+    run env -C "$mock_dir" PATH="$mock_dir/bin:$PATH" bash "$mock_dir/scripts/ntfy.sh" "hello"
     [ "$status" -eq 0 ]
 
-    # curlに認証ヘッダーが渡されたことを確認
+    # curlに認証ヘッダーと(ダミー)topicが渡されたことを確認
     [ -f "$curl_log" ]
     grep -q "Bearer tk_mock_token_test" "$curl_log"
     grep -q "test-topic-12345" "$curl_log"
@@ -227,23 +216,104 @@ TESTSH
 
 # --- T-AUTH-013: サンプルファイル存在確認 ---
 
-@test "T-AUTH-013: ntfy_auth.env.sample exists with configuration instructions" {
-    local sample="$PROJECT_ROOT/config/ntfy_auth.env.sample"
+@test "T-AUTH-013: secrets.env.sample exists with configuration instructions" {
+    local sample="$PROJECT_ROOT/config/secrets.env.sample"
     [ -f "$sample" ]
+    grep -q "NTFY_TOPIC" "$sample"
     grep -q "NTFY_TOKEN" "$sample"
     grep -q "NTFY_USER" "$sample"
     grep -q "NTFY_PASS" "$sample"
+    grep -q "multi-agent-shogun/secrets.env" "$sample"
+    grep -q "chmod 600" "$sample"
+    # サンプルに実値(NTFY_TOPICの値)を書かない
+    ! grep -Eq '^NTFY_TOPIC=.+' "$sample"
 }
 
 # --- T-AUTH-014: git非追跡確認 ---
 
-@test "T-AUTH-014: ntfy_auth.env is not tracked by git (whitelist .gitignore)" {
+@test "T-AUTH-014: secrets.env and ntfy_auth.env are not tracked by git (whitelist .gitignore)" {
     # .gitignoreがホワイトリスト方式（*で全除外→!で許可）
-    # config/ntfy_auth.env はホワイトリストに含まれていないことを確認
-    # (.sample は追跡OK、.env本体は追跡NG)
+    # 秘匿値本体はホワイトリストに含まれていないことを確認
+    # (.sample は追跡OK、本体は追跡NG)
     cd "$PROJECT_ROOT"
 
     # git check-ignoreで実際に無視されることを確認（最も信頼性の高い方法）
+    run git check-ignore config/secrets.env
+    [ "$status" -eq 0 ]
     run git check-ignore config/ntfy_auth.env
     [ "$status" -eq 0 ]
+}
+
+# --- T-AUTH-015: secrets.envのパース (cmd_213) ---
+
+@test "T-AUTH-015: ntfy_secret_get / ntfy_get_topic parse KEY=value lines from secrets.env" {
+    local f="$TEST_TMPDIR/secrets.env"
+    cat > "$f" << 'EOF'
+# comment line
+NTFY_TOPIC="dummy-topic-quoted"
+export NTFY_USER='dummy_user'
+NTFY_PASS=dummy_pass   
+EOF
+    [ "$(ntfy_secret_get NTFY_TOPIC "$f")" = "dummy-topic-quoted" ]
+    [ "$(ntfy_secret_get NTFY_USER "$f")" = "dummy_user" ]
+    [ "$(ntfy_secret_get NTFY_PASS "$f")" = "dummy_pass" ]
+    run ntfy_secret_get NTFY_TOKEN "$f"
+    [ "$status" -eq 1 ]
+
+    [ "$(ntfy_get_topic "$f")" = "dummy-topic-quoted" ]
+
+    # クォートなし値の行末コメントは除かれ、クォート内の # は残る
+    printf 'NTFY_TOPIC=dummy-topic-c # my topic\r\nNTFY_USER="has # hash"\n' > "$f"
+    [ "$(ntfy_get_topic "$f")" = "dummy-topic-c" ]
+    [ "$(ntfy_secret_get NTFY_USER "$f")" = "has # hash" ]
+
+    # 同一キーは最後が勝つ
+    printf 'NTFY_TOPIC=first\nNTFY_TOPIC=second-topic\n' > "$f"
+    [ "$(ntfy_get_topic "$f")" = "second-topic" ]
+
+    # SHOGUN_SECRETS_FILE が既定パスを上書きする
+    export SHOGUN_SECRETS_FILE="$f"
+    [ "$(ntfy_secrets_file)" = "$f" ]
+    [ "$(ntfy_get_topic)" = "second-topic" ]
+    unset SHOGUN_SECRETS_FILE
+    [ "$(ntfy_secrets_file)" = "$HOME/.config/multi-agent-shogun/secrets.env" ]
+
+    # 不在/空は fail-loud (return 1 + stderr)
+    run ntfy_get_topic "$TEST_TMPDIR/none.env"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"secrets.env not found"* ]]
+    printf 'NTFY_TOPIC=\n' > "$f"
+    run ntfy_get_topic "$f"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"NTFY_TOPIC is not set"* ]]
+}
+
+# --- T-AUTH-016: 警告にtopic値を出さない (cmd_213) ---
+
+@test "T-AUTH-016: ntfy_validate_topic warnings never echo the topic value" {
+    run ntfy_validate_topic "abc"
+    [[ "$output" != *"'abc'"* ]]
+    run ntfy_validate_topic "notifications"
+    [ "$status" -eq 1 ]
+    [[ "$output" != *"notifications"* ]]
+}
+
+# --- T-AUTH-017: 余計な式を実行しない (cmd_213) ---
+
+@test "T-AUTH-017: ntfy_get_auth_args reads auth from secrets.env without executing extra expressions" {
+    local f="$TEST_TMPDIR/secrets.env" marker="$TEST_TMPDIR/PWNED"
+    cat > "$f" << EOF
+touch "$marker"
+NTFY_TOKEN=tk_parsed_not_sourced
+\$(touch "$marker")
+EOF
+    local result
+    result=$(ntfy_get_auth_args "$f")
+    [ ! -e "$marker" ]
+    echo "$result" | grep -q 'Bearer tk_parsed_not_sourced'
+
+    # 既定パスは SHOGUN_SECRETS_FILE 経由
+    export SHOGUN_SECRETS_FILE="$f"
+    result=$(ntfy_get_auth_args)
+    echo "$result" | grep -q 'Bearer tk_parsed_not_sourced'
 }
