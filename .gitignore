@@ -163,6 +163,8 @@ scripts/seo_qc.sh
 !scripts/pre_deploy_verify.sh
 !scripts/setup_cron.sh
 !scripts/resume_auto_heal.sh
+!scripts/dispatch.sh
+!scripts/done.sh
 
 # Queue directories
 !queue/
