@@ -315,3 +315,18 @@ EOF
     [ -x "$HOOK_DIR/pre-push" ]
     [ "$(head -1 "$HOOK_DIR/pre-push")" = "#!/usr/bin/env bash" ]
 }
+
+@test "16) hook は git のインデックス上で実行権限(100755)を持つ" {
+    # core.fileMode=false(WSL等)では作業ツリーの mode が 755 でも tree は 100644 になり得る。
+    # tree が 644 だと ff で取り込んだ先で git が hook を黙って無視する。作業ツリーの mode
+    # ではなく git の記録(ls-files -s)を見る。skip しない: git 管理下でなければ明示的に fail。
+    run git -C "$PROJECT_ROOT" rev-parse --show-toplevel
+    if [ "$status" -ne 0 ] || [ "$output" != "$PROJECT_ROOT" ]; then
+        echo "git 管理下(リポジトリ根=$PROJECT_ROOT)でないため mode を検証できない。git clone / worktree 上で実行せよ" >&2
+        return 1
+    fi
+    run git -C "$PROJECT_ROOT" ls-files -s -- scripts/githooks/pre-push
+    [ "$status" -eq 0 ]
+    [ -n "$output" ] || { echo "scripts/githooks/pre-push が git に追跡されていない" >&2; return 1; }
+    [[ "$output" == 100755\ * ]] || { echo "git tree 上の mode が 100755 でない: ${output%% *}" >&2; return 1; }
+}
