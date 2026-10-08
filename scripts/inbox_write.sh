@@ -256,20 +256,6 @@ except Exception as e:
                     echo "[inbox_write] WARNING: task_id not resolved for timing event '$_TIMING_EVENT' (pass --task_id= explicitly)" >&2
                 fi
                 bash "${SCRIPT_DIR}/scripts/log_timing_event.sh" "$_TIMING_EVENT" "$_TIMING_CMD_ID" "$_TIMING_TASK_ID" "$_TIMING_AGENT" --redo_of="$_ARG_REDO_OF" --qc_result="$_ARG_QC_RESULT" --source=inbox_write.sh 2>/dev/null || true
-                if [ "$_TIMING_EVENT" = "redo_dispatched" ]; then
-                    _ESC_RESULT=$(bash "${SCRIPT_DIR}/scripts/check_event_escalation.sh" \
-                        "$_ARG_REDO_OF" redo_dispatched redo_of \
-                        --threshold="${REDO_ESCALATION_THRESHOLD:-2}" \
-                        --cooldown="${REDO_ESCALATION_COOLDOWN_MIN:-30}" \
-                        --jsonl="${SCRIPT_DIR}/logs/timing_events.jsonl" 2>/dev/null || echo "ERROR")
-                    case "$_ESC_RESULT" in
-                        FIRE:*)
-                            _ESC_COUNT="${_ESC_RESULT#FIRE:}"
-                            bash "${SCRIPT_DIR}/scripts/ntfy.sh" "🚨 redo${_ESC_COUNT}回到達: ${_ARG_REDO_OF} が${_ESC_COUNT}回redoされても未解決。殿の判断を仰ぐ" 2>/dev/null || true
-                            bash "${SCRIPT_DIR}/scripts/log_timing_event.sh" redo_dispatched_escalated "" "$_ARG_REDO_OF" "" --redo_of="$_ARG_REDO_OF" --source=inbox_write.sh 2>/dev/null || true
-                            ;;
-                    esac
-                fi
             fi
             exit 0
         fi

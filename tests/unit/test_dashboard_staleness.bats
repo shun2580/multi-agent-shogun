@@ -4,15 +4,13 @@
 # 🔴cmd_198工程1(Q59①): dashboard_stale_notifier(check_dashboard_staleness()・
 # _read_dashboard_staleness_setting()・dashboard_staleness_suppress_on_startup()、
 # 旧①③④⑤a〜e群のテスト)は退役・削除済み(scripts/inbox_watcher.sh参照)。
-# 本ファイルはretireの過程で、退役対象と無関係な2つの生存機構のテストのみを
+# 本ファイルはretireの過程で、退役対象と無関係な生存機構のテストのみを
 # 残して縮小した(ファイル名は旧名のまま——リネームはashigaru1のtask
 # allowed_pathsのスコープ外のため、家老の判断で別途cmdを起こされたし):
 #   ②check_urgent_inbox_escalation(): urgent:true未読エントリの閾値超過
 #     エスカレーション(cmd_146②・keep対象・独立機構)
-#   ⑤-b-2: build_fleet_idle_message()のorphan-bullet型未起票残タスク集計
-#     (cmd_194実例(b)の実害再現・keep対象。共有ヘルパー
-#     _split_dashboard_blocks()等はcheck_dashboard_staleness()削除後も
-#     build_fleet_idle_message()が引き続き使用するため回帰防止に必要)
+# (旧⑤-b-2: build_fleet_idle_message()のテストは、cmd_211で同関数が
+#  fleet_idle_notify機構ごと削除されたため併せて削除した)
 #
 # 本番dashboard.md/logs/timing_events.jsonl/ntfy送信には一切触れない。
 # SCRIPT_DIRを隔離TEST_TMPへ差し替えて scripts/inbox_watcher.sh を
@@ -83,15 +81,6 @@ run_urgent_escalation() {
     '
 }
 
-run_fleet_idle_message() {
-    run bash -c '
-        SCRIPT_DIR="'"$TEST_TMP"'"
-        export __INBOX_WATCHER_TESTING__=1
-        source "'"$WATCHER_SCRIPT"'" >/dev/null 2>&1
-        build_fleet_idle_message
-    '
-}
-
 # ═══════════════════════════════════════════════════════════════
 # ② urgent inbox escalation (cmd_146②)
 # ═══════════════════════════════════════════════════════════════
@@ -148,23 +137,4 @@ print(json.dumps(rec, ensure_ascii=False))
     run_urgent_escalation
     [ "$status" -eq 0 ]
     [ ! -s "$NTFY_LOG" ]
-}
-
-# ═══════════════════════════════════════════════════════════════
-# ⑤-b-2 cmd_194実例(b)回帰: orphan-bullet型のfleet_idle未起票集計
-# ═══════════════════════════════════════════════════════════════
-
-@test "⑤-b-2: orphan-bullet型は build_fleet_idle_message() の未起票残タスク件数でも過小集計されず3件とカウントされる(cmd_194実例(b)の実害再現)" {
-    local old_ts
-    old_ts="$(ts_minutes_ago 100)"
-    cat > "$TEST_TMP/dashboard.md" <<EOF
-## 📌 予定事項
-<!-- created_at: ${old_ts} -->
-- orphan予定事項1(own_marker保持)
-- orphan予定事項2(own_markerなし)
-- orphan予定事項3(own_markerなし)
-EOF
-    run_fleet_idle_message
-    [ "$status" -eq 0 ]
-    grep -qF "未起票残タスク件数: 3件" <<< "$output"
 }

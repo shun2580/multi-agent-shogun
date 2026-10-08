@@ -990,12 +990,12 @@ NINJA_EOF
 
     # ═══════════════════════════════════════════════════════════════════
     # STEP 6.6.5: watcher_supervisor.sh 起動（冪等）+ dashboard常設可視化
-    # cmd_113 Part1-B: watcher_supervisor.sh/deadman_watcher.shはこれまで
+    # cmd_113 Part1-B: watcher_supervisor.shはこれまで
     # shutsujin_departure.shに一切組み込まれておらず、システム非稼働を挟むと
     # 誰も起こさないライフサイクルの穴があった。既存プロセス検出時は
     # 二重起動しない（冪等）。
     # ═══════════════════════════════════════════════════════════════════
-    log_info "🛡️ watcher_supervisor.sh（deadman監視の親プロセス）起動確認中..."
+    log_info "🛡️ watcher_supervisor.sh 起動確認中..."
     source "$SCRIPT_DIR/lib/watcher_lifecycle.sh"
     _watcher_status_line=$(start_watcher_supervisor_if_missing "$SCRIPT_DIR" "$SCRIPT_DIR/logs/watcher_supervisor.log")
     echo "  $_watcher_status_line"
@@ -1007,11 +1007,10 @@ NINJA_EOF
     # cmd_086/093同様の照合不一致で「見つからない」＝「本当に停止」とは限らない)。
     # watcher_status_display()で稼働中/停止中/unknown(判定不能)の三値表示に変更する。
     _watcher_display=$(watcher_status_display "scripts/watcher_supervisor.sh" 10)
-    _deadman_display=$(watcher_status_display "scripts/deadman_watcher.sh" 30)
     _watcher_check_time=$(date "+%Y-%m-%d %H:%M:%S")
     if [ -f "$SCRIPT_DIR/dashboard.md" ]; then
         _dashboard_tmp=$(mktemp)
-        awk -v sdisp="$_watcher_display" -v ddisp="$_deadman_display" -v ts="$_watcher_check_time" '
+        awk -v sdisp="$_watcher_display" -v ts="$_watcher_check_time" '
             BEGIN { in_block=0; inserted=0 }
             /^<!-- WATCHER_STATUS_START -->$/ { in_block=1; next }
             /^<!-- WATCHER_STATUS_END -->$/ { in_block=0; next }
@@ -1023,7 +1022,6 @@ NINJA_EOF
                     print "<!-- WATCHER_STATUS_START -->"
                     print "## 🛡️ Watcher稼働状態"
                     print "- watcher_supervisor.sh: " sdisp
-                    print "- deadman_watcher.sh: " ddisp
                     print "- 最終確認時刻: " ts
                     print "<!-- WATCHER_STATUS_END -->"
                     inserted=1

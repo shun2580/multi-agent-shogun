@@ -97,30 +97,6 @@ start_all_watchers() {
     while IFS=$'\t' read -r agent pane log_file; do
         start_watcher_if_missing "$agent" "$pane" "$log_file"
     done < <(watcher_specs)
-
-    start_deadman_watcher_if_missing
-    start_stall_watcher_if_missing
-}
-
-# cmd_092: 停滞警報(デッドマンスイッチ)v1。エージェントではないため上の
-# 9エージェント分ループ(watcher_specs/agent_registry.sh)には混ぜず、
-# 専用の1行分岐として追加する。
-start_deadman_watcher_if_missing() {
-    if pgrep -f "scripts/deadman_watcher.sh" >/dev/null 2>&1; then
-        return 0
-    fi
-    nohup bash scripts/deadman_watcher.sh >> logs/deadman_watcher.log 2>&1 &
-}
-
-# cmd_140: pane出力静止検知・自動復旧watcher。deadman_watcherと同じく
-# エージェントではないため専用の1行分岐として追加する。D006(kill/pkill禁止)
-# 遵守: 既存プロセスの停止は一切行わず、pgrepでの存在確認→不在時のみ
-# nohup起動という非破壊パターンのみを使う。
-start_stall_watcher_if_missing() {
-    if pgrep -f "scripts/stall_watcher.sh" >/dev/null 2>&1; then
-        return 0
-    fi
-    nohup bash scripts/stall_watcher.sh >> logs/stall_watcher.log 2>&1 &
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

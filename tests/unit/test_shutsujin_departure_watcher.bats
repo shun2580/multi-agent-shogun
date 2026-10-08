@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # subtask_113_part1: lib/watcher_lifecycle.sh (shutsujin_departure.sh STEP 6.6.5 が
 # source する watcher_supervisor.sh 冪等起動ロジック) の隔離テスト。
-# 実プロセス(watcher_supervisor.sh/deadman_watcher.sh)は一切起動しない。
+# 実プロセス(watcher_supervisor.sh)は一切起動しない。
 # nohup/pgrep をスタブして「未起動→起動する」「起動済み→重複しない」の両ケースを検証する。
 
 setup() {
@@ -72,7 +72,7 @@ run_start_supervisor_case() {
 }
 
 @test "wait_for_process_pid: 対象プロセスが即座に存在すればPIDを返す" {
-    run timeout 5 env FAKE_PROCLIST="scripts/deadman_watcher.sh" bash -c '
+    run timeout 5 env FAKE_PROCLIST="scripts/dummy_watcher.sh" bash -c '
         source "'"$LIFECYCLE_SCRIPT"'" >/dev/null 2>&1
         pgrep() {
             local pattern="${!#}"
@@ -80,7 +80,7 @@ run_start_supervisor_case() {
                 echo 12345
             fi
         }
-        wait_for_process_pid "scripts/deadman_watcher.sh" 3
+        wait_for_process_pid "scripts/dummy_watcher.sh" 3
     '
     [ "$status" -eq 0 ]
     [ "$output" = "12345" ]
@@ -90,7 +90,7 @@ run_start_supervisor_case() {
     run timeout 5 env FAKE_PROCLIST="" bash -c '
         source "'"$LIFECYCLE_SCRIPT"'" >/dev/null 2>&1
         pgrep() { return 1; }
-        wait_for_process_pid "scripts/deadman_watcher.sh" 2
+        wait_for_process_pid "scripts/dummy_watcher.sh" 2
     '
     [ "$status" -eq 1 ]
     [ -z "$output" ]
@@ -152,7 +152,7 @@ run_start_supervisor_case() {
     run timeout 5 bash -c '
         source "'"$LIFECYCLE_SCRIPT"'" >/dev/null 2>&1
         pgrep() { return 2; }
-        watcher_status_display "scripts/deadman_watcher.sh" 2
+        watcher_status_display "scripts/dummy_watcher.sh" 2
     '
     [ "$status" -eq 2 ]
     [ "$output" = "unknown" ]
