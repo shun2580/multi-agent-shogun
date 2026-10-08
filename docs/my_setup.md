@@ -240,7 +240,7 @@ Claude Code・Gemini CLI・OpenCode はそれぞれ異なるインターフェ�
 | reporting_mode | **exception** | cmd_136 省力化3点セット。正常完了はdashboard記録のみ、ntfyは失敗・ブロック・caveat付き完了・殿裁定要・警報のみ。常時ntfy対象の適用除外: go-harvesterレビュー / Fable裁定案件 / 緊急実害進行中 |
 | reversibility_check_enabled | **observe** | cmd_145 Part4是正（2026-08-04）で新設。flag不在によりPart4が本番不活性（fail-safe off固定）だった事故の是正。off\|observe二値、未知値は必ずoffへ倒すfail-safe設計 |
 
-その他: urgent_inbox_escalation（cmd_146②、緊急未読120分でエスカレーション。軍師報告3日滞留事案の再発防止）、dashboard_staleness段階的再通知（cmd_146③、360分→720分→1440分間隔）。
+その他: dashboard_staleness段階的再通知（cmd_146③、360分→720分→1440分間隔）。
 
 ### 現行の運用ポリシー
 

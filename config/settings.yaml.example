@@ -16,7 +16,6 @@ features:
   reporting_mode: <exception|verbose>
   reversibility_check_enabled: <off|observe>
   parent_cmd_done_gate_enabled: <off|observe|enforce>
-  secret_guard_enabled: <off|observe|enforce>
 auto_heal:
   silent_heal_enabled: <true|false>
   escalation_window_minutes: <integer>
@@ -25,10 +24,6 @@ auto_heal:
 dashboard_staleness:
   enabled: <boolean>
   hours: <integer>
-  check_interval_minutes: <integer>
-  cooldown_after_escalation_minutes: <integer>
-urgent_inbox_escalation:
-  threshold_minutes: <integer>
   check_interval_minutes: <integer>
   cooldown_after_escalation_minutes: <integer>
 assignment_grace:

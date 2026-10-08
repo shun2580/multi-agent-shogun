@@ -25,10 +25,6 @@ Delivery is handled by `inbox_watcher.sh` (infrastructure layer).
 
 **No sleep interval needed.** No delivery confirmation needed. Multiple sends can be done in rapid succession — flock handles concurrency. The inbox_write guarantees persistence; inbox_watcher handles delivery.
 
-### Urgent Policy (cmd_146)
-
-`inbox_write.sh` accepts an `--urgent` flag (stored as a Python bool in `message['urgent']`, defaults to `false` when omitted). Set `urgent: true` only for: (1) an unplanned incident/emergency report from any sender (ashigaru/gunshi/shogun) — the informal "🚨緊急報告" convention (e.g. the stall_watcher_incident emergency report); (2) an explicit urgent designation from the Lord. Routine task-completion reports, QC results, and standard cmd dispatch do NOT get `urgent` by default, nor do routine dashboard.md 🚨要対応 section entries (visibility is already guaranteed by the dashboard being permanently displayed). An entry that stays `urgent: true` and `read: false` past the configured threshold triggers `check_urgent_inbox_escalation()`, which escalates to the Lord via ntfy (`config/settings.yaml` → `urgent_inbox_escalation`).
-
 ## Delivery Mechanism
 
 Two layers:

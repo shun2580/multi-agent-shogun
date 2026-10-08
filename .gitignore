@@ -63,7 +63,6 @@
 !lib/agent_status.sh
 !lib/agent_registry.sh
 !lib/watcher_lifecycle.sh
-!lib/inflight_tasks.sh
 !lib/branch_policy.sh
 !lib/quote_masking.py
 
@@ -106,6 +105,7 @@
 !config/opencode-tui.json
 !config/opencode-permissions.yaml
 !config/settings.yaml.example
+!config/model_autoupdate.yaml
 
 # config/settings.yaml contains secrets (ntfy_topic). Explicit deny (defense in
 # depth on top of the default whitelist exclusion) — cmd_149.
@@ -141,12 +141,11 @@ scripts/seo_qc.sh
 !scripts/ratelimit_check.sh
 !scripts/switch_cli.sh
 !scripts/dashboard-viewer.py
-!scripts/log_timing_event.sh
 !scripts/model_update_check.sh
+!scripts/model_update_check.py
 !scripts/archive_report.sh
 !scripts/pretooluse_reversibility_check.sh
 !scripts/pretooluse_clear_idle.sh
-!scripts/pretooluse_secret_guard.sh
 !scripts/pretooluse_git_push_block.sh
 !scripts/pretooluse_yaml_guard.sh
 !scripts/branch_drift_check.sh

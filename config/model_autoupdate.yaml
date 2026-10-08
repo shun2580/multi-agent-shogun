@@ -1,0 +1,16 @@
+# model_update_check.py の任意ポリシー（無くても動く）
+#
+# この仕組みは「検知・通知のみ」。settings.yaml の書き換えや switch_cli.sh 実行は
+# 一切行わない。新モデル版が同ティアに出たら ntfy＋家老inbox で殿に知らせるだけ。
+# 適用は殿が承認し、人間が switch_cli.sh を実行する。
+
+# 機能全体の有効/無効
+enabled: true
+
+# 通知対象から外すエージェント（例: 恒久固定したいもの）
+# settings.yaml 側で fixed: true を付けたエージェントは、ここに書かずとも自動でスキップされる。
+exclude_agents: []
+
+# 監視するファミリー（省略/未指定なら布陣に存在する全ファミリー）
+# 例: sonnet と haiku だけ通知したい → [sonnet, haiku]
+# families: [opus, sonnet, haiku]
