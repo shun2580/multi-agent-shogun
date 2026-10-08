@@ -19,7 +19,18 @@ CLI_ADAPTER_PROJECT_ROOT="$(cd "${CLI_ADAPTER_DIR}/.." && pwd)"
 CLI_ADAPTER_SETTINGS="${CLI_ADAPTER_SETTINGS:-${CLI_ADAPTER_PROJECT_ROOT}/config/settings.yaml}"
 
 # 許可されたCLI種別
-CLI_ADAPTER_ALLOWED_CLIS="claude codex copilot kimi opencode gemini"
+CLI_ADAPTER_ALLOWED_CLIS="claude codex copilot kimi opencode cursor antigravity"
+
+# _cli_adapter_normalize_cli_type cli_type
+# CLI種別の互換aliasを正規名へ正規化する。
+_cli_adapter_normalize_cli_type() {
+    local cli_type="${1:-}"
+    cli_type="${cli_type,,}"
+    case "$cli_type" in
+        gemini|agy) echo "antigravity" ;;
+        *)          echo "$cli_type" ;;
+    esac
+}
 
 # normalize_opencode_model(model)
 # OpenCode向けにprovider-qualifiedなモデル名へ正規化する。
@@ -39,6 +50,12 @@ normalize_opencode_model() {
     case "$model" in
         gpt-5.4-mini|gpt-5.4|gpt-5.3-codex|gpt-5.3-codex-spark|gpt-5*)
             echo "openai/${model}"
+            ;;
+        claude-opus-4-8)
+            echo "anthropic/claude-opus-4-8"
+            ;;
+        claude-opus-4-7)
+            echo "anthropic/claude-opus-4-7"
             ;;
         claude-opus-5-5|opus)
             echo "anthropic/claude-opus-5-5"
@@ -181,14 +198,15 @@ try:
         sys.exit(0)
     agent_cfg = agents.get('${agent_id}')
     if isinstance(agent_cfg, dict):
-        t = agent_cfg.get('type', '')
-        if t in ('claude', 'codex', 'copilot', 'kimi', 'opencode', 'gemini'):
+        t = normalize_cli(agent_cfg.get('type', ''))
+        if t in allowed:
             print(t); sys.exit(0)
     elif isinstance(agent_cfg, str):
-        if agent_cfg in ('claude', 'codex', 'copilot', 'kimi', 'opencode', 'gemini'):
-            print(agent_cfg); sys.exit(0)
-    default = cli.get('default', 'claude')
-    if default in ('claude', 'codex', 'copilot', 'kimi', 'opencode', 'gemini'):
+        t = normalize_cli(agent_cfg)
+        if t in allowed:
+            print(t); sys.exit(0)
+    default = normalize_cli(cli.get('default', 'claude'))
+    if default in allowed:
         print(default)
     else:
         print('claude', file=sys.stderr)
@@ -241,8 +259,6 @@ build_cli_command() {
             if [[ -n "$model" ]]; then
                 cmd="$cmd --model $model"
             fi
-            local effort
-            effort=$(get_agent_effort "$agent_id")
             if [[ -n "$effort" ]]; then
                 cmd="$cmd --effort $effort"
             fi
@@ -297,9 +313,17 @@ build_cli_command() {
                 cmd="$cmd --model $model"
             fi
             ;;
-        gemini)
-            cmd="gemini --yolo"
+        cursor)
+            local bin="agent"
+            command -v cursor-agent &>/dev/null && bin="cursor-agent"
+            cmd="$bin --yolo"
             if [[ -n "$model" ]]; then
+                cmd="$cmd --model $model"
+            fi
+            ;;
+        antigravity)
+            cmd="agy --dangerously-skip-permissions"
+            if [[ -n "$model" && "$model" != "auto" && "$model" != "default" ]]; then
                 cmd="$cmd --model $model"
             fi
             ;;
@@ -342,7 +366,8 @@ get_instruction_file() {
         copilot) echo "instructions/generated/copilot-${role}.md" ;;
         kimi)    echo "instructions/generated/kimi-${role}.md" ;;
         opencode) echo "instructions/generated/opencode-${role}.md" ;;
-        gemini)  echo "GEMINI.md" ;;
+        cursor)  echo "instructions/generated/cursor-${role}.md" ;;
+        antigravity) echo "instructions/generated/antigravity-${role}.md" ;;
         *)       echo "instructions/${role}.md" ;;
     esac
 }
@@ -384,11 +409,17 @@ validate_cli_availability() {
                 return 1
             fi
             ;;
-        gemini)
-            command -v gemini &>/dev/null || {
-                echo "[ERROR] Gemini CLI not found. Install with: npm install -g @google/gemini-cli" >&2
+        cursor)
+            if ! command -v agent &>/dev/null && ! command -v cursor-agent &>/dev/null; then
+                echo "[ERROR] Cursor Agent CLI not found. Install: curl https://cursor.com/install -fsS | bash (Linux/WSL2) / brew install cursor-agent (macOS)" >&2
                 return 1
-            }
+            fi
+            ;;
+        antigravity)
+            if ! command -v agy &>/dev/null && ! command -v antigravity &>/dev/null; then
+                echo "[ERROR] Antigravity CLI not found. Install and authenticate Google's Antigravity CLI, then ensure 'agy' is on PATH." >&2
+                return 1
+            fi
             ;;
         *)
             echo "[ERROR] Unknown CLI type: '$cli_type'. Allowed: $CLI_ADAPTER_ALLOWED_CLIS" >&2
@@ -463,10 +494,25 @@ get_agent_model() {
 }
 
 # get_agent_effort(agent_id)
-# エージェントに明示すべきeffortレベルを返す（未設定なら空文字＝--effort付与なし）
+# Claude CLI の --effort に渡す推論強度を返す。
+# 未指定・不正値は空文字にして後方互換を維持する。
 get_agent_effort() {
     local agent_id="$1"
-    _cli_adapter_read_yaml "cli.agents.${agent_id}.effort" ""
+    local effort
+    effort=$(_cli_adapter_read_yaml "cli.agents.${agent_id}.effort" "")
+
+    case "$effort" in
+        low|medium|high|xhigh|max)
+            echo "$effort"
+            ;;
+        "")
+            echo ""
+            ;;
+        *)
+            echo "[WARN] Invalid effort '$effort' for agent '$agent_id'. Ignoring." >&2
+            echo ""
+            ;;
+    esac
 }
 
 # get_model_display_name(agent_id)
@@ -933,7 +979,7 @@ can_model_switch() {
         codex)   echo "limited" ;;
         copilot) echo "none" ;;
         kimi)    echo "none" ;;
-        gemini)  echo "none" ;;
+        cursor)  echo "full" ;;
         *)       echo "none" ;;
     esac
 }

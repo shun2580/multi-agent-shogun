@@ -1018,12 +1018,16 @@ print(len(doc.get('history', [])))
 
 @test "TC-FAM-002: Sonnet足軽が存在 → ashigaru4 を返す" {
     load_adapter_with "${TEST_TMP}/settings_mixed_cli.yaml"
+    # cmd_210 G2: 実ライブtmux状態(list-panes -a)への依存を排除し決定的化（TC-FAM-001と同型）
+    tmux() { return 1; }
     result=$(find_agent_for_model "claude-sonnet-5-5")
     [ "$result" = "ashigaru4" ]
 }
 
 @test "TC-FAM-003: Opus足軽が存在 → ashigaru6 を返す" {
     load_adapter_with "${TEST_TMP}/settings_mixed_cli.yaml"
+    # cmd_210 G2: 実ライブtmux状態(list-panes -a)への依存を排除し決定的化（TC-FAM-001と同型）
+    tmux() { return 1; }
     result=$(find_agent_for_model "claude-opus-5-5")
     [ "$result" = "ashigaru6" ]
 }

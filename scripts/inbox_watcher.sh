@@ -389,7 +389,7 @@ should_throttle_nudge() {
 
 is_valid_cli_type() {
     case "${1:-}" in
-        claude|codex|copilot|kimi|opencode|gemini) return 0 ;;
+        claude|codex|copilot|kimi|opencode|antigravity|gemini|agy) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -924,7 +924,7 @@ send_context_reset() {
         claude)   reset_cmd="/clear" ;;
         copilot)  reset_cmd="/clear" ;;
         kimi)     reset_cmd="/clear" ;;
-        gemini)   reset_cmd="/clear" ;;
+        antigravity) reset_cmd="/clear" ;;
         *)        reset_cmd="/new" ;;  # safe default (codex-safe)
     esac
 
@@ -1240,13 +1240,13 @@ send_wakeup() {
 
     # OpenCode/Gemini agents: use explicit instruction instead of terse "inboxN"
     # These agents cannot parse "inbox2" as a protocol trigger
-    if [[ "$effective_cli_for_nudge" == "opencode" ]] || [[ "$effective_cli_for_nudge" == "gemini" ]]; then
+    if [[ "$effective_cli_for_nudge" == "opencode" ]] || [[ "$effective_cli_for_nudge" == "gemini" ]] || [[ "$effective_cli_for_nudge" == "antigravity" ]]; then
         nudge="queue/inbox/${AGENT_ID}.yaml と queue/tasks/${AGENT_ID}.yaml を Read してタスクを実行せよ。完了後 scripts/inbox_write.sh で軍師に報告すること。"
     fi
 
     # 非Claudeエージェント（gemini/opencode）は inbox を自律的に read:true にできない
     # inbox_watcher 側で自動既読にすることで重複 nudge を防ぐ
-    if [[ "$effective_cli_for_nudge" == "gemini" ]] || [[ "$effective_cli_for_nudge" == "opencode" ]]; then
+    if [[ "$effective_cli_for_nudge" == "gemini" ]] || [[ "$effective_cli_for_nudge" == "antigravity" ]] || [[ "$effective_cli_for_nudge" == "opencode" ]]; then
         python3 -c "
 import sys, re
 path = '${INBOX}'

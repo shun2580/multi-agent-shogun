@@ -15,8 +15,11 @@
 #   # OpenCode で provider/model を直接指定（role 定義は --agent、モデル変更は再起動で反映）
 #   bash scripts/switch_cli.sh ashigaru3 --type opencode --model openai/gpt-5.4-mini
 #
-#   # 同一CLI内でモデルだけ変更（Sonnet → Opus）
-#   bash scripts/switch_cli.sh ashigaru3 --model claude-opus-5-5
+#   # OpenCode provider-specific reasoning variant
+#   bash scripts/switch_cli.sh ashigaru3 --type opencode --model openrouter/minimax/minimax-m2.5 --variant xhigh
+#
+#   # 同一CLI内でモデルとClaude effortを変更（Sonnet → Opus/max）
+#   bash scripts/switch_cli.sh ashigaru3 --model claude-opus-5-5 --effort max
 #
 #   # 全足軽を一括切替
 #   for i in $(seq 1 7); do bash scripts/switch_cli.sh ashigaru$i --type claude --model claude-sonnet-5-5; done
@@ -59,8 +62,10 @@ usage() {
     echo "Usage: $0 <agent_id> [--type <cli_type>] [--model <model_name>] [--effort <level>] [--variant <variant>]"
     echo ""
     echo "  agent_id   Agent configured in config/settings.yaml (e.g. karo, ashigaru1, gunshi)"
-    echo "  --type     claude | codex | copilot | kimi | opencode | gemini"
+    echo "  --type     claude | codex | copilot | kimi | opencode | cursor | antigravity (gemini/agy are aliases of antigravity)"
     echo "  --model    claude-sonnet-5-5 | claude-opus-5-5 | gpt-5.3-codex | openai/gpt-5.4-mini | etc."
+    echo "  --effort   Claude effort level: low | medium | high | xhigh | max"
+    echo "  --variant  OpenCode model variant such as xhigh, high, max, minimal"
     echo "  --force    Override fixed: true protection (emergency use only)"
     echo ""
     echo "If --type/--model omitted, uses current settings.yaml values."
@@ -342,7 +347,7 @@ send_exit() {
             sleep 0.3
             tmux send-keys -t "$pane" Enter 2>/dev/null || true
             ;;
-        copilot|kimi|gemini)
+        copilot|kimi|antigravity)
             tmux send-keys -t "$pane" C-c 2>/dev/null || true
             sleep 0.5
             tmux send-keys -t "$pane" "/exit" 2>/dev/null || true
@@ -431,6 +436,8 @@ shift
 
 NEW_TYPE=""
 NEW_MODEL=""
+NEW_VARIANT=""
+NEW_EFFORT=""
 FORCE=false
 
 while [ $# -gt 0 ]; do
@@ -441,6 +448,14 @@ while [ $# -gt 0 ]; do
             ;;
         --model)
             NEW_MODEL="$2"
+            shift 2
+            ;;
+        --effort)
+            NEW_EFFORT="$2"
+            shift 2
+            ;;
+        --variant)
+            NEW_VARIANT="$2"
             shift 2
             ;;
         --force)
@@ -512,9 +527,9 @@ if [[ "$(get_agent_fixed "$AGENT_ID")" == "true" ]] && [[ "$FORCE" == "true" ]];
     log "WARN: ${AGENT_ID} has fixed: true but --force was specified. Proceeding."
 fi
 
-# Step 1: settings.yaml 更新（--type/--model 指定時のみ）
-if [[ -n "$NEW_TYPE" || -n "$NEW_MODEL" ]]; then
-    update_settings_yaml "$AGENT_ID" "$NEW_TYPE" "$NEW_MODEL"
+# Step 1: settings.yaml 更新（--type/--model/--variant/--effort 指定時のみ）
+if [[ -n "$NEW_TYPE" || -n "$NEW_MODEL" || -n "$NEW_VARIANT" || -n "$NEW_EFFORT" ]]; then
+    update_settings_yaml "$AGENT_ID" "$NEW_TYPE" "$NEW_MODEL" "$NEW_VARIANT" "$NEW_EFFORT"
 fi
 
 # Step 2: 切替後のCLI情報を取得（settings.yaml反映後）
