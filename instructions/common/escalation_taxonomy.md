@@ -22,7 +22,7 @@ Forbidden Actions / Destructive Operation Safety / Action Required Rule との�
 |---|---|---|---|---|
 | 1 | 破壊的操作 D001-D008（`rm -rf`外部, force push, `git reset --hard`等） | **絶対拒否**（殿判断すら経ない即REFUSE） | CLAUDE.md Destructive Operation Safety Tier1 | LLM自己規律のみ（コード上のガードレールなし＝エージェントの倫理規約に依存） |
 | 2 | Tier2 STOP-AND-REPORT（>10ファイル削除・プロジェクト外変更・未知URL・破壊性不明） | 殿へ**要確認**（ただし文言は"notify Karo/Shogun"であり殿到達を明言せず） | CLAUDE.md Destructive Operation Safety Tier2 | LLM自己規律のみ |
-| 3 | git push の承認 | **文書間で矛盾**（詳細は`docs/loop_engineering_design.md`§4-1）。F007は「殿の事前承認必須」、karo.md比例分解ルールは「低リスクは単一足軽サブタスク+軍師QC1回で完結、殿確認は明記なし」 | `instructions/common/forbidden_actions.md`(F007) vs `karo.md:351-365` | 一部コード(`scope_check.sh`でpush先ファイル確認)だが承認有無はコード検証対象外 |
+| 3 | git push の承認 | **殿の承認のみ**（F007）。承認の実体はフックのプロセス環境の`PUSH_APPROVED=1`（殿が立てる。コマンド文字列に前置しても通らない）。エージェントは自己承認できない | `instructions/common/forbidden_actions.md`(F007)・`scripts/pretooluse_git_push_block.sh` | **コード強制**（PreToolUseフックが`PUSH_APPROVED=1`なしのpushをdeny） |
 | 4 | Redo（足軽の成果物が不十分） | 2回まで自律redo、3回目で殿へ | `karo.md:811` | **テキスト規約のみ**（カウンタはコードになし） |
 | 5 | 詰まり検知（足軽/軍師無応答） | 自己回復を2回試行、失敗継続で殿へ | `karo.md:1229`, `karo.md:1247` | **テキスト規約のみ** |
 | 6 | 自動蘇生（CLIクラッシュ） | 10分内3回蘇生で殿へntfy | `scripts/inbox_watcher.sh:1360-1420`(`config/settings.yaml`の`auto_heal:`) | **コード強制**（jsonlログ+カウンタ） |
