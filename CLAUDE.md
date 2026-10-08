@@ -319,6 +319,7 @@ When processing large datasets (30+ items requiring individual web search, API c
   再開は上記 Session Start / Recovery の手順に従い、一次資料は YAML(queue/)。dashboard.md は二次資料。
 - **commit作法**: 対象パスを明示する(`git add <paths>` → `git commit -- <paths>`)。`git add -A`・`git add .`・`git commit -a` は禁止。
   push・公開は殿の承認を要する(F007)。
+- **push承認の運用**: `git push` はフックのプロセス環境に `PUSH_APPROVED=1` が立っているときのみ通る(殿がセッション起動時/シェルで設定。コマンド文字列に前置しても通らない。旧 `PUSH_APPROVED_ID=P-nn` 方式は廃止)。エージェントはpushを自己承認できない。pushは殿の承認事項(F007)のままで、通常は殿が手元で行うか、承認時に環境変数を立てる。
 - **判断の置き場所(論点R・殿裁定 2026-10-05)**: 後から戻せる判断は将軍が裁いて記帳する。外部公開仕様・後から変えにくい判断は殿に上げる。
 - **将軍の自己検証の範囲(論点S)**: 将軍は裁定に要る実測を自ら行ってよい。ただし read-only の数コマンドに限り、反復・網羅的な検証や実装は家老へ委ねる(F001)。<!-- 暫定: 将軍確認要(cmd_210) -->
 - **殿の承認を要するもの**: D001-D008・push/公開(F007)・金銭を伴う操作のみ(Q58)。それ以外は各層で裁く。
