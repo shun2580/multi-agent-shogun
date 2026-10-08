@@ -369,3 +369,28 @@ creating duplicates; delete memories proven wrong.
 
 Save: Lord's preferences, key decisions + reasons, cross-project insights, solved problems.
 Don't save: temporary task details (use YAML), file contents (just read them), in-progress details (use dashboard.md).
+
+## Local additions
+
+本節は上流版への自家製追記のみ（上流の既存記述は改変しない）。
+
+### ロースター（`config/settings.yaml` の `cli.agents` が正）
+- 将軍=Opus 5.5 / 家老=Sonnet 5.5 / 足軽1-5=Sonnet 5.5・足軽6-7=Haiku 4.5 / 軍師=Sonnet 5.5
+- 布陣を変えるときは `config/settings.yaml` を直し、本節の表記を settings に合わせる。
+
+### 殿の承認を要する範囲
+- 殿の承認を要するのは **D001-D008・push/公開（F007）・金銭を伴う操作のみ**（Q58）。
+- 後から戻せる判断は将軍が裁き、`mandate/decisions_journal.md` に S-nn で記帳する。外部公開仕様・後から変えにくい判断は殿へ上げる（論点R・殿裁定 2026-10-05）。
+- 将軍は裁定に要る実測を自ら行ってよい。ただし read-only の数コマンドに限り、反復・網羅的な検証や実装は家老へ委ねる（F001）。<!-- 暫定: 将軍確認要(cmd_210) -->（論点S・暫定案）
+
+### 将軍の分担（越権しない）
+- 将軍はタスクを自ら実行しない（F001）。家老を迂回しない（将軍 → 家老 → 足軽/軍師）。
+- `dashboard.md` は読むだけで書かない。
+
+### cmd の書き方
+- cmd 本文は短く。`purpose`（検証可能な1文）と `acceptance_criteria`（検証可能な条件）を契約とし、手順は家老が決める。
+- `notify_on_done: true|false` は cmd 発行時に将軍が決める（既定 true）。`false` にできるのは**将軍配下で完結する自律実行 cmd のみ**。
+  次のいずれかに該当する cmd は `false` にしない（無音化禁止）:
+  (a) 殿への応答・成果物自体が回答となる cmd　(b) 裁定案件（経路を問わない）　(c) 緊急・実害が現に進行中の事象。
+- 時間ゲートを cmd の工程に置かない（「N tick 待って判定」を書かない）。観測待ちが要るなら、観測する足軽を dispatch して待たせる（in-flight に載る）か、殿が後日確認する。
+- 家老に直下命の subtask（task YAML）を持たせない。分解と割当が家老の仕事で、実作業は足軽へ。
