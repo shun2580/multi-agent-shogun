@@ -22,16 +22,47 @@ usage() {
   exit 1
 }
 
-# 先頭の status: 行(top-level優先、無ければ最初のインデント付き)を done に置換して標準出力へ。
-# 引数 $1=indent_mode (top|any)。置換対象が無ければ何も変えない。
-set_status_done() {
-  awk -v mode="$1" '
-    !done && mode == "block" && /^  status:/ { print "  status: done"; done = 1; next }
-    !done && mode == "top"   && /^status:/   { print "status: done"; done = 1; next }
-    !done && mode == "nested" && /^  status:/ { print "  status: done"; done = 1; next }
-    { print }
+# 終端 status (空白区切り)。これらの値を持つ status 行は done.sh が一切書き換えない (cmd_215)。
+TERMINAL_STATUSES="done done_with_caveat superseded cancelled failed"
+
+is_terminal() {
+  [[ -n "${1:-}" && " $TERMINAL_STATUSES " == *" $1 "* ]]
+}
+
+# 最初の status: 行を対象に (対象行の選び方は mode: block|nested=インデント2 / top=行頭)、
+#   action=set (既定): 終端でなければ done へ置換、終端なら行を無変更で出力。標準入力→標準出力。
+#   action=get       : その行の status 値 (status: 直後の最初の語。先頭の引用符は除く) だけを出力。
+# 値の判定は完全一致 (done_with_caveat を done と誤判定しない)。対象行が無ければ何も変えない/何も出さない。
+# 引数 $1=mode, $2=action
+status_awk() {
+  awk -v mode="$1" -v action="${2:-set}" -v terms="$TERMINAL_STATUSES" -v q="'" '
+    function value(line,   v) {
+      v = line
+      sub(/^ *status:[ \t]*/, "", v)
+      if (substr(v, 1, 1) == "\"" || substr(v, 1, 1) == q) v = substr(v, 2)
+      if (match(v, /^[A-Za-z0-9_]+/)) return substr(v, 1, RLENGTH)
+      return ""
+    }
+    function terminal(v,   i, n, t) {
+      if (v == "") return 0
+      n = split(terms, t, " ")
+      for (i = 1; i <= n; i++) if (t[i] == v) return 1
+      return 0
+    }
+    !seen && ((mode == "top" && /^status:/) || (mode != "top" && /^  status:/)) {
+      seen = 1
+      v = value($0)
+      if (action == "get") { print v; next }
+      if (terminal(v)) { print; next }
+      print (mode == "top" ? "" : "  ") "status: done"
+      next
+    }
+    action != "get" { print }
   '
 }
+
+set_status_done() { status_awk "$1" set; }
+status_value()    { status_awk "$1" get; }
 
 cmd_done() {
   local id="${1:-}"
@@ -65,6 +96,10 @@ cmd_done() {
   tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/done.XXXXXX")" || die "mktemp failed"
   # shellcheck disable=SC2064
   trap "rm -rf '$tmp_dir'" EXIT
+
+  # 元の status 値 (終端なら set_status_done が行を変えない。完了行の表示に使う)
+  local orig_status
+  orig_status=$(sed -n "${first_line},${last_line}p" "$body" | status_value block) || die "status 値の取得に失敗"
 
   # (1) archive先へ書込
   { echo "commands:"; sed -n "${first_line},${last_line}p" "$body" | set_status_done block; } > "$tmp_dir/block.yaml" \
@@ -107,7 +142,11 @@ cmd_done() {
     die "本体の書換に失敗 (archiveを巻戻し)"
   fi
 
-  echo "done: $id → $archive_file (本体から除去済み)"
+  if is_terminal "$orig_status"; then
+    echo "done: $id → $archive_file (本体から除去済み、status 保持: $orig_status)"
+  else
+    echo "done: $id → $archive_file (本体から除去済み)"
+  fi
 }
 
 report_done() {
@@ -133,13 +172,18 @@ report_done() {
 
   local mode=top
   grep -q '^status:' "$file" || mode=nested
-  if ! grep -qE '^(status|  status):[[:space:]]*done[[:space:]]*$' "$file"; then
-    grep -qE '^(status|  status):' "$file" || die "status 行が見つからない: $file"
+  grep -qE '^(status|  status):' "$file" || die "status 行が見つからない: $file"
+  # 終端 status (done 含む) は書き換えない。未完了 status のみ done へ (冪等)。
+  local cur shown=done
+  cur=$(status_value "$mode" < "$file") || die "status 値の取得に失敗: $file"
+  if is_terminal "$cur"; then
+    shown="$cur"
+  else
     local tmp="$file.tmp.$$"
     set_status_done "$mode" < "$file" > "$tmp" || { rm -f "$tmp"; die "status書換に失敗: $file"; }
     mv "$tmp" "$file" || { rm -f "$tmp"; die "status書換の確定に失敗: $file"; }
   fi
-  echo "done: $file (status: done)"
+  echo "done: $file (status: $shown)"
 }
 
 [[ $# -ge 2 ]] || usage

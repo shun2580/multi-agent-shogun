@@ -164,3 +164,146 @@ EOF
   [ "$status" -eq 1 ]
   [[ "$output" == *"status"* ]]
 }
+
+# ---- cmd_215: 終端 status (done_with_caveat/superseded/cancelled/failed) を done へ潰さない ----
+
+# 2ブロックの shogun_to_karo.yaml を作る: $1=id $2=status行の値部分(行末コメント込み可)
+make_body_with_status() {
+  cat > "$BODY" <<YAML
+commands:
+- id: $1
+  timestamp: '2026-02-01T00:00:00Z'
+  status: $2
+  purpose: |
+    本文
+    status: pending と書いてあっても無関係
+- id: cmd_other
+  timestamp: '2026-02-02T00:00:00Z'
+  status: pending
+  purpose: 他のcmd
+YAML
+  cp "$BODY" "$BATS_TEST_TMPDIR/body.t215"
+}
+
+@test "(g) cmd: 終端 status (done_with_caveat/superseded/cancelled/failed) は archive 先でも元の値のまま・本体から除去" {
+  for st in done_with_caveat superseded cancelled failed; do
+    make_body_with_status cmd_t215 "$st"
+    run bash "$SCRIPT_PATH" cmd cmd_t215
+    [ "$status" -eq 0 ]
+    archive="$DONE_ROOT/queue/archive/cmds/cmd_t215.yaml"
+    grep -qx "  status: $st" "$archive"
+    ! grep -qx '  status: done' "$archive"
+    ! grep -q '^- id: cmd_t215$' "$BODY"
+    [[ "$output" == *"(本体から除去済み"* ]]
+    [[ "$output" == *"status 保持: $st"* ]]
+    rm -f "$archive"
+  done
+}
+
+@test "(g2) cmd: 行末コメント付き終端 status 行はバイト不変" {
+  make_body_with_status cmd_t215 'done_with_caveat  # 理由: 一部未達'
+  run bash "$SCRIPT_PATH" cmd cmd_t215
+  [ "$status" -eq 0 ]
+  grep -qxF '  status: done_with_caveat  # 理由: 一部未達' "$DONE_ROOT/queue/archive/cmds/cmd_t215.yaml"
+  # archive 全体も元ブロックとバイト一致 (先頭の commands: 行を除く)
+  diff <(tail -n +2 "$DONE_ROOT/queue/archive/cmds/cmd_t215.yaml") <(block_of cmd_t215 "$BATS_TEST_TMPDIR/body.t215")
+}
+
+@test "(g3) cmd: 終端でない status (pending/in_progress/assigned) は従来どおり done になる" {
+  for st in pending in_progress assigned; do
+    make_body_with_status cmd_t215 "$st"
+    run bash "$SCRIPT_PATH" cmd cmd_t215
+    [ "$status" -eq 0 ]
+    archive="$DONE_ROOT/queue/archive/cmds/cmd_t215.yaml"
+    grep -qx '  status: done' "$archive"
+    [[ "$output" == *"(本体から除去済み)"* ]]
+    [[ "$output" != *"status 保持"* ]]
+    rm -f "$archive"
+  done
+}
+
+@test "(g4) cmd: 本文中の深いインデントの終端風文字列は判定に影響しない (最初の status 行が in_progress なら done)" {
+  cat > "$BODY" <<'YAML'
+commands:
+- id: cmd_t215
+  timestamp: '2026-02-01T00:00:00Z'
+  status: in_progress
+  purpose: |
+    本文
+    status: done_with_caveat と書いてあっても無関係
+      status: cancelled
+YAML
+  run bash "$SCRIPT_PATH" cmd cmd_t215
+  [ "$status" -eq 0 ]
+  archive="$DONE_ROOT/queue/archive/cmds/cmd_t215.yaml"
+  grep -qx '  status: done' "$archive"
+  ! grep -q '^  status: in_progress' "$archive"
+  # 本文中の文字列は無変更
+  grep -qx '    status: done_with_caveat と書いてあっても無関係' "$archive"
+  grep -qx '      status: cancelled' "$archive"
+}
+
+@test "(g5) cmd: 最初の status 行が終端なら本文中の status: pending に引きずられない" {
+  make_body_with_status cmd_t215 cancelled
+  run bash "$SCRIPT_PATH" cmd cmd_t215
+  [ "$status" -eq 0 ]
+  grep -qx '  status: cancelled' "$DONE_ROOT/queue/archive/cmds/cmd_t215.yaml"
+}
+
+@test "(h) report (インデント付き): 終端 status は書き換えられない・表示も実際の値" {
+  for st in done_with_caveat superseded cancelled failed; do
+    report="$DONE_ROOT/queue/reports/r_$st.yaml"
+    printf 'report:\n  task_id: subtask_x\n  status: %s\n  summary: "テスト"\n' "$st" > "$report"
+    cp "$report" "$BATS_TEST_TMPDIR/r.orig"
+    run bash "$SCRIPT_PATH" report "$report"
+    [ "$status" -eq 0 ]
+    cmp "$report" "$BATS_TEST_TMPDIR/r.orig"
+    [[ "$output" == *"(status: $st)"* ]]
+    ls "$DONE_ROOT/queue/reports/archive/"r_${st}_*.yaml
+  done
+}
+
+@test "(h2) report (top-level): 終端 status は書き換えられない・行末コメントもバイト不変" {
+  for st in done_with_caveat superseded cancelled failed; do
+    report="$DONE_ROOT/queue/reports/t_$st.yaml"
+    printf 'status: %s  # 理由あり\nnote: x\n' "$st" > "$report"
+    cp "$report" "$BATS_TEST_TMPDIR/t.orig"
+    run bash "$SCRIPT_PATH" report "$report"
+    [ "$status" -eq 0 ]
+    cmp "$report" "$BATS_TEST_TMPDIR/t.orig"
+    [[ "$output" == *"(status: $st)"* ]]
+  done
+}
+
+@test "(h3) report: status: done は冪等 (両形式)・表示は (status: done)" {
+  r1="$DONE_ROOT/queue/reports/idem_top.yaml"
+  r2="$DONE_ROOT/queue/reports/idem_nested.yaml"
+  printf 'status: done\nnote: x\n' > "$r1"
+  printf 'report:\n  status: done\n' > "$r2"
+  for r in "$r1" "$r2"; do
+    cp "$r" "$BATS_TEST_TMPDIR/idem.orig"
+    run bash "$SCRIPT_PATH" report "$r"
+    [ "$status" -eq 0 ]
+    cmp "$r" "$BATS_TEST_TMPDIR/idem.orig"
+    [[ "$output" == *"(status: done)"* ]]
+  done
+}
+
+@test "(h4) report: 終端でない status (blocked) は done へ書き換わる" {
+  report="$DONE_ROOT/queue/reports/blk.yaml"
+  printf 'report:\n  status: blocked  # x\n  n: 1\n' > "$report"
+  run bash "$SCRIPT_PATH" report "$report"
+  [ "$status" -eq 0 ]
+  grep -qx '  status: done' "$report"
+  ! grep -q blocked "$report"
+  [[ "$output" == *"(status: done)"* ]]
+}
+
+@test "(h5) report: 引用符付き終端値も書き換えない" {
+  report="$DONE_ROOT/queue/reports/quoted.yaml"
+  printf 'status: "done_with_caveat"\n' > "$report"
+  cp "$report" "$BATS_TEST_TMPDIR/q.orig"
+  run bash "$SCRIPT_PATH" report "$report"
+  [ "$status" -eq 0 ]
+  cmp "$report" "$BATS_TEST_TMPDIR/q.orig"
+}
