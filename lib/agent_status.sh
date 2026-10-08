@@ -99,6 +99,20 @@ agent_is_busy_check() {
         return 2
     fi
 
+    # Cursor: "ctrl+c to stop" appears in the TUI only during active processing.
+    # Placed after the capture-failure check so an unobservable pane stays
+    # unknown (rc=2) here too — only a successful capture is read as busy/idle.
+    if [[ "$cli_type" == "cursor" ]]; then
+        if echo "$pane_tail" | grep -qiF 'ctrl+c to stop'; then
+            return 0  # busy
+        fi
+        # Idle markers: initial prompt or post-response prompt
+        if echo "$pane_tail" | grep -qE '(Plan, search, build anything|Add a follow-up)'; then
+            return 1  # idle
+        fi
+        return 1  # idle (default, capture succeeded)
+    fi
+
     # capture-pane succeeded but returned nothing — pane exists and the query
     # itself worked, the content is genuinely blank. This is a real (negative)
     # observation, not a failure, so idle remains correct here.

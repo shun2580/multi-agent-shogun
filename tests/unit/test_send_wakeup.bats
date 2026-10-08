@@ -677,6 +677,53 @@ PY
     grep -q "send-keys.*Session Start" "$MOCK_LOG"
 }
 
+@test "T-SHOGUN-005: process_unread does not auto-recover skipped shogun clear_command" {
+    run bash -c '
+        source "'"$TEST_HARNESS"'"
+        AGENT_ID="shogun"
+        PANE_TARGET="shogun:main"
+        CLI_TYPE="codex"
+        INBOX="'"$TEST_INBOX_DIR"'/shogun.yaml"
+        LOCKFILE="${INBOX}.lock"
+        cat > "$INBOX" << "YAML"
+messages:
+  - id: msg_clear
+    from: karo
+    timestamp: "2026-05-22T03:22:46+09:00"
+    type: clear_command
+    content: refresh
+    read: false
+YAML
+        process_unread event
+        "$VENV_PYTHON" - << "PY" "$INBOX"
+import sys
+import yaml
+
+inbox_path = sys.argv[1]
+with open(inbox_path, "r", encoding="utf-8") as f:
+    data = yaml.safe_load(f) or {}
+
+messages = data.get("messages", []) or []
+msg_clear = [m for m in messages if m.get("id") == "msg_clear"]
+assert len(msg_clear) == 1 and msg_clear[0].get("read") is True
+
+auto = [
+    m for m in messages
+    if m.get("from") == "inbox_watcher"
+    and m.get("type") == "task_assigned"
+    and "[auto-recovery]" in (m.get("content") or "")
+]
+assert auto == []
+print("OK")
+PY
+    '
+    [ "$status" -eq 0 ]
+    echo "$output" | grep -q "OK"
+
+    ! grep -q "send-keys.*/new" "$MOCK_LOG"
+    ! grep -q "send-keys.*/clear" "$MOCK_LOG"
+}
+
 # --- T-CODEX-012: auto-recovery dedupe ---
 
 @test "T-CODEX-012: enqueue_recovery_task_assigned deduplicates unread auto-recovery message" {
@@ -1038,6 +1085,57 @@ YAML
         opencode_has_busy_animation "$(printf "   ⬝⬝■⬝⬝⬝⬝⬝  esc interrupt\n")"
     '
     [ "$status" -eq 0 ]
+}
+
+# --- T-BUSY-017..019: cursor branch (ported from upstream, keeps tri-state rc=2) ---
+# agent_status.sh calls `timeout 2 tmux ...` (external binary), so a shell-function
+# mock is bypassed; stub a real `tmux` executable on PATH instead.
+
+_cursor_stub_tmux() {
+    # $1 = capture-pane stdout, $2 = capture-pane exit code
+    mkdir -p "$TEST_TMPDIR/stubbin"
+    cat > "$TEST_TMPDIR/stubbin/tmux" <<STUB
+#!/usr/bin/env bash
+case "\$1" in
+    display-message) echo "%1" ;;
+    capture-pane) printf '%b' '$1'; exit $2 ;;
+esac
+STUB
+    chmod +x "$TEST_TMPDIR/stubbin/tmux"
+}
+
+@test "T-BUSY-017: cursor 'ctrl+c to stop' detected as busy" {
+    _cursor_stub_tmux '  Thinking...\n  ctrl+c to stop\n' 0
+    run bash -c '
+        PATH="'"$TEST_TMPDIR"'/stubbin:$PATH"
+        source "'"$PROJECT_ROOT"'/lib/agent_status.sh"
+        agent_is_busy_check "mock:0.0" cursor
+    '
+    [ "$status" -eq 0 ]
+}
+
+@test "T-BUSY-018: cursor idle prompt detected as idle" {
+    _cursor_stub_tmux '  Add a follow-up\n' 0
+    run bash -c '
+        PATH="'"$TEST_TMPDIR"'/stubbin:$PATH"
+        source "'"$PROJECT_ROOT"'/lib/agent_status.sh"
+        agent_is_busy_check "mock:0.0" cursor
+    '
+    [ "$status" -eq 1 ]
+}
+
+@test "T-BUSY-019: cursor capture-pane failure stays unknown (rc=2), not idle" {
+    _cursor_stub_tmux '' 1
+    run bash -c '
+        PATH="'"$TEST_TMPDIR"'/stubbin:$PATH"
+        source "'"$PROJECT_ROOT"'/lib/agent_status.sh"
+        agent_is_busy_check "mock:0.0" cursor
+        rc=$?
+        echo "REASON=$AGENT_STATUS_UNKNOWN_REASON"
+        exit $rc
+    '
+    [ "$status" -eq 2 ]
+    echo "$output" | grep -q "REASON=capture_pane_failed"
 }
 
 # --- T-SHOOK-001: Claude Code throttle uses 60s cooldown (post PR#75: stop-hook supplementary) ---
