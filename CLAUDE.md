@@ -323,3 +323,4 @@ When processing large datasets (30+ items requiring individual web search, API c
 - **判断の置き場所(論点R・殿裁定 2026-10-05)**: 後から戻せる判断は将軍が裁いて記帳する。外部公開仕様・後から変えにくい判断は殿に上げる。
 - **将軍の自己検証の範囲(論点S)**: 将軍は裁定に要る実測を自ら行ってよい。ただし read-only の数コマンドに限り、反復・網羅的な検証や実装は家老へ委ねる(F001)。
 - **殿の承認を要するもの**: D001-D008・push/公開(F007)・金銭を伴う操作のみ(Q58)。それ以外は各層で裁く。
+- **秘匿値の扱い**: ntfy_topic・認証トークンなどの秘匿値は、報告・journal・ログ・commit message・task YAML・コードのどこにも値を書かない。言及は鍵名(例: `NTFY_TOPIC`)のみ。値の置場は `~/.config/multi-agent-shogun/secrets.env`(殿が手で作る。エージェントは作らず読まない)。混入確認は置場の値を `grep -F -f` で照合し、値は表示せず件数だけを見る。最後の関門は pre-push hook(`scripts/githooks/pre-push`)。
