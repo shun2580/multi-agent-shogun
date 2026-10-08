@@ -206,51 +206,6 @@ reset_nudge_throttle() {
     LAST_NUDGE_COUNT=""
 }
 
-# ─── Timing hook: agent_started event (cmd_054c, cmd_id/task_id fix: cmd_068) ───
-# Fires alongside the "All messages read — escalation reset" log lines, i.e.
-# near the moment the agent has finished processing its inbox. Callers extract
-# cmd_id/task_id from the content of the most-recently-read message (via
-# extract_timing_ids_from_content) and pass them in; on extraction failure
-# they remain empty (log_timing_event.sh normalizes empty to null — same
-# fail-safe fallback as inbox_write.sh's CONTENT regex extraction).
-# Fire-and-forget: failure here must never affect the main watcher loop.
-log_agent_started_event() {
-    local cmd_id="${1:-}"
-    local task_id="${2:-}"
-    bash "${SCRIPT_DIR}/scripts/log_timing_event.sh" agent_started "$cmd_id" "$task_id" "$AGENT_ID" --source=inbox_watcher.sh 2>/dev/null || true
-}
-
-log_agent_notified_event() {
-    local cmd_id="${1:-}"
-    local task_id="${2:-}"
-    bash "${SCRIPT_DIR}/scripts/log_timing_event.sh" agent_notified "$cmd_id" "$task_id" "$AGENT_ID" --source=inbox_watcher.sh 2>/dev/null || true
-}
-
-# Extract cmd_id/task_id from a message content string, using the same
-# regex as inbox_write.sh's CONTENT fallback (cmd_068 Fix1). Prints
-# "cmd_id<TAB>task_id" (either half may be empty on no-match).
-extract_timing_ids_from_content() {
-    local content="$1"
-    local cmd_id task_id
-    cmd_id=$(printf '%s' "$content" | grep -oE 'cmd_[0-9]+[a-zA-Z]*' | head -1)
-    task_id=$(printf '%s' "$content" | grep -oE 'subtask_[0-9]+[a-zA-Z0-9]*' | head -1)
-    printf '%s\t%s' "$cmd_id" "$task_id"
-}
-
-# Resolve cmd_id/task_id for the agent_started event (cmd_072 Fix5). Prefers
-# the message object's own cmd_id/task_id fields (set by inbox_write.sh at
-# write time — no ambiguity, no regex). Falls back to extract_timing_ids_from_content
-# only when both fields are absent, which happens solely for messages written
-# before Fix5 landed (backward compat, never touch new writes).
-resolve_timing_ids() {
-    local msg_cmd_id="$1" msg_task_id="$2" content="$3"
-    if [ -n "$msg_cmd_id" ] || [ -n "$msg_task_id" ]; then
-        printf '%s\t%s' "$msg_cmd_id" "$msg_task_id"
-    else
-        extract_timing_ids_from_content "$content"
-    fi
-}
-
 acquire_inbox_lock() {
     local lock_dir="${LOCKFILE}.d"
     local i=0
@@ -1344,12 +1299,6 @@ print(c if c is not None else '')
         # no_idle_full_read guard: unread=0 and timeout path → no full inbox read
         if [ "$FIRST_UNREAD_SEEN" -ne 0 ]; then
             echo "[$(date)] All messages read for $AGENT_ID — escalation reset (fast-path)" >&2
-            local fast_latest_content fast_msg_cmd_id fast_msg_task_id fast_ids
-            fast_latest_content=$(echo "$fast_info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(json.load(sys.stdin).get('latest_content',''))" 2>/dev/null)
-            fast_msg_cmd_id=$(echo "$fast_info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(json.load(sys.stdin).get('latest_cmd_id',''))" 2>/dev/null)
-            fast_msg_task_id=$(echo "$fast_info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(json.load(sys.stdin).get('latest_task_id',''))" 2>/dev/null)
-            fast_ids=$(resolve_timing_ids "$fast_msg_cmd_id" "$fast_msg_task_id" "$fast_latest_content")
-            log_agent_started_event "$(printf '%s' "$fast_ids" | cut -f1)" "$(printf '%s' "$fast_ids" | cut -f2)"
         fi
         FIRST_UNREAD_SEEN=0
         NEW_CONTEXT_SENT=0
@@ -1525,12 +1474,6 @@ for s in data.get('specials', []):
         # Track when we first saw unread messages
         if [ "$FIRST_UNREAD_SEEN" -eq 0 ]; then
             FIRST_UNREAD_SEEN=$now
-            local notify_content notify_cmd_id notify_task_id notify_ids
-            notify_content=$(echo "$info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(json.load(sys.stdin).get('latest_content',''))" 2>/dev/null)
-            notify_cmd_id=$(echo "$info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(json.load(sys.stdin).get('latest_cmd_id',''))" 2>/dev/null)
-            notify_task_id=$(echo "$info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(json.load(sys.stdin).get('latest_task_id',''))" 2>/dev/null)
-            notify_ids=$(resolve_timing_ids "$notify_cmd_id" "$notify_task_id" "$notify_content")
-            log_agent_notified_event "$(printf '%s' "$notify_ids" | cut -f1)" "$(printf '%s' "$notify_ids" | cut -f2)"
         fi
 
         if [ "${ASW_DISABLE_ESCALATION:-0}" = "1" ]; then
@@ -1593,27 +1536,6 @@ for s in data.get('specials', []):
                     send_wakeup_with_escape "$normal_count"
                 else
                     echo "[$(date)] ESCALATION Phase 3: Agent $AGENT_ID unresponsive for ${age}s. Sending /clear." >&2
-                    # cmd_087 Part B: Phase3発火時の状態計装(しきい値・判定条件は無変更)
-                    local p3_busy p3_pane_cmd p3_age p3_content p3_cmd_id p3_task_id p3_ids
-                    # cmd_123 Part A: log the raw tri-state (not the collapsed boolean) so
-                    # "unknown" observation failures at the moment /clear fires are visible
-                    # in the metric used to track today's 17-fire/5696s baseline.
-                    agent_is_busy_tri
-                    case $? in
-                        0) p3_busy="true" ;;
-                        1) p3_busy="false" ;;
-                        2) p3_busy="unknown" ;;
-                    esac
-                    p3_pane_cmd=$(timeout 2 tmux display-message -t "$PANE_TARGET" -p '#{pane_current_command}' 2>/dev/null || echo "")
-                    p3_age="$age"
-                    p3_content=$(echo "$info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(json.load(sys.stdin).get('latest_content',''))" 2>/dev/null)
-                    p3_cmd_id=$(echo "$info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(json.load(sys.stdin).get('latest_cmd_id',''))" 2>/dev/null)
-                    p3_task_id=$(echo "$info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(json.load(sys.stdin).get('latest_task_id',''))" 2>/dev/null)
-                    p3_ids=$(resolve_timing_ids "$p3_cmd_id" "$p3_task_id" "$p3_content")
-                    extra_json=$(printf '{"busy":"%s","pane_cmd":"%s","age_sec":"%s"}' "$p3_busy" "$p3_pane_cmd" "$p3_age")
-                    bash "${SCRIPT_DIR}/scripts/log_timing_event.sh" phase3_fired \
-                        "$(printf '%s' "$p3_ids" | cut -f1)" "$(printf '%s' "$p3_ids" | cut -f2)" "$AGENT_ID" \
-                        --source="inbox_watcher.sh:phase3" --extra="$extra_json"
                     send_cli_command "/clear"
                     LAST_CLEAR_TS=$now
                     FIRST_UNREAD_SEEN=0  # Reset — will re-detect on next cycle
@@ -1629,12 +1551,6 @@ for s in data.get('specials', []):
         # No unread messages — reset escalation tracker
         if [ "$FIRST_UNREAD_SEEN" -ne 0 ]; then
             echo "[$(date)] All messages read for $AGENT_ID — escalation reset" >&2
-            local latest_content msg_cmd_id msg_task_id ids
-            latest_content=$(echo "$info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(json.load(sys.stdin).get('latest_content',''))" 2>/dev/null)
-            msg_cmd_id=$(echo "$info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(json.load(sys.stdin).get('latest_cmd_id',''))" 2>/dev/null)
-            msg_task_id=$(echo "$info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(json.load(sys.stdin).get('latest_task_id',''))" 2>/dev/null)
-            ids=$(resolve_timing_ids "$msg_cmd_id" "$msg_task_id" "$latest_content")
-            log_agent_started_event "$(printf '%s' "$ids" | cut -f1)" "$(printf '%s' "$ids" | cut -f2)"
         fi
         FIRST_UNREAD_SEEN=0
         NEW_CONTEXT_SENT=0
@@ -1665,8 +1581,7 @@ if [ "${__INBOX_WATCHER_TESTING__:-}" != "1" ]; then
 fi
 
 # ─── Function definitions below are always loaded, even in testing mode ───
-# (cmd_146: check_urgent_inbox_escalation needs to be
-# unit-testable via bats; only the main loop itself stays gated — see below)
+# (so they stay unit-testable via bats; only the main loop itself stays gated — see below)
 
 # ─── Escalation threshold check (cmd_052d) ───
 # Counts this agent's auto_heal events in logs/auto_heal_events.jsonl within the
@@ -1873,138 +1788,6 @@ check_and_heal_dead_cli() {
     return 0
 }
 
-# ─── Urgent inbox escalation watchdog (cmd_146②) ───
-# queue/inbox/*.yaml の各エントリに`urgent: true`かつ`read: false`のまま
-# 閾値時間を超えたものがあれば殿へntfyエスカレーションする。2026-08-01、
-# 軍師の緊急報告がkaroのinboxでread:falseのまま3日間放置された実損事案の
-# 再発防止(north_star cmd_146)。karo instanceのメインループからのみ呼ばれる。
-_read_urgent_escalation_setting() {
-    local key="$1" default="$2"
-    "$SCRIPT_DIR/.venv/bin/python3" -c "
-import yaml
-try:
-    with open('${SCRIPT_DIR}/config/settings.yaml', encoding='utf-8') as f:
-        data = yaml.safe_load(f) or {}
-    v = (data.get('urgent_inbox_escalation') or {}).get('$key')
-    if v is None:
-        v = '$default'
-    print(v)
-except Exception:
-    print('$default')
-" 2>/dev/null
-}
-
-check_urgent_inbox_escalation() {
-    local marker="${SCRIPT_DIR}/logs/.urgent_inbox_escalation_last_check"
-    local interval_min
-    interval_min=$(_read_urgent_escalation_setting check_interval_minutes 5)
-    [ -n "$interval_min" ] || interval_min=5
-
-    mkdir -p "${SCRIPT_DIR}/logs" 2>/dev/null || true
-
-    if [ -f "$marker" ]; then
-        local last_check now_epoch elapsed_min
-        last_check=$(stat -c %Y "$marker" 2>/dev/null || echo 0)
-        now_epoch=$(date +%s)
-        elapsed_min=$(( (now_epoch - last_check) / 60 ))
-        if [ "$elapsed_min" -lt "$interval_min" ]; then
-            return 0
-        fi
-    fi
-    touch "$marker" 2>/dev/null || true
-
-    local threshold_min cooldown_min
-    threshold_min=$(_read_urgent_escalation_setting threshold_minutes 120)
-    cooldown_min=$(_read_urgent_escalation_setting cooldown_after_escalation_minutes 60)
-    [ -n "$threshold_min" ] || threshold_min=120
-    [ -n "$cooldown_min" ] || cooldown_min=60
-
-    local inbox_dir="${SCRIPT_DIR}/queue/inbox"
-    [ -d "$inbox_dir" ] || return 0
-
-    INBOX_DIR="$inbox_dir" \
-    URGENT_THRESHOLD_MIN="$threshold_min" \
-    URGENT_COOLDOWN_MIN="$cooldown_min" \
-    TIMING_JSONL="${SCRIPT_DIR}/logs/timing_events.jsonl" \
-    "$SCRIPT_DIR/.venv/bin/python3" -c "
-import datetime, glob, json, os
-import yaml
-
-inbox_dir = os.environ['INBOX_DIR']
-threshold_min = float(os.environ['URGENT_THRESHOLD_MIN'])
-cooldown_min = float(os.environ['URGENT_COOLDOWN_MIN'])
-jsonl_path = os.environ['TIMING_JSONL']
-
-now = datetime.datetime.now()
-cooldown_start = now - datetime.timedelta(minutes=cooldown_min)
-
-# 直近cooldown内にエスカレーション済みのmessage idを集める(単一情報源=timing_events.jsonl)
-escalated_recently = set()
-try:
-    with open(jsonl_path, encoding='utf-8') as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rec = json.loads(line)
-            except Exception:
-                continue
-            if rec.get('event') != 'urgent_inbox_escalated':
-                continue
-            mid = rec.get('task_id')
-            ts_raw = rec.get('ts')
-            if not mid or not ts_raw:
-                continue
-            try:
-                ts = datetime.datetime.fromisoformat(ts_raw)
-            except Exception:
-                continue
-            if ts.tzinfo is not None:
-                ts = ts.replace(tzinfo=None)
-            if ts >= cooldown_start:
-                escalated_recently.add(mid)
-except Exception:
-    pass
-
-for path in sorted(glob.glob(os.path.join(inbox_dir, '*.yaml'))):
-    agent = os.path.splitext(os.path.basename(path))[0]
-    try:
-        with open(path, encoding='utf-8') as f:
-            data = yaml.safe_load(f) or {}
-    except Exception:
-        continue
-    for msg in (data.get('messages') or []):
-        if not isinstance(msg, dict):
-            continue
-        if not msg.get('urgent'):
-            continue
-        if msg.get('read'):
-            continue
-        mid = msg.get('id')
-        ts_raw = msg.get('timestamp')
-        if not mid or not ts_raw:
-            continue
-        try:
-            ts = datetime.datetime.fromisoformat(ts_raw)
-        except Exception:
-            continue
-        age_min = (now - ts).total_seconds() / 60
-        if age_min < threshold_min:
-            continue
-        if mid in escalated_recently:
-            continue
-        snippet = str(msg.get('content') or '')[:50]
-        print(agent + '\t' + mid + '\t' + snippet)
-" 2>/dev/null | while IFS=$'\t' read -r agent msg_id snippet; do
-        [ -n "$msg_id" ] || continue
-        bash "${SCRIPT_DIR}/scripts/ntfy.sh" "🚨 緊急未読(${threshold_min}分超): [${agent}] ${snippet}" >&2 || true
-        bash "${SCRIPT_DIR}/scripts/log_timing_event.sh" urgent_inbox_escalated "" "$msg_id" "$agent" --source=inbox_watcher.sh || true
-    done
-
-    return 0
-}
-
 # ─── Main loop: event-driven via inotifywait (skipped in testing mode) ───
 if [ "${__INBOX_WATCHER_TESTING__:-}" != "1" ]; then
 # Timeout 30s: WSL2 /mnt/c/ can miss inotify events.
@@ -2058,9 +1841,6 @@ while true; do
 
     if [ "$rc" -eq 2 ]; then
         check_and_heal_dead_cli
-        if [ "$AGENT_ID" = "karo" ]; then
-            check_urgent_inbox_escalation || true
-        fi
         if [ "${ASW_PROCESS_TIMEOUT:-1}" = "1" ]; then
             process_unread "timeout"
         fi

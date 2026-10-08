@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # inbox_write.sh — メールボックスへのメッセージ書き込み（排他ロック付き）
-# Usage: bash scripts/inbox_write.sh <target_agent> <content> <type> <from> [--cmd_id=X] [--task_id=Y] [--qc_result=pass|fail] [--urgent[=true]]
+# Usage: bash scripts/inbox_write.sh <target_agent> <content> <type> <from> [--cmd_id=X] [--task_id=Y] [--qc_result=pass|fail]
 # Example: bash scripts/inbox_write.sh karo "足軽5号、任務完了" report_received ashigaru5
 # Example (明示引数): bash scripts/inbox_write.sh karo "足軽5号、任務完了" report_received ashigaru5 --cmd_id=cmd_054 --task_id=subtask_054b2
 # Example (QC結果付き): bash scripts/inbox_write.sh karo "足軽5号QC完了" report_received gunshi --cmd_id=cmd_054 --task_id=subtask_054b2 --qc_result=pass
-# Example (緊急フラグ付き・cmd_146): bash scripts/inbox_write.sh karo "至急確認されたし" report_received gunshi --urgent
 
 set -e
 
@@ -20,7 +19,7 @@ LOCKFILE="${INBOX}.lock"
 
 # Validate arguments
 if [ -z "$TARGET" ] || [ -z "$CONTENT" ] || [ -z "$TYPE" ] || [ -z "$FROM" ]; then
-    echo "Usage: inbox_write.sh <target_agent> <content> <type> <from> [--cmd_id=X] [--task_id=Y] [--qc_result=pass|fail] [--urgent[=true]]" >&2
+    echo "Usage: inbox_write.sh <target_agent> <content> <type> <from> [--cmd_id=X] [--task_id=Y] [--qc_result=pass|fail]" >&2
     exit 1
 fi
 
@@ -29,22 +28,14 @@ _ARG_CMD_ID=""
 _ARG_TASK_ID=""
 _ARG_REDO_OF=""
 _ARG_QC_RESULT=""
-_ARG_URGENT="false"
 for arg in "$@"; do
     case "$arg" in
         --cmd_id=*) _ARG_CMD_ID="${arg#--cmd_id=}" ;;
         --task_id=*) _ARG_TASK_ID="${arg#--task_id=}" ;;
         --redo_of=*) _ARG_REDO_OF="${arg#--redo_of=}" ;;
         --qc_result=*) _ARG_QC_RESULT="${arg#--qc_result=}" ;;
-        --urgent=*) _ARG_URGENT="${arg#--urgent=}" ;;
-        --urgent) _ARG_URGENT="true" ;;
     esac
 done
-# Normalize to python-literal True/False (cmd_146: urgent_inbox_escalation reads
-# msg.get('urgent') truthily via yaml.safe_load, so the written value must be a
-# real YAML bool, not the string "true"/"false").
-_PY_URGENT="False"
-[ "$_ARG_URGENT" = "true" ] && _PY_URGENT="True"
 
 # Fix5 (cmd_072): resolve cmd_id/task_id BEFORE writing the message object,
 # so they can be embedded as fields on the message itself. Previously these
@@ -61,7 +52,7 @@ _PY_URGENT="False"
 # which conventionally carries --redo_of=<original_task_id> per the redo
 # report-back convention) as redo_dispatched instead of report_submitted.
 # That made the redo task's own completion invisible to
-# lib/inflight_tasks.sh / deadman_watcher.sh, which treat "no
+# the (since removed) in-flight/stall detectors, which treat "no
 # report_submitted after the latest assigned/redo_dispatched" as in-flight
 # — so completed+QC-passed redo tasks stayed flagged as stalled forever
 # (real incidents: subtask_158_B2/H2/E2, 2026-08-08).
@@ -86,7 +77,7 @@ _TIMING_TASK_ID="${_ARG_TASK_ID:-$(printf '%s' "$CONTENT" | grep -oE 'subtask_[0
 # matches the regexes above, so _TIMING_CMD_ID/_TIMING_TASK_ID stay empty and the
 # resulting timing_events.jsonl row is recorded with task_id=None. That row is silently
 # unusable: deadman_watcher.sh's own get_in_flight_tasks() requires a non-empty task_id
-# key to arm a task (lib/inflight_tasks.sh's stall_watcher.sh path is unaffected — cmd_194
+# key to arm a task (the stall_watcher.sh path is unaffected — cmd_194
 # already made it read queue/tasks/*.yaml status directly instead of timing_events.jsonl,
 # but that change explicitly left deadman_watcher.sh's separate function out of scope).
 # karo.md's dispatch STEP2 ("YAML-first principle") always writes queue/tasks/{TARGET}.yaml
@@ -208,8 +199,7 @@ try:
         'content': '''$CONTENT''',
         'read': False,
         'cmd_id': $_PY_CMD_ID,
-        'task_id': $_PY_TASK_ID,
-        'urgent': $_PY_URGENT
+        'task_id': $_PY_TASK_ID
     }
     data['messages'].append(new_msg)
 
@@ -243,20 +233,6 @@ except Exception as e:
         _release_lock
         trap - EXIT
         if [ $STATUS -eq 0 ]; then
-            if [ -n "$_TIMING_EVENT" ]; then
-                _TIMING_AGENT="$TARGET"
-                [ "$_TIMING_EVENT" = "report_submitted" ] && _TIMING_AGENT="$FROM"
-                # Fix4 (cmd_068): warn when neither explicit arg nor CONTENT regex
-                # resolved cmd_id, so a missed --cmd_id= is visible immediately
-                # instead of surfacing as a 92%-unmeasurable E2E result later.
-                if [ -z "$_TIMING_CMD_ID" ] && [ "$_TIMING_EVENT" != "agent_started" ]; then
-                    echo "[inbox_write] WARNING: cmd_id not resolved for timing event '$_TIMING_EVENT' (pass --cmd_id= explicitly)" >&2
-                fi
-                if [ -z "$_TIMING_TASK_ID" ] && [ "$_TIMING_EVENT" != "agent_started" ]; then
-                    echo "[inbox_write] WARNING: task_id not resolved for timing event '$_TIMING_EVENT' (pass --task_id= explicitly)" >&2
-                fi
-                bash "${SCRIPT_DIR}/scripts/log_timing_event.sh" "$_TIMING_EVENT" "$_TIMING_CMD_ID" "$_TIMING_TASK_ID" "$_TIMING_AGENT" --redo_of="$_ARG_REDO_OF" --qc_result="$_ARG_QC_RESULT" --source=inbox_write.sh 2>/dev/null || true
-            fi
             exit 0
         fi
         attempt=$((attempt + 1))
