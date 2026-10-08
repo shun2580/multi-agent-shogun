@@ -143,7 +143,7 @@ For the 将軍 system, tmux compatibility is a **high-risk area** requiring dedi
 | tmux integration | ✅ Battle-tested | ⚠️ Untested |
 | Non-interactive mode | ✅ `claude -p` | ⚠️ Unconfirmed |
 | `/clear` context reset | ✅ Available | ❌ None (use /compact or restart) |
-| Memory MCP | ✅ Persistent knowledge graph | ❌ No equivalent |
+| Persistent memory | ✅ File-based auto-memory (MEMORY.md) | ❌ No equivalent |
 | Cost model | API token-based (no limits) | Subscription (premium req limits) |
 | 8-agent parallel | ✅ Proven | ❌ Premium req limits prohibitive |
 | Dedicated file tools | ✅ Read/Write/Edit/Glob/Grep | General file tools with approval |

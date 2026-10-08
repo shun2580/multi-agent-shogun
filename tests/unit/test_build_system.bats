@@ -103,6 +103,22 @@ setup() {
     [ -f "$OUTPUT_DIR/opencode-gunshi.md" ]
 }
 
+@test "antigravity: antigravity-shogun.md generated" {
+    [ -f "$OUTPUT_DIR/antigravity-shogun.md" ]
+}
+
+@test "antigravity: antigravity-karo.md generated" {
+    [ -f "$OUTPUT_DIR/antigravity-karo.md" ]
+}
+
+@test "antigravity: antigravity-ashigaru.md generated" {
+    [ -f "$OUTPUT_DIR/antigravity-ashigaru.md" ]
+}
+
+@test "antigravity: antigravity-gunshi.md generated" {
+    [ -f "$OUTPUT_DIR/antigravity-gunshi.md" ]
+}
+
 @test "opencode: generated markdown is LF-only and has no trailing whitespace [R6]" {
     local file
 
@@ -181,6 +197,10 @@ setup() {
     [ -s "$OUTPUT_DIR/opencode-gunshi.md" ]
 }
 
+@test "content: antigravity-shogun.md is not empty" {
+    [ -s "$OUTPUT_DIR/antigravity-shogun.md" ]
+}
+
 # =============================================================================
 # 内容検証テスト — ロール名含有
 # =============================================================================
@@ -225,6 +245,10 @@ setup() {
     grep -qi "gunshi\|軍師" "$OUTPUT_DIR/opencode-gunshi.md"
 }
 
+@test "content: antigravity-shogun.md contains shogun role reference" {
+    grep -qi "shogun\|将軍" "$OUTPUT_DIR/antigravity-shogun.md"
+}
+
 # =============================================================================
 # 内容検証テスト — CLI固有セクション
 # =============================================================================
@@ -240,6 +264,10 @@ setup() {
 
 @test "content: opencode files contain OpenCode-specific content [R6]" {
     grep -qi "opencode\|OpenCode\|--agent" "$OUTPUT_DIR/opencode-shogun.md"
+}
+
+@test "content: antigravity files contain Antigravity-specific content" {
+    grep -qi "antigravity\|Antigravity\|agy" "$OUTPUT_DIR/antigravity-shogun.md"
 }
 
 @test "content: copilot files contain Copilot-specific content [Phase 2+3]" {
@@ -284,6 +312,24 @@ setup() {
 
 @test "opencode-agent: generated agent frontmatter contains permission section [R6]" {
     grep -q '^permission:' "$PROJECT_ROOT/.opencode/agents/shogun.md"
+}
+
+@test "opencode-agent: tracked agent frontmatter excludes runtime routing [R6]" {
+    PROJECT_ROOT="$PROJECT_ROOT" "$PROJECT_ROOT/.venv/bin/python3" - <<'PYEOF'
+from pathlib import Path
+import os
+import yaml
+
+project_root = Path(os.environ["PROJECT_ROOT"])
+agents_dir = project_root / ".opencode" / "agents"
+for path in sorted(agents_dir.glob("*.md")):
+    if path.name.endswith("-runtime.md"):
+        continue
+    text = path.read_text(encoding="utf-8")
+    frontmatter = yaml.safe_load(text.split("---", 2)[1])
+    assert "model" not in frontmatter, f"{path.name}: tracked generated agent must not depend on local settings.yaml"
+    assert "variant" not in frontmatter, f"{path.name}: tracked generated agent must not depend on local settings.yaml"
+PYEOF
 }
 
 @test "opencode-agent: ashigaru1 read permissions allow own inbox/report/task [R6]" {

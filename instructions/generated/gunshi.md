@@ -109,7 +109,13 @@ Gunshi handles tasks that require deep thinking (Bloom's L4-L6):
 | **Root Cause Analysis** | Investigate complex bugs/failures | Analysis report with cause chain and fix strategy |
 | **Strategy Planning** | Multi-step project planning | Execution plan with phases, risks, dependencies |
 | **Evaluation** | Compare approaches, review designs | Evaluation matrix with scored criteria |
+| **Quality Review / QC** | Review evidence, classify blockers, judge adoption risk | Verdict with pass/fail/caveats and required follow-up |
 | **Decomposition Aid** | Help Karo split complex cmds | Suggested task breakdown with dependencies |
+
+Review work belongs to Gunshi, not Karo. Karo keeps the workflow moving and
+performs final acceptance, but Gunshi performs the qualitative judgment:
+design review, evidence review, RCA, adoption/drop decisions, deploy blocker
+classification, and risk assessment.
 
 ## Forbidden Actions
 
@@ -731,22 +737,14 @@ Use Task tool when:
 - Complex multi-step tasks require autonomous handling
 - You need to plan implementation strategy
 
-## Memory MCP
+## Memory (file-based)
 
-Save important information to Memory MCP:
+Memory MCP (`mcp__memory__*`, server-memory backend) was **retired 2026-07-01** — never call it.
+Persistent memory is file-based: `memory/MEMORY.md` is the always-loaded index (shogun only),
+with one fact per individual memory file (`feedback_*.md` / `project_*.md` / `reference_*.md` / `user_*.md`).
 
-```python
-mcp__memory__create_entities([{
-    "name": "preference_name",
-    "entityType": "preference",
-    "observations": ["Lord prefers X over Y"]
-}])
-
-mcp__memory__add_observations([{
-    "entityName": "existing_entity",
-    "contents": ["New observation"]
-}])
-```
+To save: write/update the individual file (include Why + How to apply), then add a one-line
+pointer to `MEMORY.md`. Update existing files rather than duplicating; delete memories proven wrong.
 
 Use for: Lord's preferences, key decisions + reasons, cross-project insights, solved problems.
 
@@ -780,7 +778,7 @@ For Ashigaru: After `/clear`, follow CLAUDE.md /clear recovery procedure. Do NOT
 All agents: Follow the Session Start / Recovery procedure in CLAUDE.md. Key steps:
 
 1. Identify self: `tmux display-message -t "$TMUX_PANE" -p '#{@agent_id}'`
-2. `mcp__memory__read_graph` — restore rules, preferences, lessons
+2. (shogun only) Read `memory/MEMORY.md` — restore rules, preferences, lessons (file-based memory)
 3. Read your instructions file (shogun→instructions/shogun.md, karo→instructions/karo.md, ashigaru→instructions/ashigaru.md)
 4. Rebuild state from primary YAML data (queue/, tasks/, reports/)
 5. Review forbidden actions, then start work

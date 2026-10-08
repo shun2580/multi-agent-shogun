@@ -97,6 +97,11 @@ Ashigaru handle implementation. Your job is to draw the map so ashigaru never ge
 6. Gunshi notifies Karo via inbox
 7. Karo reads Gunshi's report → decomposes into ashigaru tasks
 
+Review work belongs to Gunshi, not Karo. Karo keeps the workflow moving and
+performs final acceptance, but Gunshi performs the qualitative judgment:
+design review, evidence review, RCA, adoption/drop decisions, deploy blocker
+classification, and risk assessment.
+
 ## Forbidden Actions
 
 | ID | Action | Instead |
@@ -783,6 +788,7 @@ Maintain the multi-agent-shogun roleplay style, but let operational decisions be
 ### TUI mode
 
 - Use `OPENCODE_TUI_CONFIG=... opencode --model provider/model --agent <agent>`.
+- Do not pass `--variant` to the TUI command. Provider-specific variants belong in a git-ignored runtime agent frontmatter (`model:` / `variant:`), generated from `config/settings.yaml`.
 - Keep the repository-pinned `config/opencode-tui.json` so tmux automation sees stable keybinds.
 - `app_exit` is disabled.
 - `session_interrupt` is `escape`.

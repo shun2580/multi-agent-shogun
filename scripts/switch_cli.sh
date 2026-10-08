@@ -3,7 +3,7 @@
 # switch_cli.sh — エージェントのCLIセッションを安全に切り替える
 #
 # Usage:
-#   bash scripts/switch_cli.sh <agent_id> [--type <cli_type>] [--model <model_name>]
+#   bash scripts/switch_cli.sh <agent_id> [--type <cli_type>] [--model <model_name>] [--effort <level>] [--variant <variant>]
 #
 # Examples:
 #   # settings.yaml の現在値で再起動（CLI種別/モデル変更なし）
@@ -56,7 +56,7 @@ get_agent_fixed() {
 
 # ─── Usage ───
 usage() {
-    echo "Usage: $0 <agent_id> [--type <cli_type>] [--model <model_name>]"
+    echo "Usage: $0 <agent_id> [--type <cli_type>] [--model <model_name>] [--effort <level>] [--variant <variant>]"
     echo ""
     echo "  agent_id   Agent configured in config/settings.yaml (e.g. karo, ashigaru1, gunshi)"
     echo "  --type     claude | codex | copilot | kimi | opencode | gemini"
@@ -105,12 +105,14 @@ update_settings_yaml() {
     local agent_id="$1"
     local new_type="${2:-}"
     local new_model="${3:-}"
+    local new_variant="${4:-}"
+    local new_effort="${5:-}"
 
-    if [[ -z "$new_type" && -z "$new_model" ]]; then
+    if [[ -z "$new_type" && -z "$new_model" && -z "$new_variant" && -z "$new_effort" ]]; then
         return 0
     fi
 
-    log "Updating settings.yaml: ${agent_id} → type=${new_type:-<unchanged>}, model=${new_model:-<unchanged>}"
+    log "Updating settings.yaml: ${agent_id} → type=${new_type:-<unchanged>}, model=${new_model:-<unchanged>}, effort=${new_effort:-<unchanged>}, variant=${new_variant:-<unchanged>}"
 
     "${PROJECT_ROOT}/.venv/bin/python3" << PYEOF
 import yaml, sys, os, datetime
@@ -119,6 +121,8 @@ settings_path = "${SETTINGS_FILE}"
 agent_id = "${agent_id}"
 new_type = "${new_type}" or None
 new_model = "${new_model}" or None
+new_variant = "${new_variant}" or None
+new_effort = "${new_effort}" or None
 
 with open(settings_path, 'r', encoding='utf-8') as f:
     content = f.read()
@@ -140,6 +144,10 @@ if new_type:
     agent_cfg['type'] = new_type
 if new_model:
     agent_cfg['model'] = new_model
+if new_variant:
+    agent_cfg['variant'] = new_variant
+if new_effort:
+    agent_cfg['effort'] = new_effort
 
 data['cli']['agents'][agent_id] = agent_cfg
 
@@ -166,12 +174,37 @@ while i < len(lines):
         in_agent_block = True
         agent_indent = len(line) - len(stripped)
         new_lines.append(line)
-        # Write the updated fields
+        # Write the updated block. Preserve unspecified existing fields so
+        # passing --effort alone cannot accidentally drop type/model/thinking.
         inner_indent = ' ' * (agent_indent + 2)
+        ordered_keys = ['type', 'model', 'effort', 'thinking', 'variant']
+        ordered_keys.extend(k for k in agent_cfg.keys() if k not in ordered_keys)
+
+        def format_scalar(value):
+            if isinstance(value, bool):
+                return 'true' if value else 'false'
+            dumped = yaml.safe_dump(value, allow_unicode=True, default_flow_style=True).strip()
+            if dumped.endswith('\n...'):
+                dumped = dumped[:-4].strip()
+            if dumped == '...':
+                dumped = ''
+            return dumped
+
+        changed_keys = set()
         if new_type:
-            new_lines.append(f'{inner_indent}type: {new_type}')
+            changed_keys.add('type')
         if new_model:
-            new_lines.append(f'{inner_indent}model: {new_model}  {comment}')
+            changed_keys.add('model')
+        if new_variant:
+            changed_keys.add('variant')
+        if new_effort:
+            changed_keys.add('effort')
+
+        for key in ordered_keys:
+            if key not in agent_cfg:
+                continue
+            suffix = f'  {comment}' if key in changed_keys else ''
+            new_lines.append(f'{inner_indent}{key}: {format_scalar(agent_cfg[key])}{suffix}')
         # Skip old sub-fields
         i += 1
         while i < len(lines):
@@ -206,6 +239,77 @@ else:
             f.write('\n') if not '\n'.join(new_lines).endswith('\n') else None
 
 print("OK")
+PYEOF
+}
+
+# ─── OpenCode runtime agent frontmatter 同期 ───
+# OpenCode TUI は `opencode run` と違って --variant を受け付けない。
+# provider固有variantは git-ignored の .opencode/agents/<agent>-runtime.md に同期する。
+sync_opencode_agent_frontmatter() {
+    local agent_id="$1"
+    local model="${2:-}"
+    local variant="${3:-}"
+    local base_file="${PROJECT_ROOT}/.opencode/agents/${agent_id}.md"
+    local runtime_file="${PROJECT_ROOT}/.opencode/agents/${agent_id}-runtime.md"
+    local normalized_model
+
+    [[ -f "$base_file" ]] || return 0
+
+    normalized_model="$(normalize_opencode_model "$model")"
+
+    if [[ -z "$variant" ]]; then
+        rm -f "$runtime_file"
+        return 0
+    fi
+
+    log "Syncing OpenCode runtime agent: ${agent_id}-runtime → model=${normalized_model:-<unset>}, variant=${variant}"
+
+    "${PROJECT_ROOT}/.venv/bin/python3" - "$base_file" "$runtime_file" "$normalized_model" "$variant" <<'PYEOF'
+import sys
+from pathlib import Path
+
+import yaml
+
+source = Path(sys.argv[1])
+dest = Path(sys.argv[2])
+model = sys.argv[3] or None
+variant = sys.argv[4] or None
+
+text = source.read_text(encoding="utf-8")
+if not text.startswith("---\n"):
+    raise SystemExit(0)
+
+parts = text.split("---", 2)
+if len(parts) < 3:
+    raise SystemExit(0)
+
+body = parts[2]
+route = {}
+if model:
+    route["model"] = model
+if variant:
+    route["variant"] = variant
+route_lines = yaml.safe_dump(route, allow_unicode=True, sort_keys=False).splitlines() if route else []
+
+frontmatter_lines = parts[1].lstrip("\n").splitlines()
+new_lines = []
+inserted = False
+for line in frontmatter_lines:
+    stripped = line.lstrip()
+    indent = len(line) - len(stripped)
+    if indent == 0 and (stripped.startswith("model:") or stripped.startswith("variant:")):
+        continue
+    if not inserted and indent == 0 and stripped.startswith("permission:"):
+        new_lines.extend(route_lines)
+        inserted = True
+    new_lines.append(line)
+
+if not inserted:
+    new_lines.extend(route_lines)
+
+frontmatter_text = "\n".join(new_lines).rstrip()
+
+dest.write_text(f"---\n{frontmatter_text}\n---{body}", encoding="utf-8")
 PYEOF
 }
 
@@ -244,6 +348,11 @@ send_exit() {
             tmux send-keys -t "$pane" "/exit" 2>/dev/null || true
             sleep 0.3
             tmux send-keys -t "$pane" Enter 2>/dev/null || true
+            ;;
+        cursor)
+            tmux send-keys -t "$pane" "/quit" 2>/dev/null || true
+            sleep 0.3
+            tmux send-keys -t "$pane" "" Enter 2>/dev/null || true
             ;;
         *)
             tmux send-keys -t "$pane" "/exit" 2>/dev/null || true
@@ -353,6 +462,14 @@ if [[ -n "$NEW_TYPE" ]] && ! _cli_adapter_is_valid_cli "$NEW_TYPE"; then
     log "ERROR: Invalid CLI type: ${NEW_TYPE}. Allowed: ${CLI_ADAPTER_ALLOWED_CLIS}"
     exit 1
 fi
+if [[ -n "$NEW_TYPE" ]]; then
+    NEW_TYPE=$(_cli_adapter_normalize_cli_type "$NEW_TYPE")
+fi
+
+if [[ -n "$NEW_EFFORT" && ! "$NEW_EFFORT" =~ ^(low|medium|high|xhigh|max)$ ]]; then
+    log "ERROR: Invalid effort: ${NEW_EFFORT}. Allowed: low, medium, high, xhigh, max"
+    exit 1
+fi
 
 # Step 0: pane解決
 PANE_TARGET=$(resolve_pane "$AGENT_ID")
@@ -403,9 +520,14 @@ fi
 # Step 2: 切替後のCLI情報を取得（settings.yaml反映後）
 TARGET_CLI_TYPE=$(get_cli_type "$AGENT_ID")
 TARGET_MODEL=$(get_agent_model "$AGENT_ID")
+TARGET_EFFORT=$(get_agent_effort "$AGENT_ID")
+TARGET_VARIANT=$(_cli_adapter_read_yaml "cli.agents.${AGENT_ID}.variant" "")
+if [[ "$TARGET_CLI_TYPE" == "opencode" ]]; then
+    sync_opencode_agent_frontmatter "$AGENT_ID" "$TARGET_MODEL" "$TARGET_VARIANT"
+fi
 TARGET_CMD=$(build_cli_command "$AGENT_ID")
 
-log "Target: cli=${TARGET_CLI_TYPE}, model=${TARGET_MODEL}, cmd=${TARGET_CMD}"
+log "Target: cli=${TARGET_CLI_TYPE}, model=${TARGET_MODEL}, effort=${TARGET_EFFORT:-<unset>}, cmd=${TARGET_CMD}"
 
 # Step 3: 現在のCLIを /exit で終了
 CURRENT_CLI=$(get_current_pane_cli "$PANE_TARGET")

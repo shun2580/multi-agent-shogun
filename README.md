@@ -4,18 +4,21 @@
 
 **Command your AI army like a feudal warlord.**
 
-Run 10 AI coding agents in parallel — **Claude Code, OpenAI Codex, GitHub Copilot, Kimi Code, OpenCode** — orchestrated through a samurai-inspired hierarchy with zero coordination overhead.
+Run 10 AI coding agents in parallel — **Claude Code, OpenAI Codex, GitHub Copilot, Kimi Code, OpenCode, Cursor, Antigravity** — orchestrated through a samurai-inspired hierarchy with zero coordination overhead.
 
 **Talk Coding, not Vibe Coding. Speak to your phone, AI executes.**
 
 [![GitHub Stars](https://img.shields.io/github/stars/yohey-w/multi-agent-shogun?style=social)](https://github.com/yohey-w/multi-agent-shogun)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![v5.0.0 OpenCode](https://img.shields.io/badge/v5.0.0-OpenCode-ff6600?style=flat-square&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiI+PHRleHQgeD0iMCIgeT0iMTIiIGZvbnQtc2l6ZT0iMTIiPuKalTwvdGV4dD48L3N2Zz4=)](https://github.com/yohey-w/multi-agent-shogun/releases/tag/v5.0.0)
+[![v5.1.0 Karo Traffic Control](https://img.shields.io/badge/v5.1.0-Karo%20Traffic%20Control-ff6600?style=flat-square&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiI+PHRleHQgeD0iMCIgeT0iMTIiIGZvbnQtc2l6ZT0iMTIiPuKalTwvdGV4dD48L3N2Zz4=)](https://github.com/yohey-w/multi-agent-shogun/releases/tag/v5.1.0)
 [![Shell](https://img.shields.io/badge/Shell%2FBash-100%25-green)]()
 
 [English](README.md) | [日本語](README_ja.md)
 
 </div>
+
+> **📖 Sequel (Aug 2026):** The author has since disbanded his own 10-agent army down to a single agent that carries his judgment. The successor project is [**kagemusha**](https://github.com/yohey-w/kagemusha) — it ships the forms of a *judgment loop* (corrections → principles → standing rules), not the agents. The story of the disbandment: [article (JP)](https://zenn.dev/shio_shoppaize/articles/kagemusha-shogun-disband). multi-agent-shogun itself continues to work as-is.
+
 
 <p align="center">
   <img src="images/screenshots/hero/latest-translucent-20260210-190453.png" alt="Latest translucent command session in the Shogun pane" width="940">
@@ -32,7 +35,7 @@ Run 10 AI coding agents in parallel — **Claude Code, OpenAI Codex, GitHub Copi
 
 ## Quick Start
 
-**Requirements:** tmux, bash 4+, at least one of: [Claude Code](https://claude.ai/code) / Codex / Copilot / Kimi / OpenCode
+**Requirements:** tmux, bash 4+, at least one of: [Claude Code](https://claude.ai/code) / Codex / Copilot / Kimi / OpenCode / Antigravity
 
 ```bash
 git clone https://github.com/yohey-w/multi-agent-shogun
@@ -58,7 +61,7 @@ You watch the dashboard. That's it.
 
 ## What is this?
 
-**multi-agent-shogun** is a system that runs multiple AI coding CLI instances simultaneously, orchestrating them like a feudal Japanese army. Supports **Claude Code**, **OpenAI Codex**, **GitHub Copilot**, **Kimi Code**, and **OpenCode**.
+**multi-agent-shogun** is a system that runs multiple AI coding CLI instances simultaneously, orchestrating them like a feudal Japanese army. Supports **Claude Code**, **OpenAI Codex**, **GitHub Copilot**, **Kimi Code**, **OpenCode**, **Cursor**, and **Antigravity**.
 
 **Why use it?**
 - One command spawns 7 AI workers + 1 strategist executing in parallel
@@ -95,7 +98,7 @@ Most multi-agent frameworks burn API tokens on coordination. Shogun doesn't.
 | **Architecture** | Subagents inside one process | Team lead + teammates (JSON mailbox) | Graph-based state machine | Role-based agents | Feudal hierarchy via tmux |
 | **Parallelism** | Sequential (one at a time) | Multiple independent sessions | Parallel nodes (v0.2+) | Limited | **8 independent agents** |
 | **Coordination cost** | API calls per Task | Token-heavy (each teammate = separate context) | API + infra (Postgres/Redis) | API + CrewAI platform | **Zero** (YAML + tmux) |
-| **Multi-CLI** | Claude Code only | Claude Code only | Any LLM API | Any LLM API | **5 CLIs** (Claude/Codex/Copilot/Kimi/OpenCode) |
+| **Multi-CLI** | Claude Code only | Claude Code only | Any LLM API | Any LLM API | **7 CLIs** (Claude/Codex/Copilot/Kimi/OpenCode/Cursor/Antigravity) |
 | **Observability** | Claude logs only | tmux split-panes or in-process | LangSmith integration | OpenTelemetry | **Live tmux panes** + dashboard |
 | **Skill discovery** | None | None | None | None | **Bottom-up auto-proposal** |
 | **Setup** | Built into Claude Code | Built-in (experimental) | Heavy (infra required) | pip install | Shell scripts |
@@ -125,7 +128,7 @@ Most AI coding tools charge per token. Running 8 Opus-grade agents through the A
 
 ### Multi-CLI Support
 
-Shogun isn't locked to one vendor. The system supports 5 CLI tools, each with unique strengths:
+Shogun isn't locked to one vendor. The system supports 7 CLI tools, each with unique strengths:
 
 | CLI | Key Strength | Default Model |
 |-----|-------------|---------------|
@@ -133,9 +136,13 @@ Shogun isn't locked to one vendor. The system supports 5 CLI tools, each with un
 | **OpenAI Codex** | Sandbox execution, JSONL structured output, `codex exec` headless mode, **per-model `--model` flag** | gpt-5.3-codex / **gpt-5.3-codex-spark** |
 | **GitHub Copilot** | Built-in GitHub MCP, 4 specialized agents (Explore/Task/Plan/Code-review), `/delegate` to coding agent | Claude Sonnet 5.5 |
 | **Kimi Code** | Free tier available, strong multilingual support | Kimi k2 |
-| **OpenCode** | Shared `AGENTS.md` instructions, role-specific agent definitions via `--agent`, `/new` context reset, restart-only model changes, deterministic interactive TUI launch, provider-qualified `--model` routing | provider/model |
+| **OpenCode** | Shared `AGENTS.md` instructions, agent-specific definitions via `--agent`, `/new` context reset, restart-only model changes, deterministic interactive TUI launch, provider-qualified `--model` routing | provider/model |
+| **Cursor** | Auto-loads `CLAUDE.md`/`AGENTS.md`/`.cursor/rules/`, built-in web search, `inbox-write` skill via `.cursor/skills/`, `/model` live switching, `--yolo` auto-run | Varies |
+| **Antigravity CLI** | Google Antigravity CLI integration via `agy`, host-managed auth, YOLO-style launch, `gemini`/`agy` legacy aliases | host default / last-used |
 
-OpenCode sessions load the role-specific `.opencode/agents/<agent>.md` definition via `--agent` and keep automation resets on `/new`; model changes require a relaunch. Automation uses the repository-provided `config/opencode-tui.json` via `OPENCODE_TUI_CONFIG`, which disables `app_exit` and pins `session_interrupt`/`input_clear` to known bindings. Role boundaries are embedded in the generated agent frontmatter: Shogun can read `queue/reports/*` for oversight but cannot write them, Karo is limited to coordination files plus report aggregation, Ashigaru only touch their own task/report pair, and Gunshi reads ashigaru reports but only writes `gunshi_report.yaml`.
+OpenCode sessions load the agent-specific `.opencode/agents/<agent_id>.md` definition via `--agent` and keep automation resets on `/new`; model changes require a relaunch. Automation uses the repository-provided `config/opencode-tui.json` via `OPENCODE_TUI_CONFIG`, which disables `app_exit` and pins `session_interrupt`/`input_clear` to known bindings. Role boundaries are embedded in the generated agent frontmatter: Shogun can read `queue/reports/*` for oversight but cannot write them, Karo is limited to coordination files plus report aggregation, Ashigaru only touch their own task/report pair, and Gunshi reads ashigaru reports but only writes `gunshi_report.yaml`.
+
+Antigravity sessions launch with `agy --dangerously-skip-permissions`. Shogun treats `type: antigravity`, `type: agy`, and legacy `type: gemini` as Antigravity. Authentication and default model selection stay in the host user's Antigravity CLI setup; `settings.yaml` may optionally pass a concrete `model`, but `auto` uses the host default or last-used model.
 
 A unified instruction build system generates CLI-specific instruction files from shared templates:
 
@@ -145,10 +152,11 @@ instructions/
 ├── cli_specific/        # CLI-specific tool descriptions
 │   ├── claude_tools.md  # Claude Code tools & features
 │   ├── copilot_tools.md # GitHub Copilot CLI tools & features
-│   └── opencode_tools.md # OpenCode tools, agent frontmatter, and permission model
+│   ├── opencode_tools.md # OpenCode tools, agent frontmatter, and permission model
+│   └── cursor_tools.md  # Cursor Agent tools, skills, and session rules
 └── roles/               # Role definitions (shogun, karo, ashigaru)
     ↓ build
-CLAUDE.md / AGENTS.md / .github/copilot-instructions.md / .opencode/agents/*.md
+CLAUDE.md / AGENTS.md / .github/copilot-instructions.md / .opencode/agents/*.md / .cursor/rules/*.md
   ← Generated per CLI
 ```
 
@@ -484,6 +492,8 @@ If you prefer to install dependencies manually:
 | GitHub Copilot CLI | Install and authenticate GitHub Copilot CLI | Required only for agents with `type: copilot` |
 | Kimi Code CLI | Install and authenticate Kimi Code | Required only for agents with `type: kimi` |
 | OpenCode CLI | `npm install -g opencode-ai` | Required only for agents with `type: opencode`; provider API keys must be available in the agent shell |
+| Cursor CLI | See [Cursor CLI docs](https://cursor.com/docs/cli/overview) — use `cursor-agent` or `agent` command | Required only for agents with `type: cursor` |
+| Antigravity CLI | Install and authenticate Google Antigravity CLI (`agy`) | Required only for agents with `type: antigravity`, `type: agy`, or legacy `type: gemini` |
 
 </details>
 
@@ -620,7 +630,7 @@ The agent formation (which CLI each agent uses) lives in `config/settings.yaml`:
 cli:
   agents:
     ashigaru1:
-      type: codex          # codex / claude / copilot / kimi / opencode
+      type: codex          # codex / claude / copilot / kimi / opencode / antigravity
       model: gpt-5.5
     ashigaru2:
       type: claude
@@ -636,15 +646,24 @@ cli:
     ashigaru3:
       type: opencode
       model: openrouter/openai/gpt-4o-mini
+      variant: high  # optional provider-specific reasoning variant
 ```
 
-When OpenCode is selected, `lib/cli_adapter.sh` launches it with `--agent <role>` and the repository-pinned `OPENCODE_TUI_CONFIG=config/opencode-tui.json`. Provider credentials such as `OPENROUTER_API_KEY` must be loaded by the shell that runs `shutsujin_departure.sh`.
+OpenRouter setup has two separate pieces:
+
+1. **Model routing** goes in `config/settings.yaml` as shown above (`type: opencode`, `model: openrouter/...`).
+2. **Provider authentication** is configured in OpenCode, not in `settings.yaml`. Run OpenCode once as the same OS user that will launch Shogun, then use `/connect` → `OpenRouter` and paste the API key. OpenCode stores provider credentials in its own user data under that OS user (for example under `~/.local/share/opencode/`; the exact file/database is OpenCode-internal). For headless deployments that use environment-based provider credentials, make sure the shell that runs `shutsujin_departure.sh` has `OPENROUTER_API_KEY` loaded.
+
+Do not put API keys in `config/settings.yaml`, `config/opencode-tui.json`, or `.opencode/agents/*.md`. Those files only describe routing, tmux-safe keybindings, and generated agent definitions.
+
+When OpenCode is selected, `lib/cli_adapter.sh` launches it with `--agent <agent_id>` and the repository-pinned `OPENCODE_TUI_CONFIG=config/opencode-tui.json`. The TUI command does not accept `--variant`; if `variant:` is configured, `scripts/build_instructions.sh` and `scripts/switch_cli.sh` synchronize `model:` / `variant:` into a git-ignored `.opencode/agents/<agent_id>-runtime.md`, which OpenCode loads via `--agent <agent_id>-runtime`.
 
 To switch on the fly, use `scripts/switch_cli.sh`:
 
 ```bash
 bash scripts/switch_cli.sh ashigaru3 --type claude --model claude-sonnet-5-5
 bash scripts/switch_cli.sh ashigaru3 --type opencode --model openrouter/openai/gpt-4o-mini
+bash scripts/switch_cli.sh ashigaru3 --type opencode --model openrouter/minimax/minimax-m2.5 --variant xhigh
 ```
 
 #### 4. Switching or closing a project
@@ -1889,13 +1908,24 @@ Even if you're not comfortable with keyboard shortcuts, you can switch, scroll, 
 
 ---
 
+## What's New in v5.1.0 — Karo as Traffic Controller
+
+> **Keep the manager out of the work queue.** Karo now has a sharper management boundary: it keeps the workflow moving, delegates execution to Ashigaru, routes review and RCA to Gunshi, and owns E2E only as plan reviewer and final judge.
+
+- **Karo is traffic control** — Karo acknowledges cmds, decomposes work, tracks dependencies, updates dashboard/daily logs, and makes final acceptance decisions without becoming the execution bottleneck
+- **Gunshi owns review work** — quality review, evidence review, RCA, adoption/drop decisions, architecture/design review, and deploy blocker classification are routed to Gunshi
+- **Ashigaru execute** — implementation, shell execution, deploy steps, and test commands are delegated to Ashigaru by default
+- **E2E responsibility clarified** — Karo reviews the E2E plan, checks prerequisites, and makes the final pass/fail judgment; direct execution is now an explicit exception that must be justified in reports
+- **Generated instructions refreshed** — Claude, Codex, Copilot, Kimi, and OpenCode instruction outputs were rebuilt from the updated role definitions
+- **Android local caches ignored** — `.android-user/`, `.gradle-user/`, and `.toolchain/` are now ignored under `android/`
+
 ## What's New in v5.0.0 — OpenCode First-Class Support
 
 > **Run the Shogun formation on OpenCode.** OpenCode is now a first-class CLI alongside Claude Code, Codex, Copilot, and Kimi, with generated role agents, tmux-safe startup, provider-qualified model routing, and VPS-verified end-to-end operation.
 
 - **OpenCode agent generation** — `scripts/build_instructions.sh` generates `.opencode/agents/*.md` for Shogun, Karo, Ashigaru 1-7, and Gunshi from the same shared instruction source used by other CLIs
 - **Role boundary permissions** — `config/opencode-permissions.yaml` drives OpenCode frontmatter permissions so each role can read/write only the files it owns
-- **tmux-safe OpenCode launch** — `lib/cli_adapter.sh` launches OpenCode with `--agent <role>` and repository-pinned `OPENCODE_TUI_CONFIG=config/opencode-tui.json` for deterministic keybindings
+- **tmux-safe OpenCode launch** — `lib/cli_adapter.sh` launches OpenCode with `--agent <agent_id>` and repository-pinned `OPENCODE_TUI_CONFIG=config/opencode-tui.json` for deterministic keybindings
 - **Provider-qualified models** — `settings.yaml` can route OpenCode agents to models such as `opencode/qwen3.6-plus-free` or `openrouter/openai/gpt-4o-mini`
 - **Verified on CI and VPS** — Multi-CLI CI passes on Ubuntu/macOS, and a VPS smoke test confirmed Shogun → Karo → `dashboard.md` execution using OpenCode
 
@@ -1918,7 +1948,7 @@ Even if you're not comfortable with keyboard shortcuts, you can switch, scroll, 
 - **Stop hook inbox delivery** — Claude Code agents automatically check inbox at turn end via `.claude/settings.json` Stop hook. Eliminates the `send-keys` interruption problem
 - **Model defaults updated** — Karo: Opus → Sonnet. Gunshi: Opus (deep reasoning). Ashigaru: Sonnet (uniform tier)
 - **Escape escalation disabled for Claude Code** — Phase 2 escalation was interrupting active Claude Code turns; Stop hook handles delivery instead
-- **Codex/OpenCode startup integration** — Codex uses `get_startup_prompt()` / `get_startup_prompt_arg()` for Session Start recovery, while OpenCode loads role definitions through generated `.opencode/agents/*.md` files
+- **Codex/OpenCode startup integration** — Codex uses `get_startup_prompt()` / `get_startup_prompt_arg()` for Session Start recovery, while OpenCode loads agent definitions through generated `.opencode/agents/*.md` files
 - **YAML slimming utility** — `scripts/slim_yaml.sh` archives read messages and terminal commands, supports current top-level and legacy task YAML, and keeps `--dry-run` filesystem-safe for queue cleanup audits
 
 </details>

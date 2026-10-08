@@ -76,9 +76,9 @@ Set `CODEX_HOME` env var for project-specific automation profiles.
 
 Sessions are stored locally. Use `/resume` or `codex exec resume` to continue previous conversations.
 
-### No Memory MCP equivalent
+### No persistent-memory equivalent
 
-Codex does not have a built-in persistent memory system like Claude Code's Memory MCP. For cross-session knowledge, rely on:
+Codex does not have a built-in persistent memory system like Claude Code's file-based auto-memory (`memory/MEMORY.md` + individual files; the former Memory MCP was retired 2026-07-01). For cross-session knowledge, rely on:
 - AGENTS.md (project-level instructions)
 - File-based state (queue/tasks/*.yaml, queue/reports/*.yaml)
 - MCP servers if configured
@@ -135,7 +135,7 @@ Step 3: If task has "target_path:" → read that file
 Step 4: Resume work based on task status
 ```
 
-**Note**: Unlike Claude Code, Codex has no `mcp__memory__read_graph` equivalent. Recovery relies entirely on AGENTS.md + YAML files.
+**Note**: Unlike Claude Code, Codex has no auto-loaded memory equivalent. Recovery relies entirely on AGENTS.md + YAML files.
 
 ## tmux Interaction
 
@@ -222,7 +222,7 @@ Model is set by `build_cli_command()` in cli_adapter.sh based on settings.yaml. 
 
 | Feature | Claude Code | Codex CLI | Impact |
 |---------|------------|-----------|--------|
-| Memory MCP | Built-in | Not built-in (configurable) | Recovery relies on AGENTS.md + files |
+| Persistent memory | File-based auto-memory (MEMORY.md) | Not built-in | Recovery relies on AGENTS.md + files |
 | Task tool (subagents) | Yes | No | Cannot spawn sub-agents |
 | Skill system | Yes | No | No slash command skills |
 | Dynamic model switch | `/model` via send-keys | `/model` in TUI only | Limited in automated mode |

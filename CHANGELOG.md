@@ -2,11 +2,38 @@
 
 All notable changes to this project will be documented in this file.
 
+## [5.2.0] - 2026-06-06
+
+### Added
+- **Cursor Agent CLI** support as 6th CLI (`type: cursor`): `cursor-agent --yolo` launch, `/new-chat` context reset, busy detection via `ctrl+c to stop` marker, generated instructions for all 4 roles, `.cursor/skills/inbox-write/` skill (PR #155)
+- **Antigravity CLI** support as 7th CLI (`type: antigravity`): `agy --dangerously-skip-permissions` launch, `gemini`/`agy` legacy alias normalization, tests for cli_adapter/switch_cli/build_system/send_wakeup (PR #154)
+
+### Fixed
+- `scripts/watcher_supervisor.sh`: prevent duplicate `inbox_watcher.sh` startup via per-agent `flock -n` — eliminates TOCTOU race on supervisor restart (closes #159)
+- `.claude/settings.json`: stop hook path changed from hardcoded absolute to relative `bash scripts/stop_hook_inbox.sh` — works on any clone path (PR #161, closes #160)
+- `instructions/karo.md`, `instructions/roles/karo_role.md`: removed hardcoded `/home/tono/` and `/mnt/c/tools/multi-agent-shogun/` paths; regenerated all CLI-specific instruction files
+- `scripts/seo_qc.py`: replaced hardcoded `/home/yohei/seo-affiliate` with `Path.home() / "seo-affiliate"`
+
+### Tests
+- Added `tests/unit/test_watcher_supervisor.bats` — 4 tests for flock-based duplicate prevention
+
+## [5.1.0] - 2026-05-23
+
+### Changed
+- Clarified Karo as a workflow traffic controller instead of an execution bottleneck
+- Moved qualitative review ownership to Gunshi for QC, evidence review, RCA, adoption/drop decisions, and deploy blocker classification
+- Reframed E2E ownership: Karo reviews the plan, checks prerequisites, and makes the final pass/fail decision while execution is delegated by default
+- Regenerated Claude, Codex, Copilot, Kimi, and OpenCode instruction files from the updated role definitions
+
+### Fixed
+- Prevented old instructions from implying that Karo should directly run E2E commands or perform review work by default
+- Added Android local cache/toolchain ignore entries for `.android-user/`, `.gradle-user/`, and `.toolchain/`
+
 ## [5.0.0] - 2026-05-21
 
 ### Added
 - OpenCode first-class CLI support across Shogun, Karo, Ashigaru 1-7, and Gunshi
-- Generated `.opencode/agents/*.md` role definitions from the shared instruction build system
+- Generated `.opencode/agents/*.md` agent definitions from the shared instruction build system
 - `instructions/cli_specific/opencode_tools.md` for OpenCode-specific operational rules
 - `config/opencode-permissions.yaml` to generate role-scoped OpenCode permission frontmatter
 - `config/opencode-tui.json` to pin tmux-safe OpenCode keybindings
@@ -14,7 +41,7 @@ All notable changes to this project will be documented in this file.
 - OpenCode startup E2E coverage and build checks for generated agent files
 
 ### Changed
-- `lib/cli_adapter.sh` can launch OpenCode with `--agent <role>` and `OPENCODE_TUI_CONFIG`
+- `lib/cli_adapter.sh` can launch OpenCode with `--agent <agent_id>` and `OPENCODE_TUI_CONFIG`
 - `scripts/build_instructions.sh` now checks generated instruction files and OpenCode agent files together
 - README and README_ja document OpenCode setup, model IDs, generated agents, and VPS validation
 

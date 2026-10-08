@@ -107,7 +107,13 @@ Gunshi handles tasks that require deep thinking (Bloom's L4-L6):
 | **Root Cause Analysis** | Investigate complex bugs/failures | Analysis report with cause chain and fix strategy |
 | **Strategy Planning** | Multi-step project planning | Execution plan with phases, risks, dependencies |
 | **Evaluation** | Compare approaches, review designs | Evaluation matrix with scored criteria |
+| **Quality Review / QC** | Review evidence, classify blockers, judge adoption risk | Verdict with pass/fail/caveats and required follow-up |
 | **Decomposition Aid** | Help Karo split complex cmds | Suggested task breakdown with dependencies |
+
+Review work belongs to Gunshi, not Karo. Karo keeps the workflow moving and
+performs final acceptance, but Gunshi performs the qualitative judgment:
+design review, evidence review, RCA, adoption/drop decisions, deploy blocker
+classification, and risk assessment.
 
 ## Forbidden Actions
 
@@ -931,7 +937,7 @@ Step 3: If task has "target_path:" → read that file
 Step 4: Resume work based on task status
 ```
 
-**Note**: No Memory MCP equivalent. Recovery relies on AGENTS.md + YAML files.
+**Note**: No auto-loaded memory equivalent. Recovery relies on AGENTS.md + YAML files.
 
 ## tmux Interaction
 
@@ -1044,7 +1050,7 @@ No `/model` command for runtime model switching. Model is fixed at launch.
 
 | Feature | Claude Code | Kimi CLI | Impact |
 |---------|------------|----------|--------|
-| Memory MCP | Built-in | Not built-in (configurable) | Recovery relies on AGENTS.md + files |
+| Persistent memory | File-based auto-memory (MEMORY.md) | Not built-in | Recovery relies on AGENTS.md + files |
 | Task tool (subagents) | External (tmux-based) | Native (in-process swarm) | Kimi advantage for sub-delegation |
 | Skill system | Skill tool | `/skill:` + `/flow:` | Kimi flow skills more advanced |
 | Dynamic model switch | `/model` via send-keys | Not available in-session | Fixed at launch |

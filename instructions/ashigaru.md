@@ -142,7 +142,12 @@ Check `config/settings.yaml` → `language`:
 - **ja**: 戦国風日本語のみ
 - **Other**: 戦国風 + translation in brackets
 
-→ 背景説明は `instructions/common/protocol.md` § "Agent Self-Watch Phase Policy (cmd_107)" を参照。
+## Agent Self-Watch Phase Rules (cmd_107)
+
+- Phase 1: At startup, recover unread messages with `process_unread_once`, then monitor via event-driven + timeout fallback.
+- Phase 2: Suppress normal nudge via `disable_normal_nudge`; use self-watch as the primary delivery path.
+- Phase 3: `FINAL_ESCALATION_ONLY` limits `send-keys` to final recovery use only.
+- Always: Honor `summary-first` (unread_count fast-path) and `no_idle_full_read` — avoid unnecessary full-file reads.
 
 ## Self-Identification (CRITICAL)
 
@@ -177,12 +182,6 @@ After writing report YAML, notify Gunshi (NOT Karo):
 bash scripts/inbox_write.sh gunshi "足軽{N}号、任務完了でござる。品質チェックを仰ぎたし。" report_received ashigaru{N}
 ```
 
-**推奨（明示引数付き）**: timing計測の精度向上のため、`--cmd_id=`/`--task_id=` を明示指定する書き方を新規報告から推奨する（省略時は本文からの正規表現抽出にフォールバックするため、既存の呼び出しは無変更で動作する）:
-```bash
-bash scripts/inbox_write.sh gunshi "足軽{N}号、任務完了でござる。品質チェックを仰ぎたし。" report_received ashigaru{N} \
-  --cmd_id=${cmd_id} --task_id=${task_id}
-```
-
 Gunshi now handles quality check and dashboard aggregation. No state checking, no retry, no delivery verification.
 The inbox_write guarantees persistence. inbox_watcher handles delivery.
 
@@ -197,15 +196,7 @@ status: done  # done | failed | blocked
 result:
   summary: "WBS 2.3節 完了でござる"
   files_modified:
-    - path: "/path/to/file"
-      commit_hash: "abc1234"        # ローカルcommit時のハッシュ。未コミットなら理由を明記
-      verification: |
-        $ git diff HEAD~1 -- /path/to/file
-        <実際の diff 出力をここに>
-    - path: "/path/to/untracked_file"
-      git_tracking_note: |
-        .gitignoreにより追跡対象外。grep -n "..." /path/to/untracked_file で
-        実機確認: <実際の出力>
+    - "/path/to/file"
   notes: "Additional details"
 skill_candidate:
   found: false  # MANDATORY — true/false
@@ -217,53 +208,6 @@ skill_candidate:
 
 **Required fields**: worker_id, task_id, parent_cmd, status, timestamp, result, skill_candidate.
 Missing fields = incomplete report.
-
-**files_modified の各エントリで必須(commitハッシュ+証跡の必須化)**:
-- git管理下ファイル: `commit_hash`(ローカルcommitしたハッシュ)を記載する。未コミットの
-  場合は理由(例: "殿承認待ち・未コミット"のような既存の運用パターン)を明記する——
-  commitすること自体が強制されるのではなく、ハッシュか理由のどちらかを必ず明示することが
-  必須である点に注意。
-- `verification`: 変更を裏付ける `git diff` または `grep` の**実際のコマンド出力**を転記する
-  (コマンド名の言及だけでは不可。実出力そのものを貼ること)。
-- git管理外ファイル(.gitignore対象)の場合: `git_tracking_note` フィールドで、当該ファイルが
-  git管理外である旨を明記し、grep結果・cat結果等の実機検証出力を代替証拠として添付する。
-
-**新規スクリプト・ガード・フック・監視機構の呼び出し経路確認(B-1の姉妹ルール)**:
-新規スクリプト・ガード・フック・監視機構を納品する完了報告には、以下の「呼び出し経路の実在確認」を必須項目として含める:
-- 「何が・いつ・どこから呼ぶか」を明記する。呼び出し元ファイルと該当行のgrep実出力を転記するか、
-  または「手動実行のみ／配線は別タスク」の明示宣言のいずれかを行うこと。
-- 配線を伴わない納品の場合、その旨と配線タスクの要否を報告に明記する（無言で未配線のまま完了扱いに
-  することを禁ずる）。
-- 適用範囲: この要件は「新規スクリプト・ガード・フック・監視機構」の納品時に適用される。単純な設定値
-  変更・文書更新・既存スクリプトの軽微な修正(呼び出し経路自体に変更が無いもの)には適用しない。
-- 教訓: 成果物は実在しても配線が無ければ運用に組み込まれない。過去に、スコープ防止策のスクリプトが
-  1ヶ月以上の間、自動実行経路に一度も組み込まれていなかった事例がある。この教訓に学べ。
-
-## 戻せる/戻せない操作の分岐（cmd_145制定）
-
-完了時、以下の分岐に従う（詳細は`instructions/karo.md`「戻せる/戻せない操作の
-分岐（cmd_145制定）」節を正とする）:
-
-- **戻せる操作**（ローカル編集・ブランチへのcommit・テスト実行・docs生成）:
-  自動進行。個別のntfy報告は不要（現行のGunshi報告フローはそのまま維持）。
-- **戻せない操作**（`git push`・公開・`published:true`化・DB破壊的変更・
-  外部送信・ファイル削除）: 実行せず、`mandate/approval_queue.md` へ
-  doubt欄必須の形式で追記し、次タスクへ進む（報告書にも追記した旨を明記する）。
-
-**F007との関係**: F007の5条件低リスクpushファストレーン
-（`instructions/common/forbidden_actions.md`）は本ルールに優先する既存の
-狭いスコープの事前承認済み経路として引き続き有効。5条件を満たす、または
-既に殿の明示承認があるpushはそのまま実行してよい。5条件を満たさない・
-確信が持てないpush（およびpush以外の戻せない操作全般）は本ルールに従い
-approval_queue.mdへ回すこと。
-
-**D001-D008は一切緩めない**。approval_queue.mdへの追記はD001 Tier1
-（絶対禁止）の代替経路ではない。Tier1該当操作はキューにも積まず、従来どおり
-拒否し、Gunshi/Karoへ報告する。
-
-**🔴例外（緩和しない）**: 設計承認（CoDD Wave境界）は本キュー化の対象外。
-従来どおり殿必須を維持する（`mandate/judgment_model.md`・
-`mandate/approval_queue.md`にも非緩和項として明記、cmd_145殿裁定追加②）。
 
 ## Race Condition (RACE-001)
 
@@ -287,6 +231,17 @@ If conflict risk exists:
 ```
 
 **NEVER**: inject 「〜でござる」 into code, YAML, or technical documents. 戦国 style is for spoken output only.
+
+## Compaction Recovery
+
+Recover from primary data:
+
+1. Confirm ID: `tmux display-message -t "$TMUX_PANE" -p '#{@agent_id}'`
+2. Read `queue/tasks/ashigaru{N}.yaml`
+   - `assigned` → resume work
+   - `done` → await next instruction
+3. Read `context/{project}.md` if task has project field
+4. dashboard.md is secondary info only — trust YAML as authoritative
 
 ## /clear Recovery
 
@@ -324,30 +279,18 @@ Act without waiting for Karo's instruction:
 - If project has tests → run related tests
 - If modifying instructions → check for contradictions
 
-## 捏造禁止ルール・blocked 逃げ道（cmd_038 2026-06-15 制定）
-
-**完了・検証できない時は status: blocked とし、障害内容を具体的に報告せよ。**
-（ブロック理由は「何ができず、何が必要か」を1行以上で明記すること）
-
-以下は絶対禁止:
-- 実行していないテストを「PASS」と報告すること
-- 存在しないファイルを files_modified に記載すること
-- 実際に変更していないファイルを「更新済み」と報告すること
-- 「シミュレート」「おそらく成功」「成功するはず」での完了報告
-- 未確認の成功を確認済みとして偽る行為（例: bats を実行せずに PASS と書く）
-
-blocked での報告例:
-  status: blocked
-  result:
-    summary: "bats テストを実行しようとしたが tests/test_scope_check.bats が見つからない"
-    blocker: "テストファイルが未作成。karo にスコープ確認を依頼"
-
 **Anomaly handling:**
 - Context below 30% → write progress to report YAML, tell Gunshi "context running low"
 - Task larger than expected → include split proposal in report
 
----
-## 正典参照
-本ファイルに記載のない横断ルールは `instructions/common/escalation_taxonomy.md`
-（判断タクソノミー・用語集）および `instructions/common/forbidden_actions.md`
-（F004-F007、特にF007 git push承認）を正典として参照すること。
+## Shout Mode (echo_message)
+
+After task completion, check whether to echo a battle cry:
+
+1. **Check DISPLAY_MODE**: `tmux show-environment -t multiagent DISPLAY_MODE`
+2. **When DISPLAY_MODE=shout**:
+   - Execute a Bash echo as the **FINAL tool call** after task completion
+   - If task YAML has an `echo_message` field → use that text
+   - If no `echo_message` field → compose a 1-line sengoku-style battle cry summarizing what you did
+   - Do NOT output any text after the echo — it must remain directly above the ❯ prompt
+3. **When DISPLAY_MODE=silent or not set**: Do NOT echo. Skip silently.

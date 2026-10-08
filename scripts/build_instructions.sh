@@ -135,6 +135,12 @@ EOFYAML
         opencode)
             cat "$PARTS_DIR/cli_specific/opencode_tools.md" >> "$output_path"
             ;;
+        cursor)
+            cat "$PARTS_DIR/cli_specific/cursor_tools.md" >> "$output_path"
+            ;;
+        antigravity)
+            cat "$PARTS_DIR/cli_specific/antigravity_tools.md" >> "$output_path"
+            ;;
     esac
 
     if [[ "$cli_type" == "opencode" ]]; then
@@ -173,6 +179,17 @@ build_instruction_file "opencode" "shogun" "opencode-shogun.md"
 build_instruction_file "opencode" "karo" "opencode-karo.md"
 build_instruction_file "opencode" "ashigaru" "opencode-ashigaru.md"
 build_instruction_file "opencode" "gunshi" "opencode-gunshi.md"
+
+# Build Cursor Agent instruction files
+build_instruction_file "cursor" "shogun" "cursor-shogun.md"
+build_instruction_file "cursor" "karo" "cursor-karo.md"
+build_instruction_file "cursor" "ashigaru" "cursor-ashigaru.md"
+build_instruction_file "cursor" "gunshi" "cursor-gunshi.md"
+# Build Antigravity instruction files
+build_instruction_file "antigravity" "shogun" "antigravity-shogun.md"
+build_instruction_file "antigravity" "karo" "antigravity-karo.md"
+build_instruction_file "antigravity" "ashigaru" "antigravity-ashigaru.md"
+build_instruction_file "antigravity" "gunshi" "antigravity-gunshi.md"
 
 # ============================================================
 # AGENTS.md generation (Codex auto-load file)
@@ -447,6 +464,81 @@ PYEOF
             return 1
         fi
 
+        local routing_yaml
+        routing_yaml=$("$python_bin" - "$ROOT_DIR/config/settings.yaml" "$agent_id" <<'PYEOF'
+import sys
+from pathlib import Path
+
+import yaml
+
+settings_path = Path(sys.argv[1])
+agent_id = sys.argv[2]
+
+def normalize_opencode_model(model: str) -> str:
+    if not model:
+        return ""
+    if "/" in model:
+        return model
+    if model in {"gpt-5.4-mini", "gpt-5.4", "gpt-5.3-codex", "gpt-5.3-codex-spark"} or model.startswith("gpt-5"):
+        return f"openai/{model}"
+    if model in {"claude-opus-4-6", "opus"}:
+        return "anthropic/claude-opus-4-6"
+    if model in {"claude-sonnet-4-6", "sonnet"}:
+        return "anthropic/claude-sonnet-4-6"
+    if model in {"claude-haiku-4-5-20251001", "haiku"}:
+        return "anthropic/claude-haiku-4-5-20251001"
+    if model in {"moonshot-k2.5", "k2.5"}:
+        return "moonshot/kimi-k2.5"
+    if model.startswith("kimi-"):
+        return f"moonshot/kimi-{model.removeprefix('kimi-')}"
+    return model
+
+def default_model_for(agent: str) -> str:
+    if agent == "shogun":
+        return "opus"
+    if agent == "karo":
+        return "sonnet"
+    if agent == "gunshi":
+        return "opus"
+    return "sonnet"
+
+if not settings_path.exists():
+    raise SystemExit(0)
+
+with settings_path.open(encoding="utf-8") as fh:
+    settings = yaml.safe_load(fh) or {}
+
+cli = settings.get("cli") or {}
+default_cli = cli.get("default", "claude")
+agents = cli.get("agents") or {}
+agent_cfg = agents.get(agent_id)
+
+agent_type = default_cli
+model = None
+variant = None
+
+if isinstance(agent_cfg, str):
+    agent_type = agent_cfg
+elif isinstance(agent_cfg, dict):
+    agent_type = agent_cfg.get("type") or default_cli
+    model = agent_cfg.get("model")
+    variant = agent_cfg.get("variant")
+
+if agent_type != "opencode":
+    raise SystemExit(0)
+
+if not model:
+    models = settings.get("models") or {}
+    model = models.get(agent_id) or default_model_for(agent_id)
+
+frontmatter = {"model": normalize_opencode_model(str(model))}
+if variant:
+    frontmatter["variant"] = str(variant)
+
+print(yaml.safe_dump(frontmatter, allow_unicode=True, sort_keys=False).rstrip())
+PYEOF
+        )
+
         local output_path="$agents_dir/${agent_id}.md"
 
         # Write YAML frontmatter
@@ -485,6 +577,51 @@ EOF
         } >> "$output_path"
 
         normalize_generated_markdown "$output_path"
+
+        if [[ -n "$routing_yaml" ]]; then
+            local runtime_path="$agents_dir/${agent_id}-runtime.md"
+            ROUTING_YAML="$routing_yaml" "$python_bin" - "$output_path" "$runtime_path" <<'PYEOF'
+import os
+import sys
+from pathlib import Path
+
+import yaml
+
+source = Path(sys.argv[1])
+dest = Path(sys.argv[2])
+route = yaml.safe_load(os.environ.get("ROUTING_YAML", "")) or {}
+
+text = source.read_text(encoding="utf-8")
+if not text.startswith("---\n"):
+    raise SystemExit(0)
+
+parts = text.split("---", 2)
+if len(parts) < 3:
+    raise SystemExit(0)
+
+route_lines = yaml.safe_dump(route, allow_unicode=True, sort_keys=False).splitlines()
+frontmatter_lines = parts[1].lstrip("\n").splitlines()
+new_lines = []
+inserted = False
+
+for line in frontmatter_lines:
+    stripped = line.lstrip()
+    indent = len(line) - len(stripped)
+    if indent == 0 and (stripped.startswith("model:") or stripped.startswith("variant:")):
+        continue
+    if not inserted and indent == 0 and stripped.startswith("permission:"):
+        new_lines.extend(route_lines)
+        inserted = True
+    new_lines.append(line)
+
+if not inserted:
+    new_lines.extend(route_lines)
+
+dest.write_text(f"---\n{chr(10).join(new_lines).rstrip()}\n---{parts[2]}", encoding="utf-8")
+PYEOF
+            normalize_generated_markdown "$runtime_path"
+            echo "  ✅ Created: .opencode/agents/${agent_id}-runtime.md (git-ignored runtime routing)"
+        fi
 
         echo "  ✅ Created: .opencode/agents/${agent_id}.md"
     done

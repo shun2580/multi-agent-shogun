@@ -3,11 +3,13 @@
 # Multi-CLI統合設計書 (reports/design_multi_cli_support.md) §2.2 準拠
 #
 # 提供関数:
-#   get_cli_type(agent_id)                  → "claude" | "codex" | "copilot" | "kimi" | "opencode"
+#   get_cli_type(agent_id)                  → "claude" | "codex" | "copilot" | "kimi" | "opencode" | "cursor"
+#   get_cli_type(agent_id)                  → "claude" | "codex" | "copilot" | "kimi" | "opencode" | "antigravity"
 #   build_cli_command(agent_id)             → 完全なコマンド文字列
 #   get_instruction_file(agent_id [,cli_type]) → 指示書パス
 #   validate_cli_availability(cli_type)     → 0=OK, 1=NG
 #   get_agent_model(agent_id)               → "opus" | "sonnet" | "haiku" | "k2.5"
+#   get_agent_effort(agent_id)              → "low" | "medium" | "high" | "xhigh" | "max" | ""
 #   get_startup_prompt(agent_id)            → 初期プロンプト文字列 or ""
 #   get_startup_prompt_arg(agent_id)        → 起動コマンド向けプロンプト引数 or ""
 
@@ -107,10 +109,37 @@ _cli_adapter_shell_quote() {
     printf '%q\n' "$value"
 }
 
+# _cli_adapter_get_agent_env_prefix agent_id
+# settings.yaml の cli.agents.{id}.env から KEY=VALUE 文字列を返す
+# 例: "OPENAI_BASE_URL=http://... OPENAI_API_KEY=sk-xxx "
+_cli_adapter_get_agent_env_prefix() {
+    local agent_id="$1"
+    local result
+    result=$("$CLI_ADAPTER_PROJECT_ROOT/.venv/bin/python3" -c "
+import yaml, shlex, sys
+try:
+    with open('${CLI_ADAPTER_SETTINGS}') as f:
+        cfg = yaml.safe_load(f) or {}
+    env = cfg.get('cli', {}).get('agents', {}).get('${agent_id}', {})
+    if not isinstance(env, dict):
+        sys.exit(0)
+    env = env.get('env', {})
+    if not isinstance(env, dict):
+        sys.exit(0)
+    parts = [shlex.quote(f'{k}={v}') for k, v in env.items()]
+    if parts:
+        print(' '.join(parts) + ' ')
+except Exception:
+    pass
+" 2>/dev/null)
+    echo "${result:-}"
+}
+
 # _cli_adapter_is_valid_cli cli_type
 # 許可されたCLI種別かチェック
 _cli_adapter_is_valid_cli() {
-    local cli_type="$1"
+    local cli_type
+    cli_type=$(_cli_adapter_normalize_cli_type "${1:-}")
     local allowed
     for allowed in $CLI_ADAPTER_ALLOWED_CLIS; do
         [[ "$cli_type" == "$allowed" ]] && return 0
@@ -133,6 +162,12 @@ get_cli_type() {
     local result
     result=$("$CLI_ADAPTER_PROJECT_ROOT/.venv/bin/python3" -c "
 import yaml, sys
+allowed = ('claude', 'codex', 'copilot', 'kimi', 'opencode', 'cursor', 'antigravity')
+def normalize_cli(value):
+    value = str(value or '').lower()
+    if value in ('gemini', 'agy'):
+        return 'antigravity'
+    return value
 try:
     with open('${CLI_ADAPTER_SETTINGS}') as f:
         cfg = yaml.safe_load(f) or {}
@@ -141,7 +176,8 @@ try:
         print('claude'); sys.exit(0)
     agents = cli.get('agents', {})
     if not isinstance(agents, dict):
-        print(cli.get('default', 'claude') if cli.get('default', 'claude') in ('claude','codex','copilot','kimi','opencode') else 'claude')
+        default = normalize_cli(cli.get('default', 'claude'))
+        print(default if default in allowed else 'claude')
         sys.exit(0)
     agent_cfg = agents.get('${agent_id}')
     if isinstance(agent_cfg, dict):
@@ -165,6 +201,7 @@ except Exception as e:
     if [[ -z "$result" ]]; then
         echo "claude"
     else
+        result=$(_cli_adapter_normalize_cli_type "$result")
         if ! _cli_adapter_is_valid_cli "$result"; then
             echo "[WARN] Invalid CLI type '$result' for agent '$agent_id'. Falling back to 'claude'." >&2
             echo "claude"
@@ -185,6 +222,8 @@ build_cli_command() {
     model=$(get_agent_model "$agent_id")
     local thinking
     thinking=$(_cli_adapter_read_yaml "cli.agents.${agent_id}.thinking" "")
+    local effort
+    effort=$(get_agent_effort "$agent_id")
     local permission_flag="${PERMISSION_FLAG:---dangerously-skip-permissions}"
 
     # thinking prefix: Claude CLI でのみ有効
@@ -219,8 +258,17 @@ build_cli_command() {
         opencode)
             local normalized_model
             local tui_config_path
+            local variant
+            local launch_agent_id
+            local agent_env_prefix
             normalized_model=$(normalize_opencode_model "$model")
             tui_config_path=$(_cli_adapter_shell_quote "$CLI_ADAPTER_PROJECT_ROOT/config/opencode-tui.json")
+            variant=$(_cli_adapter_read_yaml "cli.agents.${agent_id}.variant" "")
+            launch_agent_id="$agent_id"
+            if [[ -n "$variant" ]]; then
+                launch_agent_id="${agent_id}-runtime"
+            fi
+            agent_env_prefix=$(_cli_adapter_get_agent_env_prefix "$agent_id")
             local quoted_agent_id
             quoted_agent_id=$(_cli_adapter_shell_quote "$agent_id")
             cmd="opencode"
@@ -229,13 +277,19 @@ build_cli_command() {
             fi
             # Use --agent to load the pre-built agent definition from .opencode/agents/<name>.md.
             # Permissions are also embedded in the agent definition YAML frontmatter at build time.
-            cmd="$cmd --agent $agent_id"
+            # OpenCode TUI does not accept `--variant`; provider-specific variants
+            # are synchronized into an ignored runtime agent by build_instructions.sh
+            # or switch_cli.sh.
+            cmd="$cmd --agent $launch_agent_id"
             # Use a project-pinned TUI config so tmux automation sees stable keybinds
             # even when the user has a different global tui.json.
-            cmd="OPENCODE_AGENT_ID=$quoted_agent_id OPENCODE_TUI_CONFIG=$tui_config_path $cmd"
+            cmd="${agent_env_prefix}OPENCODE_AGENT_ID=$quoted_agent_id OPENCODE_TUI_CONFIG=$tui_config_path $cmd"
             ;;
         copilot)
             cmd="copilot --yolo"
+            if [[ -n "$model" ]]; then
+                cmd="$cmd --model $model"
+            fi
             ;;
         kimi)
             cmd="kimi --yolo"
@@ -269,6 +323,7 @@ get_instruction_file() {
     local agent_id="$1"
     local cli_type="${2:-$(get_cli_type "$agent_id")}"
     local role
+    cli_type=$(_cli_adapter_normalize_cli_type "$cli_type")
 
     case "$agent_id" in
         shogun)    role="shogun" ;;
@@ -296,7 +351,8 @@ get_instruction_file() {
 # 指定CLIがシステムにインストールされているか確認
 # 0=利用可能, 1=利用不可
 validate_cli_availability() {
-    local cli_type="$1"
+    local cli_type
+    cli_type=$(_cli_adapter_normalize_cli_type "${1:-}")
     case "$cli_type" in
         claude)
             command -v claude &>/dev/null || {
@@ -378,8 +434,23 @@ get_agent_model() {
                 *)              echo "k2.5" ;;
             esac
             ;;
+        cursor)
+            # Cursor Agent CLI用デフォルトモデル（モデル名はパススルー）
+            case "$agent_id" in
+                shogun|gunshi)  echo "claude-sonnet-4-6" ;;
+                *)              echo "claude-sonnet-4-6" ;;
+            esac
+            ;;
+        antigravity)
+            # Antigravity CLI はホスト側の既定/最後のモデル設定を使う。
+            echo "auto"
+            ;;
+        copilot)
+            # Copilot CLI manages model selection internally; no default
+            echo ""
+            ;;
         *)
-            # Claude Code/Codex/Copilot用デフォルトモデル
+            # Claude Code/Codex用デフォルトモデル
             case "$agent_id" in
                 shogun)         echo "opus" ;;
                 karo)           echo "sonnet" ;;
@@ -410,12 +481,28 @@ get_model_display_name() {
     cli_type=$(get_cli_type "$agent_id")
     local thinking
     thinking=$(_cli_adapter_read_yaml "cli.agents.${agent_id}.thinking" "")
+    local effort
+    effort=$(get_agent_effort "$agent_id")
 
     if [[ "$cli_type" == "opencode" ]]; then
         if [[ "$model" == */* ]]; then
             echo "OpenCode (${model#*/})"
         else
             echo "OpenCode (${model})"
+        fi
+        return 0
+    fi
+
+    if [[ "$cli_type" == "cursor" ]]; then
+        echo "Cursor (${model})"
+        return 0
+    fi
+
+    if [[ "$cli_type" == "antigravity" ]]; then
+        if [[ -n "$model" && "$model" != "auto" && "$model" != "default" ]]; then
+            echo "Antigravity (${model})"
+        else
+            echo "Antigravity"
         fi
         return 0
     fi
@@ -448,7 +535,9 @@ get_model_display_name() {
     # Claude: thinking: false → なし, それ以外(true/未設定) → "+T"
     # Codex等: Thinkingなし → 常になし
     if [[ "$cli_type" == "claude" ]]; then
-        if [[ "$thinking" == "false" || "$thinking" == "False" ]]; then
+        if [[ -n "$effort" ]]; then
+            echo "${short}+${effort}"
+        elif [[ "$thinking" == "false" || "$thinking" == "False" ]]; then
             echo "$short"
         else
             echo "${short}+T"

@@ -152,6 +152,24 @@ cli:
     ashigaru4:
       type: opencode
       model: gpt-5.3-codex-spark
+    ashigaru5:
+      type: opencode
+      model: openrouter/minimax/minimax-m2.5
+      variant: xhigh
+YAML
+
+    # antigravity settings
+    cat > "${TEST_TMP}/settings_antigravity.yaml" << 'YAML'
+cli:
+  default: antigravity
+  agents:
+    shogun:
+      type: antigravity
+    karo:
+      type: agy
+      model: gemini-latest
+    ashigaru1:
+      type: gemini
 YAML
 }
 
@@ -293,6 +311,14 @@ load_adapter_with() {
     [ "$result" = "opencode" ]
 }
 
+@test "get_cli_type: antigravity と legacy alias → antigravity" {
+    load_adapter_with "${TEST_TMP}/settings_antigravity.yaml"
+    [ "$(get_cli_type shogun)" = "antigravity" ]
+    [ "$(get_cli_type karo)" = "antigravity" ]
+    [ "$(get_cli_type ashigaru1)" = "antigravity" ]
+    [ "$(get_cli_type ashigaru2)" = "antigravity" ]
+}
+
 @test "get_cli_type: 未定義agent → default継承" {
     load_adapter_with "${TEST_TMP}/settings_codex_default.yaml"
     result=$(get_cli_type "ashigaru3")
@@ -366,6 +392,21 @@ load_adapter_with() {
     load_adapter_with "${TEST_TMP}/settings_mixed.yaml"
     result=$(build_cli_command "shogun")
     [ "$result" = "claude --model opus --permission-mode auto-approved" ]
+}
+
+@test "build_cli_command: claude + effort:max → --effort max" {
+    cat > "${TEST_TMP}/settings_claude_effort.yaml" << 'YAML'
+cli:
+  default: claude
+  agents:
+    ashigaru1:
+      type: claude
+      model: claude-opus-4-8
+      effort: max
+YAML
+    load_adapter_with "${TEST_TMP}/settings_claude_effort.yaml"
+    result=$(build_cli_command "ashigaru1")
+    [ "$result" = "claude --model claude-opus-4-8 --effort max --dangerously-skip-permissions" ]
 }
 
 @test "build_cli_command: codex + default model → codex --model sonnet ..." {
@@ -447,6 +488,29 @@ load_adapter_with() {
     [[ "$first" != *'--prompt'* ]]
 }
 
+@test "build_cli_command: opencode omits provider-specific variant from TUI args" {
+    load_adapter_with "${TEST_TMP}/settings_opencode.yaml"
+    result=$(build_cli_command "ashigaru5")
+    expected_tui_config=$(_cli_adapter_shell_quote "${PROJECT_ROOT}/config/opencode-tui.json")
+    [[ "$result" == "OPENCODE_AGENT_ID=ashigaru5 OPENCODE_TUI_CONFIG=$expected_tui_config"* ]]
+    [[ "$result" == *'opencode --model openrouter/minimax/minimax-m2.5 --agent ashigaru5-runtime'* ]]
+    [[ "$result" != *'--variant'* ]]
+    [[ "$result" != *'OPENCODE_CONFIG_CONTENT'* ]]
+    [[ "$result" != *'--prompt'* ]]
+}
+
+@test "build_cli_command: antigravity default model uses host default" {
+    load_adapter_with "${TEST_TMP}/settings_antigravity.yaml"
+    result=$(build_cli_command "shogun")
+    [ "$result" = "agy --dangerously-skip-permissions" ]
+}
+
+@test "build_cli_command: antigravity explicit model passes --model" {
+    load_adapter_with "${TEST_TMP}/settings_antigravity.yaml"
+    result=$(build_cli_command "karo")
+    [ "$result" = "agy --dangerously-skip-permissions --model gemini-latest" ]
+}
+
 @test "opencode tui config pins app_exit and keybinds" {
     grep -q '"app_exit": "none"' "${PROJECT_ROOT}/config/opencode-tui.json"
     grep -q '"session_interrupt": "escape"' "${PROJECT_ROOT}/config/opencode-tui.json"
@@ -523,6 +587,12 @@ load_adapter_with() {
     [ "$result" = "instructions/generated/opencode-shogun.md" ]
 }
 
+@test "get_instruction_file: antigravity + any role → instructions/generated/antigravity-shogun.md" {
+    load_adapter_with "${TEST_TMP}/settings_antigravity.yaml"
+    result=$(get_instruction_file "shogun")
+    [ "$result" = "instructions/generated/antigravity-shogun.md" ]
+}
+
 # =============================================================================
 # get_startup_prompt テスト
 # =============================================================================
@@ -551,6 +621,12 @@ load_adapter_with() {
     [ -z "$result" ]
 }
 
+@test "get_startup_prompt: antigravity → empty (uses CLI defaults)" {
+    load_adapter_with "${TEST_TMP}/settings_antigravity.yaml"
+    result=$(get_startup_prompt "shogun")
+    [ -z "$result" ]
+}
+
 # =============================================================================
 # get_startup_prompt_arg テスト
 # =============================================================================
@@ -564,6 +640,12 @@ load_adapter_with() {
 
 @test "get_startup_prompt_arg: opencode → empty (uses --agent instead)" {
     load_adapter_with "${TEST_TMP}/settings_opencode.yaml"
+    result=$(get_startup_prompt_arg "shogun")
+    [[ "$result" == "" ]]
+}
+
+@test "get_startup_prompt_arg: antigravity → empty" {
+    load_adapter_with "${TEST_TMP}/settings_antigravity.yaml"
     result=$(get_startup_prompt_arg "shogun")
     [[ "$result" == "" ]]
 }
@@ -635,6 +717,24 @@ load_adapter_with() {
     echo '#!/bin/bash' > "${TEST_TMP}/bin/opencode"
     chmod +x "${TEST_TMP}/bin/opencode"
     PATH="${TEST_TMP}/bin:$PATH" run validate_cli_availability "opencode"
+    [ "$status" -eq 0 ]
+}
+
+@test "validate_cli_availability: antigravity mock agy (PATH操作)" {
+    load_adapter_with "${TEST_TMP}/settings_none.yaml"
+    mkdir -p "${TEST_TMP}/bin"
+    echo '#!/bin/bash' > "${TEST_TMP}/bin/agy"
+    chmod +x "${TEST_TMP}/bin/agy"
+    PATH="${TEST_TMP}/bin:$PATH" run validate_cli_availability "antigravity"
+    [ "$status" -eq 0 ]
+}
+
+@test "validate_cli_availability: legacy gemini alias uses antigravity mock" {
+    load_adapter_with "${TEST_TMP}/settings_none.yaml"
+    mkdir -p "${TEST_TMP}/bin"
+    echo '#!/bin/bash' > "${TEST_TMP}/bin/agy"
+    chmod +x "${TEST_TMP}/bin/agy"
+    PATH="${TEST_TMP}/bin:$PATH" run validate_cli_availability "gemini"
     [ "$status" -eq 0 ]
 }
 
@@ -729,6 +829,18 @@ load_adapter_with() {
     [ "$result" = "k2.5" ]
 }
 
+@test "get_agent_model: antigravity CLI shogun → auto (ホスト設定)" {
+    load_adapter_with "${TEST_TMP}/settings_antigravity.yaml"
+    result=$(get_agent_model "shogun")
+    [ "$result" = "auto" ]
+}
+
+@test "get_model_display_name: Antigravity auto → Antigravity" {
+    load_adapter_with "${TEST_TMP}/settings_antigravity.yaml"
+    result=$(get_model_display_name "shogun")
+    [ "$result" = "Antigravity" ]
+}
+
 # =============================================================================
 # get_model_display_name テスト
 # =============================================================================
@@ -761,6 +873,21 @@ YAML
     load_adapter_with "${TEST_TMP}/settings_display.yaml"
     result=$(get_model_display_name "gunshi")
     [ "$result" = "Opus+T" ]
+}
+
+@test "get_model_display_name: Claude effort:max → Opus+max" {
+    cat > "${TEST_TMP}/settings_display_effort.yaml" << 'YAML'
+cli:
+  default: claude
+  agents:
+    ashigaru1:
+      type: claude
+      model: claude-opus-4-8
+      effort: max
+YAML
+    load_adapter_with "${TEST_TMP}/settings_display_effort.yaml"
+    result=$(get_model_display_name "ashigaru1")
+    [ "$result" = "Opus+max" ]
 }
 
 @test "get_model_display_name: Haiku + thinking:false → Haiku" {
@@ -883,6 +1010,23 @@ YAML
     load_adapter_with "${TEST_TMP}/settings_thinking.yaml"
     result=$(build_cli_command "ashigaru1")
     [ "$result" = "claude --model claude-sonnet-5-5 --dangerously-skip-permissions" ]
+}
+
+@test "build_cli_command: invalid effort is ignored" {
+    cat > "${TEST_TMP}/settings_effort_invalid.yaml" << 'YAML'
+cli:
+  default: claude
+  agents:
+    ashigaru1:
+      type: claude
+      model: claude-opus-4-8
+      effort: turbo
+YAML
+    load_adapter_with "${TEST_TMP}/settings_effort_invalid.yaml"
+    run build_cli_command "ashigaru1"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"claude --model claude-opus-4-8 --dangerously-skip-permissions"* ]]
+    [[ "$output" != *"--effort turbo"* ]]
 }
 
 @test "build_cli_command: thinking:false → MAX_THINKING_TOKENS=0 prefix" {

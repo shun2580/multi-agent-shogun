@@ -1,4 +1,5 @@
 {
+  "autoMemoryDirectory": "/home/tono/.claude/projects/-home-tono-multi-agent-shogun/memory",
   "hooks": {
     "SessionStart": [
       {

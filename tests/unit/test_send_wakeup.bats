@@ -39,6 +39,7 @@
 #   T-SHOGUN-002: session_has_client — returns 1 when no client
 #   T-SHOGUN-003: send_wakeup — shogun + active + attached → send-keys (post PR#75)
 #   T-SHOGUN-004: send_wakeup — shogun + active + detached → send-keys fallthrough
+#   T-SHOGUN-005: shogun clear_command does not enqueue auto-recovery
 #   T-BUSY-005: agent_is_busy — returns busy during /clear cooldown (LAST_CLEAR_TS)
 #   T-BUSY-006: agent_is_busy — returns idle after /clear cooldown expires
 #   T-BUSY-007: agent_is_busy — /clear cooldown overrides idle pane
@@ -481,6 +482,30 @@ MOCK
 
     ! grep -q "send-keys.*/model" "$MOCK_LOG"
     echo "$output" | grep -q "restart-only"
+}
+
+@test "T-ANTIGRAVITY-001: send_cli_command passes /clear through for antigravity" {
+    run bash -c '
+        source "'"$TEST_HARNESS"'"
+        CLI_TYPE="antigravity"
+        send_cli_command "/clear"
+    '
+    [ "$status" -eq 0 ]
+
+    grep -q "send-keys.*/clear" "$MOCK_LOG"
+    ! grep -q "send-keys.*/new" "$MOCK_LOG"
+}
+
+@test "T-ANTIGRAVITY-002: send_cli_command skips /model for antigravity" {
+    run bash -c '
+        source "'"$TEST_HARNESS"'"
+        CLI_TYPE="antigravity"
+        send_cli_command "/model gemini-latest"
+    '
+    [ "$status" -eq 0 ]
+
+    ! grep -q "send-keys.*/model" "$MOCK_LOG"
+    echo "$output" | grep -q "Antigravity model changes are restart-only"
 }
 
 # --- T-CODEX-003: C-u sent when unread=0 and agent is idle ---
