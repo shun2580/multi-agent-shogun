@@ -3,11 +3,15 @@
 #
 # 置場: ${SHOGUN_SECRETS_FILE:-$HOME/.config/multi-agent-shogun/secrets.env} の KEY=value 行から値を取り出し、
 #       送出差分の「コミットメッセージ・author/committer・追加行・追加/変更ファイルパス名・tagオブジェクト」を
-#       固定文字列として照合する。
+#       固定文字列として照合する。push する ref 名(<local ref> と <remote ref>)も照合対象(ref 名は remote に公開される)。
 # 契約: git が渡す引数(remote name, url)と stdin の `<local ref> <local sha> <remote ref> <remote sha>` だけで動く
 #       (git rev-parse --show-toplevel には依存しない=main でも worktree でも同じ挙動)。
 # 方針: 値は標準出力・標準エラー・ログのいずれにも出さない(鍵名・commit id・パス・行番号まで)。
+#       ref 名に値が含まれる場合は拒否メッセージでも ref 名を伏せる(判定は grep -F -f の件数、表示の前に必ず行う)。
 #       置場が読めないときは fail-loud で拒否する(値照合できない状態で push させない)。迂回用の環境変数は設けない。
+# 開示済みの限界(変更しない・G-3): 検出できるのは「置場にある値が、そのままの文字列で」含まれる場合だけ。
+#       (a) base64/URLエンコード等で変形された値、複数行・複数ファイルに分割された値は検出できない。
+#       (b) 置場に書かれていない値は検出できない。(c) 8文字未満の値は照合しない。
 # 導入: git config core.hooksPath scripts/githooks   (切替時に殿が実行。--no-verify は hook 自体では防げない=permissions.deny側で防ぐ)
 set -uo pipefail
 
@@ -18,8 +22,10 @@ umask 077
 tmpdir="$(mktemp -d 2>/dev/null)" || { echo "pre-push: 一時ディレクトリを作れないため push を拒否します" >&2; exit 1; }
 trap 'rm -rf "$tmpdir"' EXIT
 keys="$tmpdir/keys.tsv"
+vals="$tmpdir/vals.txt"   # 値だけを1行1件で並べたもの(grep -F -f 用)
 hits="$tmpdir/hits.tsv"
 : > "$keys"
+: > "$vals"
 : > "$hits"
 
 # ---- 置場の読込: 鍵名<TAB>値 の一時ファイル(600)を作る。短い値(8文字未満)・空値・コメントは除外 ----
@@ -36,6 +42,7 @@ add_value() {
     # $1=key $2=value。8文字未満は除外
     if (( ${#2} >= 8 )); then
         printf '%s\t%s\n' "$1" "$2" >> "$keys"
+        printf '%s\n' "$2" >> "$vals"
         nvalues=$((nvalues + 1))
     fi
 }
@@ -127,6 +134,26 @@ scan() { # $1=mode $2=label (stdin を照合し、hits へ「鍵名<TAB>位置�
     LC_ALL=C awk -v mode="$1" -v label="${2:-}" -v kf="$keys" "$AWK_PROG" >> "$hits"
 }
 
+# ref 名に置場の値が含まれるか(件数で判定。表示のために ref 名を echo する前に必ず呼ぶ)
+ref_has_secret() { # $1=ref名
+    local n
+    n="$(printf '%s\n' "$1" | LC_ALL=C grep -c -F -f "$vals" 2>/dev/null)"
+    [[ "${n:-0}" =~ ^[0-9]+$ ]] && (( n > 0 ))
+}
+show_ref() { # $1=ref名。値を含みうるときは伏せる
+    if ref_has_secret "$1"; then
+        echo "<ref withheld: contains a secret value>"
+    else
+        printf '%s' "$1"
+    fi
+}
+ref_secret_keys() { # $1=ref名 → 値を含む鍵名(重複なし)を出力。値自体は出さない
+    local k v
+    while IFS=$'\t' read -r k v; do
+        [[ -n "$v" && "$1" == *"$v"* ]] && echo "$k"
+    done < "$keys" | sort -u
+}
+
 gitfail=0
 is_zero() { [[ "$1" =~ ^0+$ ]]; }
 declare -A scanned=()
@@ -146,7 +173,7 @@ scan_commit() { # $1=sha $2=local ref
     st=("${PIPESTATUS[@]}"); (( st[0] == 0 )) || gitfail=1
     if [[ -s "$hits" ]]; then
         found=1
-        echo "pre-push: 拒否 — commit ${c:0:12} (ref $2) に置場の秘匿値と一致する内容があります(値は表示しません):" >&2
+        echo "pre-push: 拒否 — commit ${c:0:12} (ref $(show_ref "$2")) に置場の秘匿値と一致する内容があります(値は表示しません):" >&2
         sort -u "$hits" | head -20 | while IFS=$'\t' read -r k where; do
             echo "    鍵名 $k — $where" >&2
         done
@@ -156,12 +183,24 @@ scan_commit() { # $1=sha $2=local ref
 while read -r local_ref local_sha remote_ref remote_sha; do
     is_zero "$local_sha" && continue   # ref の削除 push は送出commitなし
 
+    # push する ref 名そのもの(local/remote)に値が含まれていないか。ref 名は表示しない
+    refnames=("$local_ref")
+    [[ "$remote_ref" == "$local_ref" ]] || refnames+=("$remote_ref")
+    for refname in "${refnames[@]}"; do
+        if ref_has_secret "$refname"; then
+            found=1
+            while read -r k; do
+                [[ -n "$k" ]] && echo "pre-push: 拒否 — ref 名に鍵名 $k の値を含みます(ref 名は表示しません・値は表示しません)。" >&2
+            done < <(ref_secret_keys "$refname")
+        fi
+    done
+
     if [[ "$(git cat-file -t "$local_sha" 2>/dev/null)" == tag ]]; then
         : > "$hits"
         git cat-file tag "$local_sha" 2>/dev/null | scan lines "tag object line "
         if [[ -s "$hits" ]]; then
             found=1
-            echo "pre-push: 拒否 — tag ${local_sha:0:12} (ref $local_ref) に置場の秘匿値と一致する内容があります(値は表示しません):" >&2
+            echo "pre-push: 拒否 — tag ${local_sha:0:12} (ref $(show_ref "$local_ref")) に置場の秘匿値と一致する内容があります(値は表示しません):" >&2
             sort -u "$hits" | head -20 | while IFS=$'\t' read -r k where; do
                 echo "    鍵名 $k — $where" >&2
             done
@@ -175,7 +214,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
         revargs=("$local_sha" --not "$remote_sha" "--remotes=$remote_name")
     fi
     if ! commits="$(git rev-list "${revargs[@]}" 2>/dev/null)"; then
-        echo "pre-push: 送出commitの範囲を決められないため push を拒否します (ref $local_ref)。" >&2
+        echo "pre-push: 送出commitの範囲を決められないため push を拒否します (ref $(show_ref "$local_ref"))。" >&2
         gitfail=1
         continue
     fi

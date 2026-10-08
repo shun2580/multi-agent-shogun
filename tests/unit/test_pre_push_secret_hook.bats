@@ -330,3 +330,47 @@ EOF
     [ -n "$output" ] || { echo "scripts/githooks/pre-push が git に追跡されていない" >&2; return 1; }
     [[ "$output" == 100755\ * ]] || { echo "git tree 上の mode が 100755 でない: ${output%% *}" >&2; return 1; }
 }
+
+@test "17) 値を含む名前のブランチを、クリーンなcommitのままpushしても拒否される(G-1)" {
+    git -C "$WORK" checkout -q -b "feat-$DUMMY_TOPIC"
+    commit_file d.txt "clean" "add d"
+    run git -C "$WORK" push origin "feat-$DUMMY_TOPIC"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"ref 名に鍵名 NTFY_TOPIC"* ]]
+    run git -C "$REMOTE" rev-parse --verify -q "refs/heads/feat-$DUMMY_TOPIC"
+    [ "$status" -ne 0 ]
+}
+
+@test "18) 値を含む名前の軽量tagも拒否される(G-1)" {
+    git -C "$WORK" tag "rel-$DUMMY_TOKEN"
+    run git -C "$WORK" push origin "rel-$DUMMY_TOKEN"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"ref 名に鍵名 API_TOKEN"* ]]
+    run git -C "$REMOTE" rev-parse --verify -q "refs/tags/rel-$DUMMY_TOKEN"
+    [ "$status" -ne 0 ]
+}
+
+@test "19) ref名と追加行の両方に値がある場合、出力にダミー値が1文字列も出ない(G-2)" {
+    git -C "$WORK" checkout -q -b "feat-$DUMMY_TOPIC"
+    commit_file e.txt "leak $DUMMY_TOPIC and $DUMMY_TOKEN" "add e"
+    run git -C "$WORK" push origin "feat-$DUMMY_TOPIC"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"ref withheld"* ]]
+    out="$output"
+    run grep -c -F "$DUMMY_TOPIC" <<< "$out"
+    [ "$output" = "0" ]
+    run grep -c -F "$DUMMY_TOKEN" <<< "$out"
+    [ "$output" = "0" ]
+}
+
+@test "20) 値を含まない通常のref名では従来どおり拒否メッセージにref名が表示される(退行なし)" {
+    git -C "$WORK" checkout -q -b feature-normal
+    commit_file f.txt "x $DUMMY_TOPIC" "add f"
+    run git -C "$WORK" push origin feature-normal
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"ref refs/heads/feature-normal"* ]]
+    [[ "$output" != *"ref withheld"* ]]
+    [[ "$output" != *"ref 名に鍵名"* ]]
+    run grep -c -F "$DUMMY_TOPIC" <<< "$output"
+    [ "$output" = "0" ]
+}
