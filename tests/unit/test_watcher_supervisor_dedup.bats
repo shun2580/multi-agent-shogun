@@ -19,22 +19,29 @@ teardown() {
     rm -rf "$TEST_TMP"
 }
 
-# 実プロセス(inbox_watcher.sh)のPID集合がテスト前後で変化していないことを確認する。
+# 実プロセス(inbox_watcher.sh)がテストによって新規に生成(漏出)されていないことを確認する。
 # 単純な有無チェックだと本番稼働中の正規watcher群と区別できないため、
-# setupで取得したベースラインPID集合との完全一致で判定する。
-# 稼働中の本物のwatcherは内部でタイムアウトガード等の短命なサブシェルを
-# fork することがあり、fork直後はexecを経ていないためargvが親と同一のまま
-# 一瞬だけpgrep -fにマッチしてしまう(偽陽性)。本物の漏出は持続するのに対し
-# この種のサブシェルは1秒未満で消えるため、不一致時のみ1秒待って再確認する。
+# setupで取得したベースラインPID集合に無い「新規PID」のみを漏出候補とする。
+# 稼働中の本物のwatcherは$(...)等で短命なサブシェルをforkし、fork直後はexecを
+# 経ていないためargvが親と同一のまま一瞬だけpgrep -fにマッチする(偽陽性。
+# cmd_212実測: 30回中7回の間欠失敗の原因)。これは時間待ちではなく親子関係で除外する:
+#   - 候補PIDが既に消えている → 短命サブシェル。漏出ではない(漏出は持続する)。
+#   - 候補PIDの親が inbox_watcher.sh のargvを持つ → 稼働中watcherのサブシェル。除外。
+#   - 親が読めない(消滅済み) → 短命サブシェルの連鎖。除外(テスト中のbashは生存している)。
+# テストが本当に起動した watcher の親は bats/bash/init 等であり、除外されない。
 assert_no_inbox_watcher_process_leak() {
-    local after
-    after="$(pgrep -f 'scripts/inbox_watcher.sh' | sort -n | tr '\n' ' ')"
-    if [ "$after" = "$BASELINE_INBOX_PIDS" ]; then
-        return 0
-    fi
-    sleep 1
-    after="$(pgrep -f 'scripts/inbox_watcher.sh' | sort -n | tr '\n' ' ')"
-    [ "$after" = "$BASELINE_INBOX_PIDS" ]
+    local pid ppid pcmd
+    for pid in $(pgrep -f 'scripts/inbox_watcher.sh'); do
+        case " $BASELINE_INBOX_PIDS " in *" $pid "*) continue ;; esac
+        ppid="$(awk '{print $4}' "/proc/$pid/stat" 2>/dev/null)" || continue
+        [ -n "$ppid" ] || continue
+        pcmd="$(tr '\0' ' ' < "/proc/$ppid/cmdline" 2>/dev/null)" || continue
+        [ -n "$pcmd" ] || continue
+        case "$pcmd" in *scripts/inbox_watcher.sh*) continue ;; esac
+        echo "leaked inbox_watcher process: pid=$pid ppid=$ppid parent=[$pcmd]" >&2
+        return 1
+    done
+    return 0
 }
 
 # start_watcher_if_missing を呼び、実装内の nohup 呼び出しが行われたかどうかを SPAWN_LOG で判定するヘルパー。
