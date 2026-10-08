@@ -1,0 +1,198 @@
+#!/usr/bin/env bash
+# pre-push hook (cmd_213): 秘匿値の値照合。送出されるcommitに秘匿値が含まれていれば push を拒否する。
+#
+# 置場: ${SHOGUN_SECRETS_FILE:-$HOME/.config/multi-agent-shogun/secrets.env} の KEY=value 行から値を取り出し、
+#       送出差分の「コミットメッセージ・author/committer・追加行・追加/変更ファイルパス名・tagオブジェクト」を
+#       固定文字列として照合する。
+# 契約: git が渡す引数(remote name, url)と stdin の `<local ref> <local sha> <remote ref> <remote sha>` だけで動く
+#       (git rev-parse --show-toplevel には依存しない=main でも worktree でも同じ挙動)。
+# 方針: 値は標準出力・標準エラー・ログのいずれにも出さない(鍵名・commit id・パス・行番号まで)。
+#       置場が読めないときは fail-loud で拒否する(値照合できない状態で push させない)。迂回用の環境変数は設けない。
+# 導入: git config core.hooksPath scripts/githooks   (切替時に殿が実行。--no-verify は hook 自体では防げない=permissions.deny側で防ぐ)
+set -uo pipefail
+
+remote_name="${1:-}"
+secrets_file="${SHOGUN_SECRETS_FILE:-$HOME/.config/multi-agent-shogun/secrets.env}"
+
+umask 077
+tmpdir="$(mktemp -d 2>/dev/null)" || { echo "pre-push: 一時ディレクトリを作れないため push を拒否します" >&2; exit 1; }
+trap 'rm -rf "$tmpdir"' EXIT
+keys="$tmpdir/keys.tsv"
+hits="$tmpdir/hits.tsv"
+: > "$keys"
+: > "$hits"
+
+# ---- 置場の読込: 鍵名<TAB>値 の一時ファイル(600)を作る。短い値(8文字未満)・空値・コメントは除外 ----
+nvalues=0
+if [[ ! -f "$secrets_file" || ! -r "$secrets_file" ]]; then
+    {
+        echo "pre-push: 秘匿値の置場 ($secrets_file) が読めないため push を拒否します(値照合ができない状態では送出させない)。"
+        echo "  置場を作る: mkdir -p ~/.config/multi-agent-shogun && 秘匿値を KEY=value 形式で secrets.env に書き chmod 600 する(書式は config/secrets.env.sample)。"
+    } >&2
+    exit 1
+fi
+
+add_value() {
+    # $1=key $2=value。8文字未満は除外
+    if (( ${#2} >= 8 )); then
+        printf '%s\t%s\n' "$1" "$2" >> "$keys"
+        nvalues=$((nvalues + 1))
+    fi
+}
+
+while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    if [[ "$line" == export[[:space:]]* ]]; then
+        line="${line#export}"
+        line="${line#"${line%%[![:space:]]*}"}"
+    fi
+    [[ "$line" == *=* ]] || continue
+    key="${line%%=*}"
+    val="${line#*=}"
+    key="${key//[[:space:]]/}"
+    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    val="${val#"${val%%[![:space:]]*}"}"
+    val="${val%"${val##*[![:space:]]}"}"
+    if (( ${#val} >= 2 )) && { [[ "$val" == \"*\" ]] || [[ "$val" == \'*\' ]]; }; then
+        add_value "$key" "${val:1:${#val}-2}"
+    else
+        add_value "$key" "$val"
+        # 引用符なしの行末コメント(` # ...`)付きの場合、コメントを除いた値も照合対象に加える
+        if [[ "$val" == *' #'* ]]; then
+            stripped="${val%% \#*}"
+            stripped="${stripped%"${stripped##*[![:space:]]}"}"
+            add_value "$key" "$stripped"
+        fi
+    fi
+done < "$secrets_file"
+
+if (( nvalues == 0 )); then
+    {
+        echo "pre-push: 置場 ($secrets_file) に照合可能な値(8文字以上の KEY=value 行)が1件も無いため push を拒否します。"
+        echo "  置場を作る: secrets.env に秘匿値を KEY=value 形式で書く(書式は config/secrets.env.sample)。"
+    } >&2
+    exit 1
+fi
+
+# ---- 照合用 awk(値は鍵ファイルからのみ読み、出力には鍵名と位置だけを出す) ----
+read -r -d '' AWK_PROG <<'AWK_EOF'
+BEGIN {
+    n = 0
+    while ((getline row < kf) > 0) {
+        t = index(row, "\t")
+        if (t < 2) continue
+        n++
+        kname[n] = substr(row, 1, t - 1)
+        kval[n] = substr(row, t + 1)
+    }
+    close(kf)
+    inhunk = 0; path = ""; lineno = 0; N = 1
+}
+function shown(p,   i) {
+    for (i = 1; i <= n; i++) if (index(p, kval[i]) > 0) return "<path withheld: contains a secret value>"
+    return p
+}
+mode == "lines" {
+    for (i = 1; i <= n; i++) if (index($0, kval[i]) > 0) print kname[i] "\t" label NR
+    next
+}
+mode == "diff" {
+    if ($0 ~ /^diff --/) { inhunk = 0; path = ""; next }
+    if (!inhunk && $0 ~ /^\+\+\+ /) {
+        p = substr($0, 5); sub(/\t.*$/, "", p)
+        if (p == "/dev/null") path = ""; else path = substr(p, 3)
+        next
+    }
+    if ($0 ~ /^@@+ /) {
+        inhunk = 1
+        match($0, /^@+/); N = RLENGTH - 1
+        nf = split($0, f, " ")
+        for (j = 2; j <= nf; j++) if (substr(f[j], 1, 1) == "+") { s = substr(f[j], 2); sub(/,.*/, "", s); lineno = s + 0; break }
+        next
+    }
+    if (!inhunk) next
+    if (substr($0, 1, 1) == "\\") next
+    pfx = substr($0, 1, N); text = substr($0, N + 1)
+    if (pfx ~ /-/) next
+    if (pfx ~ /^\++$/) {
+        for (i = 1; i <= n; i++) if (index(text, kval[i]) > 0) print kname[i] "\t" "added line " shown(path) ":" lineno
+    }
+    lineno++
+}
+AWK_EOF
+
+scan() { # $1=mode $2=label (stdin を照合し、hits へ「鍵名<TAB>位置」を追記)
+    LC_ALL=C awk -v mode="$1" -v label="${2:-}" -v kf="$keys" "$AWK_PROG" >> "$hits"
+}
+
+gitfail=0
+is_zero() { [[ "$1" =~ ^0+$ ]]; }
+declare -A scanned=()
+found=0
+
+scan_commit() { # $1=sha $2=local ref
+    local c="$1" st
+    : > "$hits"
+    git log -1 --format=%B "$c" 2>/dev/null | scan lines "commit message line "
+    st=("${PIPESTATUS[@]}"); (( st[0] == 0 )) || gitfail=1
+    git log -1 --format='%an%n%ae%n%cn%n%ce' "$c" 2>/dev/null | scan lines "author/committer field "
+    st=("${PIPESTATUS[@]}"); (( st[0] == 0 )) || gitfail=1
+    git -c core.quotepath=false diff-tree -r --root --cc --no-commit-id --name-only --diff-filter=ACMRT "$c" 2>/dev/null | scan lines "file path #"
+    st=("${PIPESTATUS[@]}"); (( st[0] == 0 )) || gitfail=1
+    git -c core.quotepath=false diff-tree -p -r --root --cc --no-commit-id -U0 --text --no-ext-diff --no-textconv \
+        --src-prefix=a/ --dst-prefix=b/ "$c" 2>/dev/null | scan diff
+    st=("${PIPESTATUS[@]}"); (( st[0] == 0 )) || gitfail=1
+    if [[ -s "$hits" ]]; then
+        found=1
+        echo "pre-push: 拒否 — commit ${c:0:12} (ref $2) に置場の秘匿値と一致する内容があります(値は表示しません):" >&2
+        sort -u "$hits" | head -20 | while IFS=$'\t' read -r k where; do
+            echo "    鍵名 $k — $where" >&2
+        done
+    fi
+}
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+    is_zero "$local_sha" && continue   # ref の削除 push は送出commitなし
+
+    if [[ "$(git cat-file -t "$local_sha" 2>/dev/null)" == tag ]]; then
+        : > "$hits"
+        git cat-file tag "$local_sha" 2>/dev/null | scan lines "tag object line "
+        if [[ -s "$hits" ]]; then
+            found=1
+            echo "pre-push: 拒否 — tag ${local_sha:0:12} (ref $local_ref) に置場の秘匿値と一致する内容があります(値は表示しません):" >&2
+            sort -u "$hits" | head -20 | while IFS=$'\t' read -r k where; do
+                echo "    鍵名 $k — $where" >&2
+            done
+        fi
+    fi
+
+    if is_zero "$remote_sha" || ! git cat-file -e "${remote_sha}^{commit}" 2>/dev/null; then
+        revargs=("$local_sha" --not "--remotes=$remote_name")   # 新規ref(または remote側commitが手元に無い)
+    else
+        # remote_sha..local_sha に加え、同じremoteの他refで既に公開済みのcommitも除く(公開済み履歴を責めない)
+        revargs=("$local_sha" --not "$remote_sha" "--remotes=$remote_name")
+    fi
+    if ! commits="$(git rev-list "${revargs[@]}" 2>/dev/null)"; then
+        echo "pre-push: 送出commitの範囲を決められないため push を拒否します (ref $local_ref)。" >&2
+        gitfail=1
+        continue
+    fi
+    while read -r c; do
+        [[ -n "$c" ]] || continue
+        [[ -n "${scanned[$c]:-}" ]] && continue
+        scanned[$c]=1
+        scan_commit "$c" "$local_ref"
+    done <<< "$commits"
+done
+
+if (( gitfail )); then
+    echo "pre-push: 差分の取得に失敗した箇所があるため、値照合を保証できず push を拒否します。" >&2
+    exit 1
+fi
+if (( found )); then
+    echo "対処: 未pushのcommitから値を除く — git rebase -i <remote>/<branch> で該当commitを編集し値を除いてから再push(直近1commitなら git commit --amend)。" >&2
+    exit 1
+fi
+exit 0
