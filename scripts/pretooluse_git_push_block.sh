@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # PreToolUse hook: git push機械ブロック (cmd_159)
 #
-# `git push` をPreToolUseでdenyし、mandate/decisions_journal.md の
-# PUSH-APPROVEDエントリを明示指定(PUSH_APPROVED_ID環境変数)で消化する場合
-# のみ通す。承認状態が判定不能(環境変数なし・該当PUSH-APPROVEDエントリ不在・
-# decisions_journal.md自体が読めない)は必ずdeny側へ倒す
-# (judgment_model原則2: 破壊的操作はunknown時に保留)。
+# `git push` をPreToolUseでdenyし、フック自身のプロセス環境に
+# `PUSH_APPROVED=1` が立っている場合**のみ**通す(殿がセッション起動時・
+# シェルで設定する)。コマンド文字列に前置した`PUSH_APPROVED=1 git push`や
+# 旧方式の`PUSH_APPROVED_ID=P-nn`接頭辞では通らない(エージェント自身が
+# 承認を自己発行できないようにするため)。承認台帳(decisions_journal.md)への
+# 依存は持たない(cmd_210で除去)。環境変数が無い・値が"1"以外は必ずdeny側へ
+# 倒す(judgment_model原則2: 破壊的操作はunknown時に保留)。
 #
 # 🔴適用範囲の限界: 本フックが検査するのはBashツール経由のトップレベル
 # コマンド文字列のみである。scripts/*.sh内部から呼ばれる`git push`
@@ -16,14 +18,14 @@
 # 🔴D003との関係: `--force`/`-f`付きpushは既に`.claude/settings.json`の
 # 静的permission deny(`Bash(git push --force*)`・`Bash(git push -f *)`)で
 # 別レイヤーとして塞がれている。本フックはforce系の再実装を行わず、
-# force無しの通常pushを承認キュー経由でのみ通す機構にとどめる
+# force無しの通常pushを`PUSH_APPROVED=1`環境変数経由でのみ通す機構にとどめる
 # (D003の迂回路を新設しない)。
 #
 # features.git_push_block_enabled は off|observe|enforce の3値
 # (pretooluse_yaml_guard.shと同方針):
 #   off      … 完全無効化(早期リターン、python起動なし)
 #   observe … 検証は完全実行するがdenyせず、WOULD-DENYをlogs/へ記録して通す
-#   enforce … 未承認push・判定不能pushを実際にdeny
+#   enforce … 未承認push(環境変数PUSH_APPROVED=1なし)を実際にdeny
 # 未知値・空値・設定ファイル欠落は必ずoffへ倒す(fail-safe)。
 set -uo pipefail
 
@@ -32,7 +34,6 @@ SETTINGS="${GIT_PUSH_BLOCK_SETTINGS:-$SCRIPT_DIR/config/settings.yaml}"
 PYTHON_BIN="${GIT_PUSH_BLOCK_PYTHON:-$SCRIPT_DIR/.venv/bin/python3}"
 NTFY_SCRIPT="${GIT_PUSH_BLOCK_NTFY_SCRIPT:-$SCRIPT_DIR/scripts/ntfy.sh}"
 LOG_FILE="${GIT_PUSH_BLOCK_LOG:-$SCRIPT_DIR/logs/git_push_block.log}"
-APPROVAL_LEDGER="${GIT_PUSH_BLOCK_APPROVAL_LEDGER:-$SCRIPT_DIR/mandate/decisions_journal.md}"
 
 # ─── 反復DENY警報 (pretooluse_yaml_guard.sh check_repeated_deny_alert()の
 # 一般化流用) ───
@@ -108,6 +109,7 @@ mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
 # ─── ここから先はcommandのフルJSONパース+検出+承認判定(pythonを起動) ───
 read -r -d '' PYCODE <<'PYEOF' || true
 import json
+import os
 import re
 import sys
 
@@ -217,35 +219,13 @@ if not any(GIT_PUSH_RE.search(seg) for seg in segments):
     sys.exit(0)
 
 # ─── 承認判定 ───
-# `PUSH_APPROVED_ID=P-<数字>` という環境変数プレフィックスパターンをcommand
-# 文字列全体から探し、対応するPUSH-APPROVEDエントリが decisions_journal.md
-# に行頭アンカー付きで実在するかを確認する。両方が真の場合のみ承認扱い。
-approved = False
-reason = "no PUSH_APPROVED_ID prefix found in command"
-
-m = re.search(r"PUSH_APPROVED_ID=(P-\d+)", command)
-if m:
-    token = m.group(1)
-    try:
-        with open("__APPROVAL_LEDGER__", "r", encoding="utf-8") as f:
-            journal_text = f.read()
-    except OSError as e:
-        journal_text = None
-        reason = f"failed to read decisions_journal.md: {type(e).__name__}: {e}"
-
-    if journal_text is not None:
-        entry_re = re.compile(
-            rf"^\S+\s*\|\s*PUSH-APPROVED\s*\|\s*{re.escape(token)}\b",
-            re.MULTILINE,
-        )
-        if entry_re.search(journal_text):
-            approved = True
-            reason = f"decisions_journal.md contains PUSH-APPROVED entry for {token}"
-        else:
-            reason = f"no PUSH-APPROVED entry for {token} found in decisions_journal.md"
-
-if approved:
+# フック自身のプロセス環境(os.environ)に PUSH_APPROVED=1 が立っているときのみ
+# 承認扱い。command文字列は一切見ない(前置された`PUSH_APPROVED=1`や旧
+# `PUSH_APPROVED_ID=`接頭辞では通らない)。
+if os.environ.get("PUSH_APPROVED") == "1":
     sys.exit(0)
+
+reason = "PUSH_APPROVED=1 is not set in the hook process environment (only the Lord may set it; a command-string prefix does not count)"
 
 print(json.dumps({
     "hookSpecificOutput": {
@@ -257,7 +237,6 @@ print(json.dumps({
 sys.exit(0)
 PYEOF
 
-PYCODE="${PYCODE//__APPROVAL_LEDGER__/$APPROVAL_LEDGER}"
 PYCODE="${PYCODE//__LIB_DIR__/$SCRIPT_DIR/lib}"
 
 ERR_TMP="$(mktemp)"
@@ -288,6 +267,6 @@ if [ -n "$OUTPUT" ]; then
     exit 0
 fi
 
-# 検証完了・通過(git push検出なし、または承認済みAQエントリで消化)。
+# 検証完了・通過(git push検出なし、または環境変数PUSH_APPROVED=1で承認済み)。
 echo "[$(date -Iseconds)] ALLOW mode=$MODE session=$SESSION_ID tool=$TOOL_NAME" >> "$LOG_FILE"
 exit 0

@@ -11,6 +11,7 @@ setup() {
     mkdir -p "$TEST_TMP/logs"
     SETTINGS_ENFORCE="$TEST_TMP/settings_enforce.yaml"
     SETTINGS_OFF="$TEST_TMP/settings_off.yaml"
+    SETTINGS_OBSERVE="$TEST_TMP/settings_observe.yaml"
     LOG_FILE="$TEST_TMP/logs/git_push_block.log"
     NTFY_LOG="$TEST_TMP/ntfy.log"
     NTFY_STUB="$TEST_TMP/ntfy_stub.sh"
@@ -24,6 +25,12 @@ EOF
 features:
   git_push_block_enabled: off
 EOF
+    cat > "$SETTINGS_OBSERVE" <<'EOF'
+features:
+  git_push_block_enabled: observe
+EOF
+    # cmd_210: 承認台帳はもはや判定に使われない。「在っても判定が変わらない」
+    # ことを検証するため、旧方式で承認扱いになっていたエントリ入りの台帳を置く。
     cat > "$APPROVAL_LEDGER" <<'EOF'
 2026-01-01T00:00:00 | PUSH-APPROVED | P-999 | test fixture | 出典: test
 2026-01-01T00:00:00 | RULE | some rule that happens to mention P-01 in its body text | 出典: test
@@ -45,7 +52,18 @@ run_guard_json() {
     run env \
         GIT_PUSH_BLOCK_SETTINGS="$settings" \
         GIT_PUSH_BLOCK_LOG="$LOG_FILE" \
-        GIT_PUSH_BLOCK_APPROVAL_LEDGER="$APPROVAL_LEDGER" \
+        GIT_PUSH_BLOCK_NTFY_SCRIPT="$NTFY_STUB" \
+        bash -c "cat '$json_file' | bash '$GUARD_SCRIPT'"
+}
+
+# cmd_210: 殿が環境(フックのプロセス環境)に PUSH_APPROVED=1 を立てた実行。
+run_guard_json_approved() {
+    local json_file="$1"
+    local settings="${2:-$SETTINGS_ENFORCE}"
+    run env \
+        PUSH_APPROVED=1 \
+        GIT_PUSH_BLOCK_SETTINGS="$settings" \
+        GIT_PUSH_BLOCK_LOG="$LOG_FILE" \
         GIT_PUSH_BLOCK_NTFY_SCRIPT="$NTFY_STUB" \
         bash -c "cat '$json_file' | bash '$GUARD_SCRIPT'"
 }
@@ -103,26 +121,143 @@ with open(sys.argv[3], 'w') as f:
     run_guard_json "$TEST_TMP/p.json"
     [ "$status" -eq 0 ]
     [[ "$output" == *'"permissionDecision": "deny"'* ]]
-    [[ "$output" == *"no PUSH_APPROVED_ID prefix found"* ]]
+    [[ "$output" == *"PUSH_APPROVED=1 is not set in the hook process environment"* ]]
     run grep -c "^\[.*\] DENY .*session=s2 " "$LOG_FILE"
     [ "$output" -eq 1 ]
 }
 
-@test "real unapproved git push with unrelated PUSH_APPROVED_ID not in journal: DENY" {
+@test "legacy PUSH_APPROVED_ID=P-998 prefix (no journal entry): DENY" {
     write_payload "$TEST_TMP/p.json" "s2b" "PUSH_APPROVED_ID=P-998 git push origin main"
     run_guard_json "$TEST_TMP/p.json"
     [ "$status" -eq 0 ]
     [[ "$output" == *'"permissionDecision": "deny"'* ]]
-    [[ "$output" == *"no PUSH-APPROVED entry for P-998 found"* ]]
+    [[ "$output" == *"PUSH_APPROVED=1 is not set in the hook process environment"* ]]
 }
 
-@test "real git push with valid approved PUSH_APPROVED_ID: ALLOW (regression check, unchanged behavior)" {
+@test "legacy PUSH_APPROVED_ID=P-999 prefix even though the journal has a matching PUSH-APPROVED entry: DENY (journal no longer consulted)" {
     write_payload "$TEST_TMP/p.json" "s3" "PUSH_APPROVED_ID=P-999 git push origin main"
     run_guard_json "$TEST_TMP/p.json"
     [ "$status" -eq 0 ]
-    [ -z "$output" ]
-    run grep -c "^\[.*\] ALLOW .*session=s3 " "$LOG_FILE"
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+    run grep -c "^\[.*\] DENY .*session=s3 " "$LOG_FILE"
     [ "$output" -eq 1 ]
+}
+
+@test "PUSH_APPROVED=1 set in the hook process environment: git push ALLOW" {
+    write_payload "$TEST_TMP/p.json" "s3b" "git push origin main"
+    run_guard_json_approved "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    run grep -c "^\[.*\] ALLOW .*session=s3b " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "PUSH_APPROVED=1 prefixed on the command string only (not in environment): DENY" {
+    write_payload "$TEST_TMP/p.json" "s3c" "PUSH_APPROVED=1 git push origin main"
+    run_guard_json "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+}
+
+@test "export/env-style command-string forms of PUSH_APPROVED=1 (export ...; / env ...): DENY" {
+    write_payload "$TEST_TMP/p.json" "s3d" "export PUSH_APPROVED=1; git push origin main"
+    run_guard_json "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+    write_payload "$TEST_TMP/p2.json" "s3e" "env PUSH_APPROVED=1 git push origin main"
+    run_guard_json "$TEST_TMP/p2.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+}
+
+@test "environment PUSH_APPROVED set to a value other than 1 (0 / empty / true / yes): DENY" {
+    write_payload "$TEST_TMP/p.json" "s3f" "git push origin main"
+    for v in 0 "" true yes; do
+        run env PUSH_APPROVED="$v" \
+            GIT_PUSH_BLOCK_SETTINGS="$SETTINGS_ENFORCE" \
+            GIT_PUSH_BLOCK_LOG="$LOG_FILE" \
+            GIT_PUSH_BLOCK_NTFY_SCRIPT="$NTFY_STUB" \
+            bash -c "cat '$TEST_TMP/p.json' | bash '$GUARD_SCRIPT'"
+        [ "$status" -eq 0 ]
+        [[ "$output" == *'"permissionDecision": "deny"'* ]]
+    done
+}
+
+@test "git push in a compound command, no env approval: DENY" {
+    write_payload "$TEST_TMP/p.json" "s3g" "git status && git push origin main"
+    run_guard_json "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+}
+
+@test "git push in a compound command, with env approval: ALLOW" {
+    write_payload "$TEST_TMP/p.json" "s3h" "git status && git push origin main"
+    run_guard_json_approved "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "non-push compound command with no env approval: ALLOW (unaffected)" {
+    write_payload "$TEST_TMP/p.json" "s3i" "git status && git log --oneline | head -3"
+    run_guard_json "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+# --- off|observe|enforce の3値 ---
+
+@test "observe mode: unapproved git push is NOT denied, logged WOULD-DENY" {
+    write_payload "$TEST_TMP/p.json" "so1" "git push origin main"
+    run_guard_json "$TEST_TMP/p.json" "$SETTINGS_OBSERVE"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    run grep -c "^\[.*\] WOULD-DENY .*session=so1 " "$LOG_FILE"
+    [ "$output" -eq 1 ]
+}
+
+@test "observe mode: env-approved git push is ALLOW (no WOULD-DENY)" {
+    write_payload "$TEST_TMP/p.json" "so2" "git push origin main"
+    run_guard_json_approved "$TEST_TMP/p.json" "$SETTINGS_OBSERVE"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    run grep -c "WOULD-DENY .*session=so2 " "$LOG_FILE"
+    [ "$output" -eq 0 ]
+}
+
+@test "off mode: env-less git push passes through untouched" {
+    write_payload "$TEST_TMP/p.json" "so3" "git push origin main"
+    run_guard_json "$TEST_TMP/p.json" "$SETTINGS_OFF"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+# --- 承認台帳(decisions_journal.md)非依存 ---
+
+@test "ledger absent: verdict unchanged (unapproved DENY / env-approved ALLOW)" {
+    rm -f "$APPROVAL_LEDGER"
+    write_payload "$TEST_TMP/p.json" "sl1" "git push origin main"
+    run_guard_json "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+    run_guard_json_approved "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "ledger present with a PUSH-APPROVED entry: verdict unchanged (unapproved still DENY, env-approved ALLOW)" {
+    grep -q "PUSH-APPROVED" "$APPROVAL_LEDGER"
+    write_payload "$TEST_TMP/p.json" "sl2" "git push origin main"
+    run_guard_json "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+    run_guard_json_approved "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "script no longer contains any approval-ledger code" {
+    run grep -c -E "APPROVAL_LEDGER|journal_text|entry_re|PUSH-APPROVED" "$GUARD_SCRIPT"
+    [ "$output" -eq 0 ]
 }
 
 @test "shell-exec heredoc (bash <<EOF) actually containing git push: still DENY (heredoc body IS executed here)" {
@@ -194,13 +329,13 @@ with open(sys.argv[3], 'w') as f:
     [[ "$output" == *'"permissionDecision": "deny"'* ]]
 }
 
-# (f) PUSH_APPROVED_ID prefix付き素push: 承認判定レイヤーに影響しないこと
-#     (承認済みP-999なのでALLOW、回帰なし)。
-@test "(f) PUSH_APPROVED_ID=P-999 git push origin main: still detected then ALLOW via approval (regression check)" {
+# (f) PUSH_APPROVED_ID prefix付き素push: 旧方式の接頭辞は承認として効かない
+#     (cmd_210: 環境変数方式へ単純化)。検出自体は従来どおり行われDENY。
+@test "(f) PUSH_APPROVED_ID=P-999 git push origin main: still detected, DENY (legacy prefix no longer approves)" {
     write_payload "$TEST_TMP/p.json" "qf" 'PUSH_APPROVED_ID=P-999 git push origin main'
     run_guard_json "$TEST_TMP/p.json"
     [ "$status" -eq 0 ]
-    [ -z "$output" ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
 }
 
 # (h) 同一segment内に複数の引用符引数、片方にgit push含む: ALLOW。
@@ -228,26 +363,28 @@ with open(sys.argv[3], 'w') as f:
     [ -z "$output" ]
 }
 
-# --- cmd_198 S-05: approval_queue.md退役に伴うPUSH-APPROVED方式への追従 ---
+# --- cmd_198 S-05 → cmd_210: 台帳非依存化に伴う書き換え ---
 
-# 新規1: decisions_journal.mdが読めない(fail-safe deny)場合、判定不能として
-# 必ずdeny側へ倒れること。
-@test "(new-1) decisions_journal.md unreadable (permission denied): DENY with fail-safe reason" {
+# 新規1(旧: 台帳が読めない→fail-safe deny): 台帳は判定に使われないため、
+# 台帳が読めなくても環境変数承認ならALLOW、承認なしならDENYのまま。
+@test "(new-1) decisions_journal.md unreadable (permission denied): verdict unchanged (DENY unapproved / ALLOW env-approved)" {
     chmod 000 "$APPROVAL_LEDGER"
-    write_payload "$TEST_TMP/p.json" "qn1" 'PUSH_APPROVED_ID=P-999 git push origin main'
+    write_payload "$TEST_TMP/p.json" "qn1" 'git push origin main'
     run_guard_json "$TEST_TMP/p.json"
-    chmod 644 "$APPROVAL_LEDGER"
     [ "$status" -eq 0 ]
     [[ "$output" == *'"permissionDecision": "deny"'* ]]
-    [[ "$output" == *"failed to read decisions_journal.md"* ]]
+    [[ "$output" != *"failed to read decisions_journal.md"* ]]
+    run_guard_json_approved "$TEST_TMP/p.json"
+    chmod 644 "$APPROVAL_LEDGER"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
 }
 
-# 新規2: トークンが非PUSH-APPROVED型エントリの本文中に言及されているだけの
-# 場合は承認と誤判定せずDENYすること(行頭アンカーによる偽造防止の回帰テスト)。
-@test "(new-2) token mentioned in prose within a non-PUSH-APPROVED entry: DENY" {
+# 新規2(旧: 本文言及のみのトークンは承認と誤判定しない): 旧接頭辞はそもそも
+# 無視されるためDENY。
+@test "(new-2) legacy token PUSH_APPROVED_ID=P-01 (mentioned only in prose in the ledger): DENY" {
     write_payload "$TEST_TMP/p.json" "qn2" 'PUSH_APPROVED_ID=P-01 git push origin main'
     run_guard_json "$TEST_TMP/p.json"
     [ "$status" -eq 0 ]
     [[ "$output" == *'"permissionDecision": "deny"'* ]]
-    [[ "$output" == *"no PUSH-APPROVED entry for P-01 found"* ]]
 }
