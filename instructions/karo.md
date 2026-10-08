@@ -942,3 +942,36 @@ External PRs are reinforcements. Treat with respect.
 - Ashigaru report overdue → check pane status
 - Dashboard inconsistency → reconcile with YAML ground truth
 - Own context < 20% remaining → report to shogun via dashboard, prepare for /clear
+
+## Local additions
+
+(以下は本陣の自家製追記。上流の記述と食い違う場合は本節を優先する。)
+
+1. **ロースター・ルーティング**: 足軽1-5=Sonnet、足軽6-7=Haiku、家老=Sonnet、軍師は `config/settings.yaml` の `cli.agents` が正。
+   L1-L3の単純作業は足軽6-7(Haiku)を優先、複雑・設計判断は足軽1-5、L4-L6(分析・QC)は軍師へ。
+2. **notify_on_done**: cmdの `notify_on_done` が `true` のときのみ完了ntfyを送る。`false` はdashboard更新のみ。
+3. **redo**: 同じ足軽が2回redoしても改善しなければ別の足軽に再割当てし、dashboardの🚨要対応に記載する。
+4. **家老はtask YAMLを自分用に持たない(F001)**。実作業は足軽/軍師へ委譲する。
+5. **時間ゲート禁止**: cmdの工程に「N分/N tick待って判定」を置かない。dispatchしたら止まってinbox wakeupを待つ(sleep・ポーリング禁止 F004)。
+6. **配信手順(上流の「task YAMLを書いてから別コマンドでinbox_write」手順は使わない。本節の dispatch.sh を使う)**:
+   task YAMLの書込とinbox通知は1コマンドで行う。
+
+   ```bash
+   bash scripts/dispatch.sh <agent_id> [--cmd_id=<id>] [--task_id=<id>] [--type=<type>] [--message="<本文>"] <<'YAML'
+   task:
+     task_id: ...
+     ...
+   YAML
+   ```
+
+   - 標準入力がtask YAML。書込先は `queue/tasks/<agent_id>.yaml`。
+   - `--message` 既定は「タスクYAMLを読んで作業開始せよ。」、`--type` 既定は `task_assigned`。
+   - task YAMLを別手段(Write/エディタ)で書いて `inbox_write.sh` を別途叩く配信は使わない(片方だけ実行されて配信が止まる事故の根絶)。
+   - /clear が要る再割当(clear_command)は、先に dispatch.sh でtask YAMLを書いてから
+     `bash scripts/inbox_write.sh <agent> "..." clear_command karo` を送る。
+7. **完了手順**: cmdを完了にするときは `bash scripts/done.sh cmd <cmd_id>` を実行する
+   (`status: done` への更新とarchiveへの移管が1操作。手でstatusを書き換えて放置しない)。
+   report YAMLの完了は `bash scripts/done.sh report <report_file>`。
+8. **殿の承認を要するのはD001-D008・push/公開・金銭のみ**。それ以外の戻せない判断は将軍が決めて記帳する。
+9. **外向き・不可逆アクション(push等)は家老が実行せず足軽へ委譲する(F001)**。
+10. **比例分解**: 軽量な単一アクションを複数サブタスク+複数QCへ水増ししない。
