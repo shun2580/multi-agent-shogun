@@ -65,7 +65,6 @@
 !lib/watcher_lifecycle.sh
 !lib/inflight_tasks.sh
 !lib/branch_policy.sh
-!lib/evidence_checks.py
 !lib/quote_masking.py
 
 # Multi-CLI: Codex auto-load file
@@ -106,7 +105,6 @@
 !config/ntfy_auth.env.sample
 !config/opencode-tui.json
 !config/opencode-permissions.yaml
-!config/cron_weekly_distill.sh
 !config/settings.yaml.example
 
 # config/settings.yaml contains secrets (ntfy_topic). Explicit deny (defense in
@@ -145,23 +143,12 @@ scripts/seo_qc.sh
 !scripts/dashboard-viewer.py
 !scripts/log_timing_event.sh
 !scripts/model_update_check.sh
-!scripts/analyze_timing.py
 !scripts/archive_report.sh
-!scripts/deadman_watcher.sh
-!scripts/scope_check.sh
-!scripts/stall_watcher.sh
 !scripts/pretooluse_reversibility_check.sh
-!scripts/pretooluse_staged_ignore_guard.sh
 !scripts/pretooluse_clear_idle.sh
 !scripts/pretooluse_secret_guard.sh
-!scripts/check_flag_silent_off.sh
-!scripts/weekly_distill.sh
 !scripts/pretooluse_git_push_block.sh
 !scripts/pretooluse_yaml_guard.sh
-!scripts/pretooluse_scope_check.sh
-!scripts/stop_hook_evidence.sh
-!scripts/check_runtime_reflection.sh
-!scripts/check_approval_queue_staleness.sh
 !scripts/branch_drift_check.sh
 !scripts/auto_merge_short_lived.sh
 !scripts/pre_deploy_verify.sh
@@ -237,8 +224,6 @@ logs/
 !skills/shogun-screenshot/scripts/
 !skills/shogun-screenshot/scripts/*.sh
 !skills/shogun-screenshot/scripts/*.py
-!skills/check-runtime-reflection/
-!skills/check-runtime-reflection/SKILL.md
 
 # Python venv (explicit deny — whitelist patterns like LICENSE leak through !*/)
 .venv/

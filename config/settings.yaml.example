@@ -12,36 +12,15 @@
 # for the meaning and recommended defaults of each key.
 
 features:
-  fastlane_enabled: <true|false>
-  deadman_enabled: <true|false>
-  scope_check_advisory: <true|false>
   yaml_guard_enabled: <off|observe|enforce>
-  stall_detection_enabled: <true|false>
   reporting_mode: <exception|verbose>
   reversibility_check_enabled: <off|observe>
-  fleet_idle_notify_enabled: <off|observe|enforce>
-  fleet_idle_notify_stable_sec: <integer>
   parent_cmd_done_gate_enabled: <off|observe|enforce>
   secret_guard_enabled: <off|observe|enforce>
-deadman:
-  stall_threshold_min: <integer>
-stall_detection:
-  stall_threshold_min: <integer>
-  karo_escalation_wait_min: <integer>
-  ntfy_escalation_wait_min: <integer>
-  nudge_limit_per_task: <integer>
-  tick_sec: <integer>
 auto_heal:
   silent_heal_enabled: <true|false>
   escalation_window_minutes: <integer>
   escalation_threshold_count: <integer>
-  cooldown_after_escalation_minutes: <integer>
-redo_escalation:
-  threshold_count: <integer>
-  cooldown_after_escalation_minutes: <integer>
-stuck_escalation:
-  threshold_count: <integer>
-  window_minutes: <integer>
   cooldown_after_escalation_minutes: <integer>
 dashboard_staleness:
   enabled: <boolean>

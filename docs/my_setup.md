@@ -238,10 +238,6 @@ Claude Code・Gemini CLI・OpenCode はそれぞれ異なるインターフェ�
 |---|---|---|
 | yaml_guard_enabled | **enforce** | cmd_135（2026-07-29）。Fable裁定Q6の4条件（評価141件・出陣2回跨ぎ・偽would-deny 0・fail-open 0）充足確認後に移行。反復deny警報（cmd_134工程2）併設済み |
 | reporting_mode | **exception** | cmd_136 省力化3点セット。正常完了はdashboard記録のみ、ntfyは失敗・ブロック・caveat付き完了・殿裁定要・警報のみ。常時ntfy対象の適用除外: go-harvesterレビュー / Fable裁定案件 / 緊急実害進行中 |
-| stall_detection_enabled | true | cmd_143（2026-07-31）殿裁可。observe段なしで直接有効化 |
-| deadman_enabled | true | cmd_092。停滞警報v1（閾値20分）。精度レビューのチェックポイント待ち |
-| scope_check_advisory | true | advisory記録のみ継続。enforcement移行判断はデータ蓄積待ち |
-| fastlane_enabled | true | cmd_086 Part C。誤判定1件で家老がfalseへ戻す暫定運用 |
 | reversibility_check_enabled | **observe** | cmd_145 Part4是正（2026-08-04）で新設。flag不在によりPart4が本番不活性（fail-safe off固定）だった事故の是正。off\|observe二値、未知値は必ずoffへ倒すfail-safe設計 |
 
 その他: urgent_inbox_escalation（cmd_146②、緊急未読120分でエスカレーション。軍師報告3日滞留事案の再発防止）、dashboard_staleness段階的再通知（cmd_146③、360分→720分→1440分間隔）。
@@ -256,6 +252,4 @@ Claude Code・Gemini CLI・OpenCode はそれぞれ異なるインターフェ�
 
 - 全システム監査: 殿のfeature freeze宣言後に実施（次回セッション以降）
 - Sonnet×5＋Haiku×2ロースターの稼働評価
-- scope_check.sh の advisory→enforcement 移行判断（データ蓄積待ち）
-- deadman警報の精度レビュー
 - 検討中（影武者記事きっかけ・未着手）: ①承認ゲート分岐基準を「外向き/内向き」から「可逆/不可逆」軸へ引き直し ②「実装前確認」から「実装後検証→通知」への寄せ。いずれも reversibility_check（observe）と write-guard enforce の実績データが揃ってから着手
