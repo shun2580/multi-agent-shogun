@@ -24,6 +24,18 @@ setup_e2e_session() {
     E2E_QUEUE="$(mktemp -d "/tmp/e2e_queue_XXXXXX")"
     mkdir -p "$E2E_QUEUE"/queue/{inbox,tasks,reports,metrics}
 
+    # Isolate idle flags from the live fleet. Without this, mock_behaviors/common.sh
+    # and inbox_watcher.sh fall back to /tmp/shogun_idle_<agent>, i.e. the SAME files the
+    # running fleet uses (and test results then depend on the fleet's live state).
+    export E2E_IDLE_FLAG_DIR IDLE_FLAG_DIR
+    E2E_IDLE_FLAG_DIR="$(mktemp -d "/tmp/e2e_idle_flags_session_XXXXXX")"
+    IDLE_FLAG_DIR="$E2E_IDLE_FLAG_DIR"
+
+    # The mock panes are not real CLIs: pane_current_command is "bash", which
+    # inbox_watcher's AUTO-HEAL misreads as a crashed CLI (and the e2e copy has no
+    # switch_cli.sh to relaunch it). Disable AUTO-HEAL for e2e watchers; production is untouched.
+    export ASW_AUTO_HEAL="${E2E_ASW_AUTO_HEAL:-0}"
+
     # Copy scripts (SCRIPT_DIR auto-resolves to $E2E_QUEUE from script location)
     mkdir -p "$E2E_QUEUE/scripts"
     cp "$PROJECT_ROOT/scripts/inbox_write.sh" "$E2E_QUEUE/scripts/"
@@ -64,6 +76,9 @@ setup_e2e_session() {
 
     # Create tmux session
     tmux new-session -d -s "$E2E_SESSION" -n agents -x 200 -y 50
+    # Panes/respawns do not inherit the caller's env (the tmux server may be shared
+    # with the live fleet), so hand the isolated flag dir to the session explicitly.
+    tmux set-environment -t "$E2E_SESSION" IDLE_FLAG_DIR "$IDLE_FLAG_DIR"
 
     # Split into panes (session starts with 1 pane, need num_panes-1 splits)
     local i
@@ -83,7 +98,7 @@ setup_e2e_session() {
     for ((i = 0; i < num_panes && i < ${#DEFAULT_AGENTS[@]}; i++)); do
         local agent_id="${DEFAULT_AGENTS[$i]}"
         tmux send-keys -t "${E2E_SESSION}:agents.${i}" \
-            "MOCK_CLI_TYPE=claude MOCK_AGENT_ID=$agent_id MOCK_PROCESSING_DELAY=$DEFAULT_PROCESSING_DELAY MOCK_PROJECT_ROOT=$E2E_QUEUE bash $PROJECT_ROOT/tests/e2e/mock_cli.sh" Enter
+            "IDLE_FLAG_DIR=$IDLE_FLAG_DIR MOCK_CLI_TYPE=claude MOCK_AGENT_ID=$agent_id MOCK_PROCESSING_DELAY=$DEFAULT_PROCESSING_DELAY MOCK_PROJECT_ROOT=$E2E_QUEUE bash $PROJECT_ROOT/tests/e2e/mock_cli.sh" Enter
     done
 
     # Wait for mock CLIs to start up
@@ -97,6 +112,9 @@ teardown_e2e_session() {
     tmux kill-session -t "$E2E_SESSION" 2>/dev/null || true
     if [ -n "${E2E_QUEUE:-}" ] && [ -d "$E2E_QUEUE" ]; then
         rm -rf "$E2E_QUEUE"
+    fi
+    if [ -n "${E2E_IDLE_FLAG_DIR:-}" ] && [ -d "$E2E_IDLE_FLAG_DIR" ]; then
+        rm -rf "$E2E_IDLE_FLAG_DIR"
     fi
 }
 

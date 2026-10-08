@@ -292,6 +292,18 @@ while IFS= read -r input || true; do
             process_inbox
             show_prompt "$MOCK_CLI_TYPE"
             ;;
+        *"queue/inbox/"*)
+            # Explicit nudge for non-Claude CLIs (opencode/gemini/antigravity): inbox_watcher
+            # sends a sentence naming queue/inbox + queue/tasks instead of "inboxN", and
+            # auto-marks the inbox read BEFORE sending it. So process_inbox may see 0 unread;
+            # read the task YAML directly (what a real agent does after being told to).
+            echo "[mock] Received explicit nudge: ${input:0:40}"
+            process_inbox
+            if [ -f "$TASK_FILE" ]; then
+                process_task "$TASK_FILE" || true
+            fi
+            show_prompt "$MOCK_CLI_TYPE"
+            ;;
         cmd_new*)
             # Karo-specific: decompose cmd
             if [ "$MOCK_AGENT_ID" = "karo" ]; then

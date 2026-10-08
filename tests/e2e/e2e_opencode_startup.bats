@@ -56,7 +56,7 @@ dump_watcher_log() {
 
     # 1. Respawn pane with OpenCode mock
     tmux respawn-pane -k -t "$ashigaru1_pane" \
-        "MOCK_CLI_TYPE=opencode MOCK_AGENT_ID=ashigaru1 MOCK_PROCESSING_DELAY=1 MOCK_PROJECT_ROOT=$E2E_QUEUE bash $PROJECT_ROOT/tests/e2e/mock_cli.sh"
+        "IDLE_FLAG_DIR=$IDLE_FLAG_DIR MOCK_CLI_TYPE=opencode MOCK_AGENT_ID=ashigaru1 MOCK_PROCESSING_DELAY=1 MOCK_PROJECT_ROOT=$E2E_QUEUE bash $PROJECT_ROOT/tests/e2e/mock_cli.sh"
     sleep 2
     tmux set-option -p -t "$ashigaru1_pane" @agent_cli "opencode"
 

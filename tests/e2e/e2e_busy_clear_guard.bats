@@ -98,7 +98,7 @@ wait_for_log() {
     local ashigaru1_pane
     ashigaru1_pane=$(pane_target 1)
     local log_file watcher_pid
-    local idle_flag="/tmp/shogun_idle_ashigaru1"
+    local idle_flag="${IDLE_FLAG_DIR:-/tmp}/shogun_idle_ashigaru1"
 
     touch "$idle_flag"
 
