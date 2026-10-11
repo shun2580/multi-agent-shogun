@@ -165,7 +165,7 @@ test('the band shows cmds, alerts and every agent from the files', async ($, on)
   const r = await load($, on, files)
   expect(r.text).toContain('進行cmd 2 [cmd_002 cmd_007]')
   expect(r.text).toContain('🚨3')
-  expect(r.text).toContain('家済/2')
+  expect(r.text).toContain('将/0 家/2 軍済/0')
   expect(r.text).toContain('足2稼/0')
   expect(r.text).not.toContain('?')
 })
@@ -174,17 +174,67 @@ test('only the ten named agents are read: test_* in queue/ is never counted', as
   const files = { ...FULL, 'queue/inbox/test_timing_068.yaml': inbox('false'), 'queue/tasks/test_x.yaml': task('assigned') }
   const r = await load($, on, files)
   expect(r.reads.some((p) => p.includes('test_'))).toBe(false)
-  expect(r.reads.length).toBe(2 + AGENTS.length * 2)
+  // cmd_221: shogun and karo read their inbox only, the other eight read inbox + task.
+  // 2 (cmds, dashboard) + 2 (shogun/karo inbox) + 8 x 2 = 20 (was 2 + 10 x 2 = 22 before cmd_221).
+  expect(r.reads.length).toBe(2 + 2 + (AGENTS.length - 2) * 2)
 })
 
 test('a missing file shows ? for that item only', async ($, on) => {
-  const files: Files = { ...FULL, 'queue/tasks/shogun.yaml': undefined, 'dashboard.md': undefined }
-  delete files['queue/tasks/shogun.yaml']
+  const files: Files = { ...FULL, 'queue/tasks/ashigaru1.yaml': undefined, 'dashboard.md': undefined }
+  delete files['queue/tasks/ashigaru1.yaml']
   delete files['dashboard.md']
   const r = await load($, on, files)
   expect(r.text).toContain('🚨?')
-  expect(r.text).toContain('将?/0')
+  expect(r.text).toContain('足1?/0')
   expect(r.text).toContain('進行cmd 2')
+})
+
+// ---- cmd_221: shogun and karo show the unread count only -----------------------------------
+
+// load() sets up the mock clock and hooks, so it can run once per test.
+const SK_FILES = (): Files => {
+  const files: Files = { ...FULL, 'queue/inbox/shogun.yaml': inbox('false'), 'queue/inbox/karo.yaml': inbox('false', 'true', 'false') }
+  for (const name of ['shogun', 'karo']) delete files[`queue/tasks/${name}.yaml`]
+  return files
+}
+
+test('shogun and karo: unread count only, no state and no ?, when there is no task file', async ($, on) => {
+  const r = await load($, on, SK_FILES())
+  expect(r.text).toContain('将/1 家/2 軍済/0')
+  expect(r.text).not.toContain('?')
+})
+
+test('shogun and karo: a task file that exists is neither read nor shown', async ($, on) => {
+  const r = await load($, on, { ...SK_FILES(), 'queue/tasks/shogun.yaml': task('assigned'), 'queue/tasks/karo.yaml': task('blocked') })
+  expect(r.text).toContain('将/1 家/2 軍済/0')
+  expect(r.text).not.toContain('?')
+  expect(r.reads.some((p) => p.endsWith('/queue/tasks/shogun.yaml') || p.endsWith('/queue/tasks/karo.yaml'))).toBe(false)
+  expect(r.reads.filter((p) => p.includes('/queue/tasks/')).length).toBe(AGENTS.length - 2)
+})
+
+test('shogun and karo: a missing inbox file is ?, never 0', async ($, on) => {
+  const files = SK_FILES()
+  delete files['queue/inbox/shogun.yaml']
+  const r = await load($, on, files)
+  expect(r.text).toContain('将/? 家/2')
+})
+
+test('shogun and karo: an inbox with an unexpected shape is ?, never 0', async ($, on) => {
+  const r = await load($, on, { ...SK_FILES(), 'queue/inbox/karo.yaml': 'messages:\n- id: a\n  read: true\n- id: b\n', 'queue/inbox/shogun.yaml': inbox('maybe') })
+  expect(r.text).toContain('将/? 家/? 軍済/0')
+})
+
+test('gunshi and ashigaru: the band keeps the state character and its ? rules', async ($, on) => {
+  const files: Files = { ...FULL, 'queue/tasks/gunshi.yaml': task('assigned'), 'queue/tasks/ashigaru7.yaml': task('martian') }
+  delete files['queue/tasks/ashigaru3.yaml']
+  const r = await load($, on, files)
+  expect(r.text).toContain('軍稼/0 足1済/0 足2済/0 足3?/0')
+  expect(r.text).toContain('足7?/0')
+})
+
+test('before the first read, shogun and karo show no state and ? for unread', async () => {
+  const text = formatLine(unknownView())
+  expect(text).toContain('将/? 家/? 軍?/? 足1?/?')
 })
 
 test('an unparseable cmd file shows ? and not 0', async ($, on) => {
@@ -198,6 +248,7 @@ test('an empty queue directory shows ? everywhere, never an all-clear', async ($
   expect(r.text).toContain('進行cmd ?')
   expect(r.text).toContain('🚨?')
   expect(r.text).not.toMatch(/\/0/)
+  expect(r.text).toContain('将/? 家/? 軍?/?')
 })
 
 test('observe only: no file is written, and events pass through unchanged', async ($, on) => {

@@ -4,9 +4,11 @@
 // and let the display show '?'. Never fall back to 0 - a silent 0 looks like "all clear".
 
 // The only agents the display counts. Names such as test_* in queue/inbox are never looked at.
+// task: false = the agent has no queue/tasks/<name>.yaml (shogun and karo issue tasks, they do not receive them),
+// so its task file is not read and no state character is shown - only the unread count.
 export const AGENTS = [
-  { name: 'shogun', label: '将' },
-  { name: 'karo', label: '家' },
+  { name: 'shogun', label: '将', task: false },
+  { name: 'karo', label: '家', task: false },
   { name: 'gunshi', label: '軍' },
   { name: 'ashigaru1', label: '足1' },
   { name: 'ashigaru2', label: '足2' },
@@ -180,7 +182,8 @@ export function unknownView() {
   return {
     cmds: { ok: false },
     alerts: { ok: false },
-    agents: AGENTS.map((a) => ({ label: a.label, state: { ok: false }, inbox: { ok: false } })),
+    // state: null = not shown for this agent (see AGENTS); otherwise '?' until the first successful read
+    agents: AGENTS.map((a) => ({ label: a.label, state: a.task === false ? null : { ok: false }, inbox: { ok: false } })),
   }
 }
 
@@ -194,7 +197,7 @@ export function formatLine(v) {
   }
   const alerts = '🚨' + (v.alerts.ok ? v.alerts.count : '?')
   const agents = v.agents
-    .map((a) => a.label + (a.state.ok ? a.state.state : '?') + '/' + (a.inbox.ok ? a.inbox.unread : '?'))
+    .map((a) => a.label + (a.state === null ? '' : a.state.ok ? a.state.state : '?') + '/' + (a.inbox.ok ? a.inbox.unread : '?'))
     .join(' ')
   return [cmds, alerts, agents].join(' │ ')
 }

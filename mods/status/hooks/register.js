@@ -33,8 +33,11 @@ async function collect($) {
   const dash = await readText($, root + '/dashboard.md')
   next.alerts = dash === null ? { ok: false, reason: 'unreadable' } : parseAlerts(dash)
   for (let i = 0; i < AGENTS.length; i++) {
-    const task = await readText($, root + '/queue/tasks/' + AGENTS[i].name + '.yaml')
-    next.agents[i].state = task === null ? { ok: false, reason: 'unreadable' } : parseTaskState(task)
+    // shogun and karo have no task file: not read, no state shown
+    if (AGENTS[i].task !== false) {
+      const task = await readText($, root + '/queue/tasks/' + AGENTS[i].name + '.yaml')
+      next.agents[i].state = task === null ? { ok: false, reason: 'unreadable' } : parseTaskState(task)
+    }
     const inbox = await readText($, root + '/queue/inbox/' + AGENTS[i].name + '.yaml')
     next.agents[i].inbox = inbox === null ? { ok: false, reason: 'unreadable' } : parseUnread(inbox)
   }
