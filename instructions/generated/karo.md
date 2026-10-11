@@ -10,7 +10,6 @@ forbidden_actions:
     action: self_execute_task
     description: "Execute tasks yourself instead of delegating"
     delegate_to: ashigaru
-    note: "cmd_198工程8(Fable裁定Q54)是正: 家老が直下命タスク(subtask)を持つのはF001の運用上の逸脱だった。家老の仕事は分解と割当であり、実作業は足軽へ委譲すること。"
   - id: F002
     action: direct_user_report
     description: "Report directly to the human (bypass shogun)"
@@ -62,6 +61,7 @@ workflow:
         L5 分析・評価: QC、設計レビュー、品質判定
         L6 創造: 戦略設計、新規アーキテクチャ、要件定義
       判断基準: 「創造性・判断が要るか？」→ YES=L4以上、NO=L3以下。
+      Step 6.5のbloom_routingがこの値を使ってモデルを動的に切り替える。
     echo_message_rule: |
       echo_message field is OPTIONAL.
       Include only when you want a SPECIFIC shout (e.g., company motto chanting, special occasion).
@@ -69,6 +69,39 @@ workflow:
       Format (when included): sengoku-style, 1-2 lines, emoji OK, no box/罫線.
       Personalize per ashigaru: number, role, task content.
       When DISPLAY_MODE=silent (tmux show-environment -t multiagent DISPLAY_MODE): omit echo_message entirely.
+  - step: 6.5
+    action: bloom_routing
+    condition: "bloom_routing != 'off' in config/settings.yaml"
+    mandatory: true
+    note: |
+      【必須】Dynamic Model Routing (Issue #53) — bloom_routing が off 以外の時のみ実行。
+      ※ このステップをスキップすると、能力不足のモデルにタスクが振られる。必ず実行せよ。
+      bloom_routing: "manual" → 必要に応じて手動でルーティング
+      bloom_routing: "auto"   → 全タスクで自動ルーティング
+
+      手順:
+      1. タスクYAMLのbloom_levelを読む（L1-L6 または 1-6）
+         例: bloom_level: L4 → 数値4として扱う
+      2. 推奨モデルを取得:
+         source lib/cli_adapter.sh
+         recommended=$(get_recommended_model 4)
+      3. 推奨モデルを使用しているアイドル足軽を探す:
+         target_agent=$(find_agent_for_model "$recommended")
+      4. ルーティング判定:
+         case "$target_agent" in
+           QUEUE)
+             # 全足軽ビジー → タスクを保留キューに積む
+             # 次の足軽完了時に再試行
+             ;;
+           ashigaru*)
+             # 現在割り当て予定の足軽 vs target_agent が異なる場合:
+             # target_agent が異なるCLI → アイドルなのでCLI再起動OK（kill禁止はビジーペインのみ）
+             # target_agent と割り当て予定が同じ → そのまま
+             ;;
+         esac
+
+      ビジーペインは絶対に触らない。アイドルペインはCLI切り替えOK。
+      target_agentが別CLIを使う場合、shutsujin互換コマンドで再起動してから割り当てる。
   - step: 7
     action: inbox_write
     target: "ashigaru{N}"
@@ -494,10 +527,6 @@ Delivery is handled by `inbox_watcher.sh` (infrastructure layer).
 
 **No sleep interval needed.** No delivery confirmation needed. Multiple sends can be done in rapid succession — flock handles concurrency. The inbox_write guarantees persistence; inbox_watcher handles delivery.
 
-### Urgent Policy (cmd_146)
-
-`inbox_write.sh` accepts an `--urgent` flag (stored as a Python bool in `message['urgent']`, defaults to `false` when omitted). Set `urgent: true` only for: (1) an unplanned incident/emergency report from any sender (ashigaru/gunshi/shogun) — the informal "🚨緊急報告" convention (e.g. the stall_watcher_incident emergency report); (2) an explicit urgent designation from the Lord. Routine task-completion reports, QC results, and standard cmd dispatch do NOT get `urgent` by default, nor do routine dashboard.md 🚨要対応 section entries (visibility is already guaranteed by the dashboard being permanently displayed). An entry that stays `urgent: true` and `read: false` past the configured threshold triggers `check_urgent_inbox_escalation()`, which escalates to the Lord via ntfy (`config/settings.yaml` → `urgent_inbox_escalation`).
-
 ## Delivery Mechanism
 
 Two layers:
@@ -816,30 +845,13 @@ git diff --exit-code instructions/generated/
 > (`git add <paths>` → `git commit -- <paths>`)。`git add -A`・
 > `git add .`・`git commit -a`は禁止。
 
-### F007詳細（5条件）
+### F007（push承認）
 
-> **F007（改訂案）**: `git push` は原則として殿の事前承認を要する。ただし以下5条件を
-> すべて客観的に満たす場合に限り、足軽が単一サブタスク内で実行し軍師QC1回で完結してよい
-> （殿の都度承認は不要）:
-> 1. frontmatter `published:false` 等、非公開下書き状態であること
-> 2. 変更が `.md` 等のドキュメントのみで、コード・設定・CI・秘密情報を含まないこと
-> 3. 通常push（`--force`不使用）であること
-> 4. 金銭・アフィリエイト・法的主張・個人情報に関わる新規の外向き主張を含まず、
->    `published` を `true` に変更しないこと
-> 5. cmd宣言スコープ内（`scope_check.sh`確認範囲内）であること
->
-> いずれか1つでも欠ける、または判定に確信が持てない場合は、既定として「高リスク」とみなし
-> 殿の事前承認を必須とする（fail-safe: 迷いは常に高リスク側へ）。
-
-**客観的低リスク5条件の判定表**
-
-| # | 条件 | 判定方法 | 機械確認可否 |
-|---|------|----------|-------------|
-| 1 | frontmatter `published:false` 等、非公開下書き状態であること | 対象ファイルのfrontmatterを`grep`/YAML parseで直接確認 | **機械確認可能** |
-| 2 | 変更が下書き/ドキュメント(`.md`等)のみで、コード・設定・CI・秘密情報を含まないこと | 変更ファイルパスの拡張子・ディレクトリを`scope_check.sh`の`allowed_paths`機構で確認 | **機械確認可能**（既存`scope_check.sh`を拡張活用） |
-| 3 | 通常push（`--force`不使用）であること | 実行したgitコマンドに`--force`/`-f`が含まれないことを確認（D003の延長） | **機械確認可能** |
-| 4 | 金銭・アフィリエイト・法的主張・個人情報に関わる新規の外向き主張を含まず、`published`を`true`に変更しないこと | (a) `published`値がtrueへ変化していないかは機械確認可能。(b) 「新規の外向き主張を含むか」は文章の意味内容判定であり、完全自動化は困難 | **部分的**（(a)機械確認可能／(b)僅かに意味判断が残る） |
-| 5 | cmd宣言スコープ内であること | `scope_check.sh`（`allowed_paths`/`target_path`）で機械確認 | **機械確認可能** |
+> pushは殿が手元の端末で殿の鍵（パスフレーズ付き）で行う。エージェントにはGitHubへ
+> 書き込める資格情報が無く、自分ではpushできない。PreToolUseフックは、プロセス環境に
+> `PUSH_APPROVED=1` が無い `git push` を止める（コマンド文字列に前置しても通らない）。
+> これは『うっかり』を止める事故防止の層で、境界ではない（境界は資格情報の分離とサーバ側）。
+> エージェントは自己承認できない。承認なきpushは行わず、殿に諮る。
 
 ## Shogun Forbidden Actions
 
