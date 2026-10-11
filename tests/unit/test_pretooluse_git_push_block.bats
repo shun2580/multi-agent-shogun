@@ -388,3 +388,76 @@ with open(sys.argv[3], 'w') as f:
     [ "$status" -eq 0 ]
     [[ "$output" == *'"permissionDecision": "deny"'* ]]
 }
+
+# --- cmd_218: 大域オプションを挟んだ送信形の検出(2026-10-11実測で素通しだった穴) ---
+# 全て hook に JSON を流すのみ。実コマンドは実行しない。
+
+@test "(cmd_218-1) git -C <dir> <send> origin main: DENY" {
+    write_payload "$TEST_TMP/p.json" "g1" 'git -C /tmp/x push origin main'
+    run_guard_json "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+}
+
+@test "(cmd_218-2) git -C<dir> <send> origin main (no space): DENY" {
+    write_payload "$TEST_TMP/p.json" "g2" 'git -C/tmp/x push origin main'
+    run_guard_json "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+}
+
+@test "(cmd_218-3) git -c color.ui=never <send> origin main: DENY" {
+    write_payload "$TEST_TMP/p.json" "g3" 'git -c color.ui=never push origin main'
+    run_guard_json "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+}
+
+@test "(cmd_218-4) git --no-pager <send> origin main: DENY" {
+    write_payload "$TEST_TMP/p.json" "g4" 'git --no-pager push origin main'
+    run_guard_json "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+}
+
+@test "(cmd_218-5) git --git-dir=<dir>/.git <send> origin main: DENY" {
+    write_payload "$TEST_TMP/p.json" "g5" 'git --git-dir=/tmp/x/.git push origin main'
+    run_guard_json "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"permissionDecision": "deny"'* ]]
+}
+
+@test "(cmd_218-6) global-option form with PUSH_APPROVED=1 in hook env: ALLOW" {
+    write_payload "$TEST_TMP/p.json" "g6" 'git -C /tmp/x push origin main'
+    run_guard_json_approved "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "(cmd_218-7) git -C <dir> status (no send subcommand): ALLOW" {
+    write_payload "$TEST_TMP/p.json" "g7" 'git -C /tmp/x status'
+    run_guard_json "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "(cmd_218-8) git log --oneline -1 && echo pushed: ALLOW" {
+    write_payload "$TEST_TMP/p.json" "g8" 'git log --oneline -1 && echo pushed'
+    run_guard_json "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "(cmd_218-9) plain form quoted as prose in an echo argument (regex change must not regress masking): ALLOW" {
+    write_payload "$TEST_TMP/p.json" "g9" "echo 'git push origin main は止まるはず'"
+    run_guard_json "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "(cmd_218-10) global-option form inside cat heredoc body: ALLOW" {
+    write_payload "$TEST_TMP/p.json" "g10" "$(printf "cat > /tmp/x.md <<'EOF'\ngit -C /tmp/x push origin main\ngit --no-pager push origin main\nEOF")"
+    run_guard_json "$TEST_TMP/p.json"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}

@@ -14,6 +14,9 @@
 # (例: 将来的な自動化スクリプトが内部でpushする場合)は検査対象外
 # (gunshi_audit_144議題1・CLAUDE.md D006注記と同型の限界)。
 # 「pushは機械的に不可能になった」という意味ではない。
+# 検出は文字列照合であり、bash -c で包む・スクリプト経由等で迂回できる。止めるのは
+# 『うっかり』であり、境界は GitHub 側(Rulesets)と資格情報の分離が担う(journal S-13)。
+# 大域オプション(-C/-c/--no-pager/--git-dir 等)を挟んだ形は検出する(cmd_218)。
 #
 # 🔴D003との関係: `--force`/`-f`付きpushは既に`.claude/settings.json`の
 # 静的permission deny(`Bash(git push --force*)`・`Bash(git push -f *)`)で
@@ -213,7 +216,11 @@ command_for_detection = mask_quoted_nonexec_strings(command_for_detection)
 SPLIT_RE = re.compile(r"\n|;|&&|\|\||\$\(|\)|`")
 segments = SPLIT_RE.split(command_for_detection)
 
-GIT_PUSH_RE = re.compile(r"\bgit\s+push\b")
+# git の大域オプション(-C <dir> / -c <k=v> / --no-pager / --git-dir=... 等)を挟んだ
+# 送信も検出する(2026-10-11 実測で旧正規表現 \bgit\s+push\b は素通しだった)。
+GIT_PUSH_RE = re.compile(
+    r"\bgit(?:\s+(?:-[Cc]\s*\S+|--[A-Za-z][\w-]*(?:=\S+)?|-[pPh]))*\s+push\b"
+)
 
 if not any(GIT_PUSH_RE.search(seg) for seg in segments):
     sys.exit(0)
