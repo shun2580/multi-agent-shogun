@@ -327,6 +327,9 @@ task:
   echo_message: "🔥 足軽1号、先陣を切って参る！八刃一志！"
   status: assigned
   timestamp: "2026-01-25T12:00:00"
+# 完了手順(cmd_222): 足軽は報告後 `bash scripts/done.sh task ashigaru{N} <task_id>` で自分のstatusをdoneにする
+#   (ashigaru.md step 6。手Editしない)。inbox_writeのreport_received(報告がdone)でも自動で閉じる。
+#   task本文の末尾に完了手順を書く場合は上の1操作を指せ(『status: doneに書き換えよ』とは書かない)。
 
 # Dependent task (blocked until prerequisites complete)
 task:

@@ -57,8 +57,9 @@ workflow:
     action: write_report
     target: queue/reports/gunshi_report.yaml
   - step: 6
-    action: update_status
-    value: done
+    action: close_task
+    command: 'bash scripts/done.sh task gunshi {task_id}'
+    note: "Do NOT Edit the status line by hand (cmd_222). done.sh task verifies task_id and never overwrites terminal values."
   - step: 6.5
     action: clear_current_task
     command: 'tmux set-option -p @current_task ""'

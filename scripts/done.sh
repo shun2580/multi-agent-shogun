@@ -4,9 +4,20 @@
 # Usage:
 #   bash scripts/done.sh cmd <cmd_id>          # shogun_to_karo.yaml の該当cmdを done 化し archive へ移管
 #   bash scripts/done.sh report <report_file>  # report YAML を archive_report.sh でアーカイブしてから done 化
+#   bash scripts/done.sh task <agent_id> [task_id] [--if-reported] [--mentioned-in <text>]
+#                                              # queue/tasks/<agent_id>.yaml の status を done 化 (cmd_222)
 #
 # 環境変数:
 #   DONE_ROOT  書込先ルート (既定=このスクリプトのリポジトリルート)。テストで本番queueを触らないための差替口。
+#
+# task の規則 (足軽・軍師が任務を終えたとき『報告したのに task YAML が assigned のまま』を残さないための1操作):
+#   - agent_id は ashigaru1-7 / gunshi のみ。task YAML が無ければ拒否 (新規作成しない)。
+#   - task_id を渡したときは YAML の task.task_id と完全一致を検証し、不一致なら何も書かず exit 非0。
+#   - 終端 status (TERMINAL_STATUSES 等) は書き換えない。最初の `  status:` 行だけを置換し他の行はバイト不変。
+#   - --if-reported : 『task が assigned / in_progress』かつ『queue/reports/<agent_id>_report.yaml の当該 task_id の
+#                    最後の記録が done / done_with_caveat』のときだけ書く。他は何もせず exit 0 (inbox_write.sh の自動閉じ用。
+#                    blocked / failed の報告を done にしてしまわないための安全弁)。
+#   - --mentioned-in <text> : <text> に task_id (YAML の現在値) が文字列として含まれるときだけ進む。含まなければ何もせず exit 0。
 #
 # cmd の移管先: $DONE_ROOT/queue/archive/cmds/<cmd_id>.yaml  (`commands:` 配下の1要素。status: done 済み)
 # 手順: (1) archive先へ書込・検証 → (2) 本体からブロック除去。失敗時は本体を壊さず exit 非0 (部分成功を残さない)。
@@ -18,7 +29,7 @@ DONE_ROOT="${DONE_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 die() { echo "done.sh: ERROR: $*" >&2; exit 1; }
 
 usage() {
-  echo "Usage: done.sh cmd <cmd_id> | done.sh report <report_file>" >&2
+  echo "Usage: done.sh cmd <cmd_id> | done.sh report <report_file> | done.sh task <agent_id> [task_id] [--if-reported] [--mentioned-in <text>]" >&2
   exit 1
 }
 
@@ -200,9 +211,114 @@ report_done() {
   echo "done: $file (status: $shown)"
 }
 
+# task YAML (`task:` 直下・インデント2) の最初の値 $2 (task_id 等) を出す。引用符と行末コメントは除く。
+task_field() {
+  awk -v key="$2" -v q="'" '
+    !seen && $0 ~ "^  " key ":" {
+      seen = 1
+      v = $0
+      sub("^  " key ":[ \t]*", "", v)
+      gsub("\"", "", v); gsub(q, "", v)
+      sub(/[ \t]+#.*$/, "", v); sub(/[ \t]+$/, "", v)
+      print v
+    }
+  ' "$1"
+}
+
+# 報告ファイル $1 のうち task_id==$2 の最後の記録の status 値を出す (無ければ空)。
+# 記録 = `task_id:` 行から次の `task_id:` 行 (または `---`) の手前まで。その中の最初の `status:` を採る。
+reported_status() {
+  awk -v tid="$2" -v q="'" '
+    function clean(s) {
+      gsub("\"", "", s); gsub(q, "", s)
+      sub(/[ \t]+#.*$/, "", s); sub(/[ \t]+$/, "", s)
+      return s
+    }
+    /^---[ \t]*$/ { found = 0; next }
+    /^[ ]*(- )?task_id:/ {
+      v = $0; sub(/^[ ]*(- )?task_id:[ \t]*/, "", v)
+      found = (clean(v) == tid)
+      if (found) { out = ""; got = 0 }
+      next
+    }
+    found && !got && /^[ ]*status:/ {
+      v = $0; sub(/^[ ]*status:[ \t]*/, "", v)
+      if (substr(v, 1, 1) == "\"" || substr(v, 1, 1) == q) v = substr(v, 2)
+      if (match(v, /^[A-Za-z0-9_]+/)) out = substr(v, 1, RLENGTH)
+      got = 1
+    }
+    END { print out }
+  ' "$1"
+}
+
+task_done() {
+  local agent="" tid="" if_reported=0 have_mention=0 mention="" arg
+  while [[ $# -gt 0 ]]; do
+    arg="$1"; shift
+    case "$arg" in
+      --if-reported)  if_reported=1 ;;
+      --mentioned-in) [[ $# -ge 1 ]] || die "--mentioned-in には本文が要る"
+                      have_mention=1; mention="$1"; shift ;;
+      -*)             die "unknown option: $arg" ;;
+      *)              if [[ -z "$agent" ]]; then agent="$arg"
+                      elif [[ -z "$tid" ]]; then tid="$arg"
+                      else die "余分な引数: $arg"; fi ;;
+    esac
+  done
+  [[ "$agent" =~ ^(ashigaru[1-7]|gunshi)$ ]] || die "invalid agent_id: '$agent' (allowed: ashigaru1-7, gunshi)"
+  [[ -z "$tid" || "$tid" =~ ^[A-Za-z0-9_]+$ ]] || die "invalid task_id: '$tid'"
+
+  local file="$DONE_ROOT/queue/tasks/$agent.yaml"
+  [[ -f "$file" ]] || die "task YAML が無い: $file"
+  grep -q '^task:' "$file" || die "task: 行が見つからない: $file"
+  grep -q '^  status:' "$file" || die "status 行が見つからない: $file"
+
+  local cur_tid cur
+  cur_tid=$(task_field "$file" task_id)
+  [[ -n "$cur_tid" ]] || die "task_id が読めない: $file"
+  if [[ -n "$tid" && "$tid" != "$cur_tid" ]]; then
+    die "task_id 不一致: 指定=$tid / $file の現在値=$cur_tid (何も書かない)"
+  fi
+  tid="$cur_tid"
+
+  # 自動閉じ用の絞り込み。条件を満たさぬときは何もせず成功で返る (呼び元の配信を妨げない)。
+  if [[ $have_mention -eq 1 && "$mention" != *"$tid"* ]]; then
+    return 0
+  fi
+
+  cur=$(status_value nested < "$file") || die "status 値の取得に失敗: $file"
+  if is_terminal "$cur"; then
+    [[ $if_reported -eq 1 ]] || echo "done: $file (task_id: $tid, status: $cur のまま・終端につき無変更)"
+    return 0
+  fi
+  if [[ $if_reported -eq 1 ]]; then
+    [[ "$cur" == "assigned" || "$cur" == "in_progress" ]] || return 0
+    local rep="$DONE_ROOT/queue/reports/${agent}_report.yaml" rs
+    [[ -f "$rep" ]] || return 0
+    rs=$(reported_status "$rep" "$tid")
+    [[ "$rs" == "done" || "$rs" == "done_with_caveat" ]] || return 0
+  fi
+
+  # cp -p で権限を引き継いだ一時ファイルへ書き、検証してから置換する (書込中の半端な内容を見せない)
+  local tmp="$file.tmp.$$"
+  cp -p "$file" "$tmp" || die "一時ファイルを作れない: $tmp"
+  if ! set_status_done nested < "$file" > "$tmp"; then
+    rm -f "$tmp"; die "status書換に失敗: $file"
+  fi
+  local changed
+  changed=$(diff "$file" "$tmp" | grep -c '^<' || true)
+  if [[ "$(wc -l < "$file")" -ne "$(wc -l < "$tmp")" || "$changed" -ne 1 \
+        || "$(status_value nested < "$tmp")" != "done" || "$(task_field "$tmp" task_id)" != "$tid" ]]; then
+    rm -f "$tmp"; die "書換結果の検証に失敗 (無変更): $file"
+  fi
+  mv "$tmp" "$file" || { rm -f "$tmp"; die "status書換の確定に失敗: $file"; }
+  echo "done: $file (task_id: $tid, status: $cur → done)"
+}
+
 [[ $# -ge 2 ]] || usage
 case "$1" in
   cmd)    cmd_done "$2" ;;
   report) report_done "$2" ;;
+  task)   shift; task_done "$@" ;;
   *)      usage ;;
 esac

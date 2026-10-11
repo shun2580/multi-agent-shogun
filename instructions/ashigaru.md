@@ -53,8 +53,9 @@ workflow:
     action: write_report
     target: "queue/reports/ashigaru{N}_report.yaml"
   - step: 6
-    action: update_status
-    value: done
+    action: close_task
+    command: 'bash scripts/done.sh task ashigaru{N} {task_id}'
+    note: "Do NOT Edit the status line by hand (forgotten Edits left finished tasks as 'assigned', cmd_222). done.sh task verifies task_id, never overwrites terminal values. For failed/blocked, Edit status to failed/blocked yourself. inbox_write.sh (report_received, step 9) also closes the task as a safety net when your report says done."
   - step: 6.5
     action: clear_current_task
     command: 'tmux set-option -p @current_task ""'

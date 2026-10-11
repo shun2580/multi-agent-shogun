@@ -169,6 +169,20 @@ _release_lock() {
     rmdir "$LOCK_DIR" 2>/dev/null || true
 }
 
+# cmd_222: 報告を出したのに送信者自身の task YAML が assigned のまま残る事故を構造的に無くす。
+# 足軽・軍師が report_received を出し、本文が自分の task_id を名指しし、かつ報告ファイルの当該 task の
+# 最後の記録が done のときだけ、done.sh task が status を done にする (blocked/failed 報告は触らない)。
+# 配信は既に成功しているため、ここの失敗は警告に留めて終了コードに影響させない。
+_auto_close_task() {
+    [ "$TYPE" = "report_received" ] || return 0
+    case "$FROM" in ashigaru[1-7]|gunshi) ;; *) return 0 ;; esac
+    [ -f "$SCRIPT_DIR/scripts/done.sh" ] || return 0
+    DONE_ROOT="$SCRIPT_DIR" bash "$SCRIPT_DIR/scripts/done.sh" task "$FROM" \
+        --if-reported --mentioned-in "$CONTENT" >&2 \
+        || echo "[inbox_write] WARN: task YAML auto-close skipped for $FROM (message was delivered)" >&2
+    return 0
+}
+
 # Atomic write with lock (3 retries)
 attempt=0
 max_attempts=3
@@ -233,6 +247,7 @@ except Exception as e:
         _release_lock
         trap - EXIT
         if [ $STATUS -eq 0 ]; then
+            _auto_close_task
             exit 0
         fi
         attempt=$((attempt + 1))
