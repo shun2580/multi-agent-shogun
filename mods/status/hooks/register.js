@@ -58,10 +58,15 @@ async function refresh($) {
   }
 }
 
+// The one refresh timer. session.start can fire again (after a reload of this mod), and a timer per call would multiply the reads.
+let timer = null
+
 export function register(on) {
   on('session.start', async ($, e, next) => {
     await refresh($)
-    $.clock.every(REFRESH_MS, () => refresh($))
+    // Stop the previous timer before arming a new one, so only one is ever running
+    if (timer) timer.cancel()
+    timer = $.clock.every(REFRESH_MS, () => refresh($))
     return next(e)
   })
 

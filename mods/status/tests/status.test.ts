@@ -288,3 +288,31 @@ test('the band follows the files after the timer fires', async ($, on) => {
   const ui = await $.ui.mount({ ...AB, surface: 'terminal' })
   expect(await ui.find({ type: 'Text', text: /軍済\/1/ })).toBeDefined()
 })
+
+// ---- cmd_223: session.start fired again must not add a second refresh timer ----------------
+
+// The docs say session.start fires once per loaded mod and again after a reload of that mod.
+// A second timer would double the file reads every 5 seconds, so the count of reads per tick must stay put.
+test('session.start fired twice keeps one refresh timer: one set of reads per tick', async ($, on) => {
+  const reads: string[] = []
+  const clock = mock.clock(on)
+  on('env.get', () => ({ value: ROOT }))
+  on('fs.read', ($: any, e: any) => {
+    reads.push(e.path)
+    const t = FULL[e.path.slice(ROOT.length + 1)]
+    return t === undefined ? { deny: 'ENOENT' } : { value: t }
+  })
+  on('session.start', () => ({ cwd: '/work' }))
+  on('ui.render', () => ({ type: 'Text', props: {}, children: ['drawn by Claude Code'] }))
+  const start = { surface: 'terminal', isInteractive: true, cwd: '/work' } as const
+  await $.session.start(start)
+  await $.session.start(start)
+  await $.session.start(start)
+  const perRefresh = 2 + 2 + (AGENTS.length - 2) * 2
+  reads.length = 0
+  await clock.advance(5000)
+  expect(reads.length).toBe(perRefresh)
+  reads.length = 0
+  await clock.advance(5000)
+  expect(reads.length).toBe(perRefresh)
+})
