@@ -286,16 +286,30 @@ build_cli_command() {
             # cmd_220: cli.agents.<名>.mods に宣言された Mod だけを --plugin-dir で渡す。
             # 欄の無いエージェントは何も足さない(起動コマンド不変)。ディレクトリ不在は
             # 警告のみで当該 Mod を飛ばし、起動は妨げない(fail-safe)。
-            local mod_dir
+            local mod_dir mod_loaded=0
             while IFS= read -r mod_dir; do
                 [[ -n "$mod_dir" ]] || continue
                 if [[ -d "$mod_dir" ]]; then
                     cmd="$cmd --plugin-dir $(_cli_adapter_shell_quote "$mod_dir")"
+                    mod_loaded=1
                 else
                     echo "[cli_adapter] WARN: mod dir not found, skipped: $mod_dir (agent=$agent_id)" >&2
                 fi
             done < <(_cli_adapter_get_mod_dirs "$agent_id")
             cmd="$cmd $permission_flag"
+            # cmd_224: Mod を1本でも読み込むエージェントには、名(SHOGUN_AGENT_ID)を環境変数で渡す。
+            # Mod 側は $.env.get('SHOGUN_AGENT_ID') で読む(推測しない)。名簿10名との完全一致のみ許し、
+            # 名簿外は前置せず警告。Mod を読み込まぬエージェントの起動コマンドは従来と1文字も変わらない。
+            if [[ "$mod_loaded" == "1" ]]; then
+                case "$agent_id" in
+                    shogun|karo|gunshi|ashigaru[1-7])
+                        cmd="SHOGUN_AGENT_ID=$agent_id $cmd"
+                        ;;
+                    *)
+                        echo "[cli_adapter] WARN: agent_id not in roster, SHOGUN_AGENT_ID not set: $agent_id" >&2
+                        ;;
+                esac
+            fi
             ;;
         codex)
             cmd="codex"

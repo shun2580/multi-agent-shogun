@@ -67,7 +67,8 @@ cli:
 YAML
     run _build "${TEST_TMP}/settings_abs.yaml" shogun
     [ "$status" -eq 0 ]
-    [ "$output" = "claude --model claude-opus-5-5 --effort high --plugin-dir ${TEST_TMP}/modroot/mods/status --dangerously-skip-permissions" ]
+    # cmd_224: Mod を読み込むエージェントには SHOGUN_AGENT_ID=<名> が前置される(それ以外は不変)
+    [ "$output" = "SHOGUN_AGENT_ID=shogun claude --model claude-opus-5-5 --effort high --plugin-dir ${TEST_TMP}/modroot/mods/status --dangerously-skip-permissions" ]
 }
 
 @test "mods: 相対パス宣言はプロジェクトルート基準で絶対化される(起動 cwd に依らない)" {
@@ -79,7 +80,7 @@ YAML
     run env CLI_ADAPTER_SETTINGS="${TEST_TMP}/settings_mods.yaml" bash -c "source '${TEST_TMP}/fakeroot/lib/cli_adapter.sh'; build_cli_command shogun"
     cd "$PROJECT_ROOT"
     [ "$status" -eq 0 ]
-    [ "$output" = "claude --model claude-opus-5-5 --effort high --plugin-dir ${TEST_TMP}/fakeroot/mods/status --dangerously-skip-permissions" ]
+    [ "$output" = "SHOGUN_AGENT_ID=shogun claude --model claude-opus-5-5 --effort high --plugin-dir ${TEST_TMP}/fakeroot/mods/status --dangerously-skip-permissions" ]
 }
 
 @test "mods: 欄の無い全エージェントの起動コマンドが着手前と完全一致する" {
@@ -136,7 +137,7 @@ YAML
     run --separate-stderr _build "${TEST_TMP}/settings_multi.yaml" shogun
     [ "$status" -eq 0 ]
     [[ "$stderr" == *"mods/gone"* ]]
-    [[ "$output" == "claude --model claude-opus-5-5 --plugin-dir ${TEST_TMP}/modroot/mods/status --plugin-dir ${TEST_TMP}/modroot/mods/second --dangerously-skip-permissions" ]]
+    [[ "$output" == "SHOGUN_AGENT_ID=shogun claude --model claude-opus-5-5 --plugin-dir ${TEST_TMP}/modroot/mods/status --plugin-dir ${TEST_TMP}/modroot/mods/second --dangerously-skip-permissions" ]]
 }
 
 @test "mods: mods 欄が list でない/空/不正 YAML でも起動コマンドは変わらない" {
