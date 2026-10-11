@@ -1,0 +1,6 @@
+{
+  "name": "shogun-status",
+  "version": "0.1.0",
+  "description": "Observe-only status band for the shogun: in-progress cmds, dashboard alerts, per-agent task state and unread inbox",
+  "author": { "name": "multi-agent-shogun" }
+}
