@@ -229,6 +229,27 @@ except Exception as e:
     fi
 }
 
+# _cli_adapter_get_mod_dirs agent_id
+# cli.agents.<agent_id>.mods (YAML list) を1行1パスで返す。欄が無い/読めない/list以外なら何も出さない。
+# 相対パスはプロジェクトルート基準で絶対化する(起動時の cwd に依らない)。
+_cli_adapter_get_mod_dirs() {
+    local agent_id="$1"
+    "$CLI_ADAPTER_PROJECT_ROOT/.venv/bin/python3" -c "
+import os, sys, yaml
+try:
+    with open(sys.argv[1]) as f:
+        cfg = yaml.safe_load(f) or {}
+    mods = cfg['cli']['agents'][sys.argv[3]]['mods']
+except Exception:
+    sys.exit(0)
+if not isinstance(mods, list):
+    sys.exit(0)
+for m in mods:
+    if isinstance(m, str) and m.strip():
+        print(os.path.normpath(os.path.join(sys.argv[2], m.strip())))
+" "$CLI_ADAPTER_SETTINGS" "$CLI_ADAPTER_PROJECT_ROOT" "$agent_id" 2>/dev/null
+}
+
 # build_cli_command(agent_id)
 # エージェントを起動するための完全なコマンド文字列を返す
 # settings.yaml の thinking: false → MAX_THINKING_TOKENS=0 を先頭に付与
@@ -262,6 +283,18 @@ build_cli_command() {
             if [[ -n "$effort" ]]; then
                 cmd="$cmd --effort $effort"
             fi
+            # cmd_220: cli.agents.<名>.mods に宣言された Mod だけを --plugin-dir で渡す。
+            # 欄の無いエージェントは何も足さない(起動コマンド不変)。ディレクトリ不在は
+            # 警告のみで当該 Mod を飛ばし、起動は妨げない(fail-safe)。
+            local mod_dir
+            while IFS= read -r mod_dir; do
+                [[ -n "$mod_dir" ]] || continue
+                if [[ -d "$mod_dir" ]]; then
+                    cmd="$cmd --plugin-dir $(_cli_adapter_shell_quote "$mod_dir")"
+                else
+                    echo "[cli_adapter] WARN: mod dir not found, skipped: $mod_dir (agent=$agent_id)" >&2
+                fi
+            done < <(_cli_adapter_get_mod_dirs "$agent_id")
             cmd="$cmd $permission_flag"
             ;;
         codex)

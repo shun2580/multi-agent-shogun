@@ -69,6 +69,8 @@ cli:
       model: <model-id>
       type: <claude|codex|opencode|copilot|kimi>
       effort: <low|medium|high>
+      mods:  # optional (claude only): Mod dirs loaded via --plugin-dir, relative to project root. Remove this key to unload.
+        - <mods/dir>
   default: <claude|codex|opencode|copilot|kimi>
 language: <ja|en>
 # ntfy topic: 値は ~/.config/multi-agent-shogun/secrets.env の NTFY_TOPIC (settings.yamlには書かない)
