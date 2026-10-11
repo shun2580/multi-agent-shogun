@@ -1,0 +1,6 @@
+{
+  "name": "shogun-audit",
+  "version": "0.1.0",
+  "description": "Observe-only audit log: appends each agent's tool calls and turn start/end to logs/audit/YYYY-MM/<agent>.jsonl (names, paths and outcomes only; never commands, URLs, prompts or results)",
+  "author": { "name": "multi-agent-shogun" }
+}

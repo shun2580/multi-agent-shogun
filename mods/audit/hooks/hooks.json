@@ -1,0 +1,4 @@
+{
+  "description": "shogun-audit hooks module (observe only)",
+  "modules": ["./register.js"]
+}
