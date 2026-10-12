@@ -73,7 +73,7 @@ dump_watcher_log() {
     # 4. Start inbox_watcher with OpenCode CLI type
     local watcher_pid log_file
     watcher_pid=$(start_inbox_watcher "ashigaru1" 1 "opencode")
-    log_file="/tmp/e2e_inbox_watcher_ashigaru1_$$.log"
+    log_file="${E2E_SCRATCH:?E2E_SCRATCH unset}/e2e_inbox_watcher_ashigaru1_$$.log"
 
     # 5. Wait for task to complete
     run wait_for_yaml_value "$E2E_QUEUE/queue/tasks/ashigaru1.yaml" "task.status" "done" 45

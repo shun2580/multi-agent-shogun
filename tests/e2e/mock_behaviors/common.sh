@@ -146,8 +146,8 @@ show_prompt() {
     local cli_type="${1:-claude}"
     # Simulate Stop hook: create idle flag when Claude mock becomes idle
     if [[ "${MOCK_CLI_TYPE:-claude}" =~ ^(claude|opencode)$ ]] && [[ -n "${MOCK_AGENT_ID:-}" ]]; then
-        local _flag_dir="${IDLE_FLAG_DIR:-/tmp}"
-        touch "${_flag_dir}/shogun_idle_${MOCK_AGENT_ID}" 2>/dev/null || true
+        # IDLE_FLAG_DIR 未設定なら /tmp へは書かず何もしない(cmd_230)
+        [[ -n "${IDLE_FLAG_DIR:-}" ]] && touch "${IDLE_FLAG_DIR}/shogun_idle_${MOCK_AGENT_ID}" 2>/dev/null || true
     fi
     case "$cli_type" in
         claude) echo -e "\n\$ " ;;
@@ -166,8 +166,7 @@ show_busy() {
     local seconds="${2:-0}"
     # Simulate Stop hook: remove idle flag when Claude mock starts processing
     if [[ "${MOCK_CLI_TYPE:-claude}" =~ ^(claude|opencode)$ ]] && [[ -n "${MOCK_AGENT_ID:-}" ]]; then
-        local _flag_dir="${IDLE_FLAG_DIR:-/tmp}"
-        rm -f "${_flag_dir}/shogun_idle_${MOCK_AGENT_ID}" 2>/dev/null || true
+        [[ -n "${IDLE_FLAG_DIR:-}" ]] && rm -f "${IDLE_FLAG_DIR}/shogun_idle_${MOCK_AGENT_ID}" 2>/dev/null || true
     fi
     case "$cli_type" in
         claude) echo "Working on task (${seconds}s • esc to interrupt)" ;;

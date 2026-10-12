@@ -24,6 +24,12 @@ setup_e2e_session() {
     # キーを送る/ペインを作る/セッションを消す前に、使い捨てサーバであることを証明する (fail-closed)
     e2e_require_disposable || return 1
 
+    # 試験が作る物(queue・idle flag・watcher ログ等)の置場は E2E_DISPOSABLE_DIR の配下だけ。
+    # /tmp へは書かぬ・フォールバックも作らぬ(置場ごと runner が消す)。cmd_230
+    export E2E_SCRATCH
+    E2E_SCRATCH="${E2E_DISPOSABLE_DIR:?E2E_DISPOSABLE_DIR unset}/scratch"
+    mkdir -p "$E2E_SCRATCH" || return 1
+
     # Unique session name per test file
     export E2E_SESSION="${E2E_SESSION_PREFIX}_$$"
     export PROJECT_ROOT
@@ -32,14 +38,14 @@ setup_e2e_session() {
     # Create isolated project root with queue/ subdirectory
     # inbox_write.sh resolves SCRIPT_DIR to parent of scripts/, then uses queue/inbox/
     export E2E_QUEUE
-    E2E_QUEUE="$(mktemp -d "/tmp/e2e_queue_XXXXXX")"
+    E2E_QUEUE="$(mktemp -d "${E2E_SCRATCH:?E2E_SCRATCH unset}/e2e_queue_XXXXXX")"
     mkdir -p "$E2E_QUEUE"/queue/{inbox,tasks,reports,metrics}
 
     # Isolate idle flags from the live fleet. Without this, mock_behaviors/common.sh
     # and inbox_watcher.sh fall back to /tmp/shogun_idle_<agent>, i.e. the SAME files the
     # running fleet uses (and test results then depend on the fleet's live state).
     export E2E_IDLE_FLAG_DIR IDLE_FLAG_DIR
-    E2E_IDLE_FLAG_DIR="$(mktemp -d "/tmp/e2e_idle_flags_session_XXXXXX")"
+    E2E_IDLE_FLAG_DIR="$(mktemp -d "${E2E_SCRATCH:?E2E_SCRATCH unset}/e2e_idle_flags_session_XXXXXX")"
     IDLE_FLAG_DIR="$E2E_IDLE_FLAG_DIR"
 
     # The mock panes are not real CLIs: pane_current_command is "bash", which
@@ -158,7 +164,7 @@ start_inbox_watcher() {
     local pane_idx="$2"
     local cli_type="${3:-claude}"
     local pane_target="${E2E_SESSION}:agents.${pane_idx}"
-    local log_file="/tmp/e2e_inbox_watcher_${agent_id}_$$.log"
+    local log_file="${E2E_SCRATCH:?E2E_SCRATCH unset}/e2e_inbox_watcher_${agent_id}_$$.log"
 
     # Override escalation timers for fast testing
     # Run the copied inbox_watcher.sh from E2E_QUEUE/scripts/

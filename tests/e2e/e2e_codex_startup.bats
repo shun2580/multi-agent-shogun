@@ -79,7 +79,7 @@ dump_watcher_log() {
     # 4. Start inbox_watcher with codex CLI type
     local watcher_pid log_file
     watcher_pid=$(start_inbox_watcher "ashigaru1" 1 "codex")
-    log_file="/tmp/e2e_inbox_watcher_ashigaru1_$$.log"
+    log_file="${E2E_SCRATCH:?E2E_SCRATCH unset}/e2e_inbox_watcher_ashigaru1_$$.log"
 
     # 5. Wait for task to complete
     #    Flow: watcher detects unread → sends /new → polls idle (5s) → sends startup prompt → mock processes
@@ -135,7 +135,7 @@ dump_watcher_log() {
     # 3. Start watcher (codex CLI type)
     local watcher_pid log_file
     watcher_pid=$(start_inbox_watcher "ashigaru1" 1 "codex")
-    log_file="/tmp/e2e_inbox_watcher_ashigaru1_$$.log"
+    log_file="${E2E_SCRATCH:?E2E_SCRATCH unset}/e2e_inbox_watcher_ashigaru1_$$.log"
 
     # 4. Wait for processing
     run wait_for_yaml_value "$E2E_QUEUE/queue/tasks/ashigaru1.yaml" "task.status" "done" 45
@@ -189,7 +189,7 @@ dump_watcher_log() {
     # 3. Start watcher (claude CLI type)
     local watcher_pid log_file
     watcher_pid=$(start_inbox_watcher "ashigaru1" 1 "claude")
-    log_file="/tmp/e2e_inbox_watcher_ashigaru1_$$.log"
+    log_file="${E2E_SCRATCH:?E2E_SCRATCH unset}/e2e_inbox_watcher_ashigaru1_$$.log"
 
     # 4. Wait for task to complete (claude uses /clear → auto-recovery via mock handle_clear)
     run wait_for_yaml_value "$E2E_QUEUE/queue/tasks/ashigaru1.yaml" "task.status" "done" 45
@@ -240,7 +240,7 @@ dump_watcher_log() {
     # 4. Start inbox_watcher with codex CLI type
     local watcher_pid log_file
     watcher_pid=$(start_inbox_watcher "ashigaru1" 1 "codex")
-    log_file="/tmp/e2e_inbox_watcher_ashigaru1_$$.log"
+    log_file="${E2E_SCRATCH:?E2E_SCRATCH unset}/e2e_inbox_watcher_ashigaru1_$$.log"
 
     # 5. Wait for task to complete
     run wait_for_yaml_value "$E2E_QUEUE/queue/tasks/ashigaru1.yaml" "task.status" "done" 60
@@ -311,7 +311,7 @@ dump_watcher_log() {
     # 4. Start inbox_watcher with codex CLI type
     local watcher_pid log_file
     watcher_pid=$(start_inbox_watcher "ashigaru1" 1 "codex")
-    log_file="/tmp/e2e_inbox_watcher_ashigaru1_$$.log"
+    log_file="${E2E_SCRATCH:?E2E_SCRATCH unset}/e2e_inbox_watcher_ashigaru1_$$.log"
 
     # 5. Wait for task to complete
     run wait_for_yaml_value "$E2E_QUEUE/queue/tasks/ashigaru1.yaml" "task.status" "done" 60
@@ -358,7 +358,7 @@ dump_watcher_log() {
 
     # Use isolated IDLE_FLAG_DIR to avoid cross-test contamination
     local flag_dir
-    flag_dir=$(mktemp -d "/tmp/e2e_idle_flags_XXXXXX")
+    flag_dir=$(mktemp -d "${E2E_SCRATCH:?E2E_SCRATCH unset}/e2e_idle_flags_XXXXXX")
     export IDLE_FLAG_DIR="$flag_dir"
 
     # 1. Respawn pane with claude mock
@@ -385,7 +385,7 @@ dump_watcher_log() {
     # 5. Start inbox_watcher — this is where the fix kicks in:
     #    inbox_watcher should create the initial idle flag for Claude CLI
     local watcher_pid log_file
-    log_file="/tmp/e2e_inbox_watcher_ashigaru1_$$.log"
+    log_file="${E2E_SCRATCH:?E2E_SCRATCH unset}/e2e_inbox_watcher_ashigaru1_$$.log"
     IDLE_FLAG_DIR="$flag_dir" \
     ESCALATE_PHASE1="${E2E_ESCALATE_PHASE1:-10}" \
     ESCALATE_PHASE2="${E2E_ESCALATE_PHASE2:-20}" \

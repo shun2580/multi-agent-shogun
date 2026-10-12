@@ -70,7 +70,7 @@ wait_for_log() {
     sleep 2
 
     tmux set-option -p -t "$ashigaru1_pane" @agent_cli "copilot"
-    log_file="/tmp/e2e_inbox_watcher_ashigaru1_busy_${BASHPID}.log"
+    log_file="${E2E_SCRATCH:?E2E_SCRATCH unset}/e2e_inbox_watcher_ashigaru1_busy_${BASHPID}.log"
     watcher_pid=$(
         bash "$E2E_QUEUE/scripts/inbox_watcher.sh" "ashigaru1" "$ashigaru1_pane" "copilot" \
             > "$log_file" 2>&1 &
@@ -100,7 +100,7 @@ wait_for_log() {
     local ashigaru1_pane
     ashigaru1_pane=$(pane_target 1)
     local log_file watcher_pid
-    local idle_flag="${IDLE_FLAG_DIR:-/tmp}/shogun_idle_ashigaru1"
+    local idle_flag="${IDLE_FLAG_DIR:?IDLE_FLAG_DIR unset}/shogun_idle_ashigaru1"
 
     touch "$idle_flag"
 
@@ -108,7 +108,7 @@ wait_for_log() {
         "$E2E_QUEUE/queue/tasks/ashigaru1.yaml"
 
     tmux set-option -p -t "$ashigaru1_pane" @agent_cli "claude"
-    log_file="/tmp/e2e_inbox_watcher_ashigaru1_idle_${BASHPID}.log"
+    log_file="${E2E_SCRATCH:?E2E_SCRATCH unset}/e2e_inbox_watcher_ashigaru1_idle_${BASHPID}.log"
     watcher_pid=$(
         bash "$E2E_QUEUE/scripts/inbox_watcher.sh" "ashigaru1" "$ashigaru1_pane" "claude" \
             > "$log_file" 2>&1 &

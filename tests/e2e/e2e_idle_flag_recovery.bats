@@ -69,13 +69,13 @@ wait_for_log() {
     ashigaru1_pane=$(pane_target 1)
     local flag_dir log_file watcher_pid
 
-    flag_dir="$(mktemp -d "/tmp/e2e_idle_flags_XXXXXX")"
+    flag_dir="$(mktemp -d "${E2E_SCRATCH:?E2E_SCRATCH unset}/e2e_idle_flags_XXXXXX")"
     local ashigaru_idle_flag="$flag_dir/shogun_idle_ashigaru1"
 
     cp "$PROJECT_ROOT/tests/e2e/fixtures/task_ashigaru1_basic.yaml" \
         "$E2E_QUEUE/queue/tasks/ashigaru1.yaml"
 
-    log_file="/tmp/e2e_inbox_watcher_ashigaru1_clear_${BASHPID}.log"
+    log_file="${E2E_SCRATCH:?E2E_SCRATCH unset}/e2e_inbox_watcher_ashigaru1_clear_${BASHPID}.log"
     watcher_pid=$(
         IDLE_FLAG_DIR="$flag_dir" \
         bash "$E2E_QUEUE/scripts/inbox_watcher.sh" "ashigaru1" "$ashigaru1_pane" "claude" \
@@ -104,7 +104,7 @@ wait_for_log() {
     ashigaru1_pane=$(pane_target 1)
     local flag_dir log_file watcher_pid first_unread_seen
 
-    flag_dir="$(mktemp -d "/tmp/e2e_idle_flags_stale_XXXXXX")"
+    flag_dir="$(mktemp -d "${E2E_SCRATCH:?E2E_SCRATCH unset}/e2e_idle_flags_stale_XXXXXX")"
     local ashigaru_idle_flag="$flag_dir/shogun_idle_ashigaru1"
     first_unread_seen=$(( $(date +%s) - 420 ))
 
@@ -118,7 +118,7 @@ wait_for_log() {
     bash "$E2E_QUEUE/scripts/inbox_write.sh" "ashigaru1" \
         "タスクYAMLを読んで作業開始せよ。" "task_assigned" "karo"
 
-    log_file="/tmp/e2e_inbox_watcher_ashigaru1_stale_busy_${BASHPID}.log"
+    log_file="${E2E_SCRATCH:?E2E_SCRATCH unset}/e2e_inbox_watcher_ashigaru1_stale_busy_${BASHPID}.log"
     watcher_pid=$(
         IDLE_FLAG_DIR="$flag_dir" \
         FIRST_UNREAD_SEEN="$first_unread_seen" \

@@ -71,6 +71,39 @@ setup_file() {
     command -v python3 &>/dev/null || skip "python3 not available"
 }
 
+# 作業dir の置場(cmd_230): runner 経由なら E2E_DISPOSABLE_DIR 配下(置場ごと消える)。
+# 素の `bats` 実行(E2E_DISPOSABLE_DIR 未設定)では bats 自身の BATS_TEST_TMPDIR を使う
+# (bats が試験の成否を問わず消す)。どちらでも /tmp へ自前のパスは作らぬ。
+# 結果は SLIM_ROOT に入れる(teardown が失敗時にも消せるよう、サブシェルを使わぬ)。
+make_work_root() {
+    SLIM_ROOT=""
+    if [ -n "${E2E_DISPOSABLE_DIR:-}" ]; then
+        [ -d "$E2E_DISPOSABLE_DIR" ] || return 1
+        mkdir -p "$E2E_DISPOSABLE_DIR/scratch" || return 1
+        SLIM_ROOT="$(mktemp -d "$E2E_DISPOSABLE_DIR/scratch/slim_retention.XXXXXX")" || return 1
+        SLIM_ROOT_OWNED=1
+    else
+        SLIM_ROOT="$BATS_TEST_TMPDIR/work"
+        mkdir -p "$SLIM_ROOT" || return 1
+        SLIM_ROOT_OWNED=0
+    fi
+}
+
+# 成否を問わず(失敗した試験の後も)、自分が置場に作った作業dir を消す。
+# 消すのは「E2E_DISPOSABLE_DIR/scratch の直下で slim_retention.* の名前」と確かめられた物だけ。
+teardown() {
+    if [ "${SLIM_ROOT_OWNED:-0}" = 1 ] && [ -n "${SLIM_ROOT:-}" ] && [ -n "${E2E_DISPOSABLE_DIR:-}" ]; then
+        local parent real
+        parent="$(cd "$E2E_DISPOSABLE_DIR/scratch" 2>/dev/null && pwd -P)" || return 0
+        real="$(cd "$SLIM_ROOT" 2>/dev/null && pwd -P)" || return 0
+        case "$real" in
+            "$parent"/slim_retention.*) rm -rf -- "$real" ;;
+        esac
+    fi
+    SLIM_ROOT=""
+    SLIM_ROOT_OWNED=0
+}
+
 build_tmp_project() {
     local root="$1"
     mkdir -p "$root/scripts" "$root/queue"/{inbox,tasks,reports,archive,reports,archive/reports}
@@ -89,7 +122,8 @@ seed_yaml() {
 
 @test "E2E-011-A: unprocessed report with active cmd is kept" {
     local root
-    root="$(mktemp -d "/tmp/e2e_slim_retention_XXXXXX")"
+    make_work_root || return 1
+    root="$SLIM_ROOT"
     build_tmp_project "$root"
     cp "$PROJECT_ROOT/scripts/slim_yaml.py" "$root/scripts/"
 
@@ -107,13 +141,12 @@ seed_yaml() {
     [ -f "$root/queue/reports/ashigaru1_cmd_test_report.yaml" ]
     # Canonical report is always preserved.
     [ -f "$root/queue/reports/ashigaru1_report.yaml" ]
-
-    rm -rf "$root"
 }
 
 @test "E2E-011-B: old report for done cmd is archived" {
     local root
-    root="$(mktemp -d "/tmp/e2e_slim_retention_XXXXXX")"
+    make_work_root || return 1
+    root="$SLIM_ROOT"
     build_tmp_project "$root"
     cp "$PROJECT_ROOT/scripts/slim_yaml.py" "$root/scripts/"
 
@@ -132,13 +165,12 @@ seed_yaml() {
     [ -f "$root/queue/archive/reports/ashigaru1_cmd_test_report.yaml" ]
     # Canonical report remains.
     [ -f "$root/queue/reports/ashigaru1_report.yaml" ]
-
-    rm -rf "$root"
 }
 
 @test "E2E-011-C: canonical report remains even if old and complete" {
     local root
-    root="$(mktemp -d "/tmp/e2e_slim_retention_XXXXXX")"
+    make_work_root || return 1
+    root="$SLIM_ROOT"
     build_tmp_project "$root"
     cp "$PROJECT_ROOT/scripts/slim_yaml.py" "$root/scripts/"
 
@@ -151,6 +183,4 @@ seed_yaml() {
 
     # Canonical report is always retained.
     [ -f "$root/queue/reports/ashigaru1_report.yaml" ]
-
-    rm -rf "$root"
 }
