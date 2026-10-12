@@ -292,3 +292,7 @@ tests/specs/osato_lms_*
 !mandate/weekly_distill.md
 
 .claude/settings.local.json
+
+# e2e runner work dirs (cmd_229): scripts/run_e2e_isolated.sh creates .e2e_work/iso.XXXXXX and removes it on exit.
+# The default `*` already excludes it; this explicit line records the intent and survives a whitelist edit.
+.e2e_work/

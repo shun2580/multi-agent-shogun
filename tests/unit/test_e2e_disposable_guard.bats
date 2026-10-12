@@ -579,8 +579,9 @@ mutate() {
 @test "static: every tmux-using e2e bats calls e2e_require_disposable in setup_file" {
     local f n=0
     for f in "$REPO_ROOT"/tests/e2e/e2e_*.bats; do
-        if grep -q 'tmux' "$f"; then
-            grep -q 'e2e_require_disposable' "$f" || { echo "missing guard call: $f" >&2; return 1; }
+        # コメント行(slim_retention の頭コメントのような説明文)は数えない。コードに tmux / setup_e2e_session / helpers/setup があれば tmux 系。
+        if grep -v '^\s*#' "$f" | grep -Eq 'tmux|setup_e2e_session|helpers/setup'; then
+            grep -v '^\s*#' "$f" | grep -q 'e2e_require_disposable' || { echo "missing guard call (comments do not count): $f" >&2; return 1; }
             n=$((n + 1))
         fi
     done
@@ -588,7 +589,20 @@ mutate() {
 }
 
 @test "static: the one e2e bats that never touches tmux (slim_retention) really has no tmux" {
-    ! grep -q 'tmux' "$REPO_ROOT/tests/e2e/e2e_slim_retention.bats"
+    local f="$REPO_ROOT/tests/e2e/e2e_slim_retention.bats"
+    # コード(コメント行を除く)に tmux / setup_e2e_session / helpers/setup が現れたら落ちる。
+    if grep -v '^\s*#' "$f" | grep -Eq 'tmux|setup_e2e_session|helpers/setup'; then
+        echo "e2e_slim_retention.bats now uses tmux: add 'e2e_require_disposable' to its setup_file (see its header comment) — do not loosen this test" >&2
+        return 1
+    fi
+}
+
+@test "static: e2e_slim_retention documents why it is outside the guard and that tmux use would require the guard (cmd_229)" {
+    local f="$REPO_ROOT/tests/e2e/e2e_slim_retention.bats"
+    head -40 "$f" | grep -q 'e2e_require_disposable'
+    head -40 "$f" | grep -q '対象外'
+    head -40 "$f" | grep -q '将来'
+    head -40 "$f" | grep -q 'static: the one e2e bats that never touches tmux'
 }
 
 @test "static: setup.bash puts the wrapper first on PATH and guards setup_e2e_session" {

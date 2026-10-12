@@ -4,6 +4,18 @@
 # ═══════════════════════════════════════════════════════════════
 # Verifies slim_yaml.py keeps unprocessed reports for active cmds,
 # archives old reports for done cmds, and preserves canonical reports.
+#
+# ── ガード(cmd_225)の対象外である理由と、将来の約束 (cmd_229) ──
+# tests/e2e の他の bats は tmux へキーを送るため、setup_file で e2e_require_disposable
+# (tests/e2e/helpers/disposable_guard.bash) を呼び、scripts/run_e2e_isolated.sh が立てた
+# 使い捨てサーバの中でしか走らぬ。このファイルは tmux を一切使わず(python3 で slim_yaml.py を
+# 一時ディレクトリに対して走らせるだけ)、生きた陣へ届く経路が無いので、そのガードを呼ばず、
+# 素の `bats tests/e2e/e2e_slim_retention.bats` でも走る。これは意図した例外である。
+# ★ 将来ここで tmux を使い始めるなら、同じ変更で setup_file に e2e_require_disposable を足し、
+#    他の tmux 系 e2e と同じく runner 経由に限らねばならぬ。足さずに tmux を書けば、
+#    tests/unit/test_e2e_disposable_guard.bats の静的試験
+#    (「static: the one e2e bats that never touches tmux ...」)が落ちる構造になっている。
+#    その試験を緩めて通すな——ガードを載せよ。
 # ═══════════════════════════════════════════════════════════════
 
 # bats file_tags=e2e
