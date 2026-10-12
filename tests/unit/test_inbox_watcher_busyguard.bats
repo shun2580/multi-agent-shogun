@@ -4,7 +4,8 @@
 #   別名ファイル scripts/inbox_watcher.sh.new で示す。本番 scripts/inbox_watcher.sh は触らない。
 #
 # 実証の仕組み:
-#   - 試験ごとに <repo>/.e2e_work/busyguard.XXXXXX (git追跡外・/tmp ではない) に使い捨ての木を作り、
+#   - 試験ごとに bats 自身の置場 $BATS_TEST_TMPDIR に使い捨ての木を作り(bats が走行後に消す。リポジトリ内に残骸を残さぬ。
+#     cmd_231 工程B・軍師指摘2: 旧 <repo>/.e2e_work/busyguard.XXXXXX は走るたび +19個ずつ残った)、
 #     そこへ対象の見張り役を scripts/inbox_watcher.sh として複製して __INBOX_WATCHER_TESTING__=1 で source し、
 #     process_unread を直接呼ぶ(本番と同じ set -euo pipefail 下)。
 #   - a/b の実証は、専用 TMUX_TMPDIR の「別 tmux サーバ」に偽ペイン(画面が working 表示 / idle 表示)を立て、
@@ -30,8 +31,8 @@ NEW_WATCHER="$SCRIPT_DIR/scripts/inbox_watcher.sh.new"
 BASE_WATCHER_COMMIT="cf432d8"   # cmd_231 着手前の HEAD
 
 setup() {
-    mkdir -p "$SCRIPT_DIR/.e2e_work"
-    WORK="$(mktemp -d "$SCRIPT_DIR/.e2e_work/busyguard.XXXXXX")"
+    WORK="$BATS_TEST_TMPDIR/w"
+    mkdir -p "$WORK"
     export WORK
     mkdir -p "$WORK/scripts" "$WORK/lib" "$WORK/config" "$WORK/queue/inbox" "$WORK/queue/tasks" \
              "$WORK/queue/metrics" "$WORK/flags" "$WORK/tmux" "$WORK/logs"
@@ -95,12 +96,8 @@ teardown() {
             sleep 0.5
         done
     fi
-    safe_remove_work
+    # 作業木は $BATS_TEST_TMPDIR 配下: bats が消す。ここでは rm を書かない(変数パスへの rm -rf は書かぬ・追補2)。
 }
-
-# 後始末: 変数パスへの rm -rf は書かない(Claude Code の確認画面で止まる・追補2)。
-# 作業木は <repo>/.e2e_work/busyguard.XXXXXX に残す(追跡外・小さい)。消す場合は人が固定パスで行う。
-safe_remove_work() { return 0; }
 
 # ── 道具 ──
 
@@ -153,6 +150,8 @@ set -euo pipefail
 sleep() { command sleep 0.1; }
 if [ -n "${CYC_VERDICT_FILE:-}" ]; then
     agent_is_busy_check() { return "$(cat "$CYC_VERDICT_FILE")"; }
+    # cmd_231 工程B: .new の知らせは wk_screen_class(画面の分類)を見る。固定値 0/1/2 を 作業中/待機/取得失敗 に対応させる
+    wk_screen_class() { case "$(cat "$CYC_VERDICT_FILE")" in 0) echo working ;; 1) echo idle ;; *) echo failed ;; esac; }
 fi
 NEW_CONTEXT_SENT="${CYC_CTX:-1}"
 base="${CYC_BASE:-$(date +%s)}"
@@ -413,7 +412,7 @@ confirm_screen() {
     echo "$tail_" | tail -1 | grep -qiE 'esc to cancel' && echo "$tail_" | grep -qE '❯ *1\. *Yes'
 }
 
-@test "T-BG-D1: 確認画面で待つ足軽: 現行の画面判定は busy と読み(最終行の 'Esc to cancel' が 'esc to' に合う)、.new は /clear せず連続60分で知らせる" {
+@test "T-BG-D1: 確認画面で待つ足軽: 現行の画面判定は busy と読むが、.new は『確認画面』と判じ、待たずに即時に1回知らせ(60分待ちにせぬ)、キーは一切送らない" {
     install_watcher "$NEW_WATCHER"
     start_pane confirm
     iso_tmux capture-pane -t bgt:0.0 -p | grep -q "Do you want to proceed?"
@@ -421,15 +420,20 @@ confirm_screen() {
     run bash -c 'source "'"$WORK"'/lib/agent_status.sh"; export TMUX_TMPDIR="'"$WORK"'/tmux"; unset TMUX TMUX_PANE; agent_is_busy_check bgt:0.0 claude; echo "rc=$?"'
     echo "agent_is_busy_check on confirmation screen: $output"
     [[ "$output" == *"rc=0"* ]]
-    # 未読を既読にして(①を除く)、連続60分だけを見る。5分刻み
+    # 未読を既読にして(①を除く)。最初の観測(0秒)で即時に1回
     sed -i 's/read: false/read: true/' "$WORK/queue/inbox/ashigaru9.yaml"
-    local offs="" t
-    for t in $(seq 0 300 3600); do offs="$offs $t"; done
-    run_driver CYC_AGE=0 CYC_CTX=1 CYC_INJECT=1 CYC_BASE=1800000000 CYC_OFFSETS="$offs" BUSYGUARD_RESUME_GAP_SEC=1000000
-    echo "--- notify.out ---"; cat "$WORK/notify.out"
+    run_driver CYC_AGE=0 CYC_CTX=1 CYC_INJECT=1 CYC_BASE=1800000000 CYC_OFFSETS="0" BUSYGUARD_RESUME_GAP_SEC=1000000
     [[ "$output" == *"DRIVER_DONE"* ]]
+    echo "--- notify.out (0秒) ---"; cat "$WORK/notify.out"
     [ "$(notify_count)" -eq 1 ]
-    grep -q "連続" "$WORK/notify.out"
+    grep -q "確認画面" "$WORK/notify.out"
+    grep -q "ashigaru9" "$WORK/notify.out"
+    # 同じ確認画面が続く間は毎tick送らぬ: 29分59秒までは増えない
+    run_driver CYC_AGE=0 CYC_CTX=1 CYC_INJECT=1 CYC_BASE=1800000000 CYC_OFFSETS="30 60 300 600 1200 1799" BUSYGUARD_RESUME_GAP_SEC=1000000
+    [ "$(notify_count)" -eq 1 ]
+    # 30分で再通知(妥当な間隔で1回)
+    run_driver CYC_AGE=0 CYC_CTX=1 CYC_INJECT=1 CYC_BASE=1800000000 CYC_OFFSETS="1800 1830" BUSYGUARD_RESUME_GAP_SEC=1000000
+    [ "$(notify_count)" -eq 2 ]
     [ ! -s "$WORK/recv.log" ]
 }
 
