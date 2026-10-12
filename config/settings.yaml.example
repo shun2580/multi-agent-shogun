@@ -29,6 +29,10 @@ dashboard_staleness:
   cooldown_after_escalation_minutes: <integer>
 assignment_grace:
   after_nudge_seconds: <integer>
+busy_guard:  # cmd_231: 働き中の足軽へ /clear は送らぬ。働き中が長く続くときは殿へ ntfy で知らせる(既定=将軍案。無ければこの既定で動く)
+  unread_notify_minutes: 30  # 働き中のまま未読が残る分数 → 知らせ
+  continuous_notify_minutes: 60  # 未読の有無を問わず働き中が連続する分数 → 知らせ
+  repeat_notify_minutes: 60  # 知らせた後、続く間の再通知間隔
 cli:
   agents:
     karo:
