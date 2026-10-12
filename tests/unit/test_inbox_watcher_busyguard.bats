@@ -98,25 +98,9 @@ teardown() {
     safe_remove_work
 }
 
-# safe_remove_work — 変数パスへの無条件 rm -rf はしない(cmd_229 safe_remove_iso に倣う)。
-# realpath で <repo>/.e2e_work/busyguard.XXXXXX そのものと確かめられたときだけ、その確認済みパスを消す。
-# 空・/・HOME・repo直下・.e2e_work 自体・別の場所は、何も消さずに理由を出す。
-safe_remove_work() {
-    local w="${WORK:-}" real parent
-    [ -n "$w" ] || { echo "safe_remove_work: WORK is empty — not removing" >&2; return 0; }
-    [ -d "$w" ] || return 0
-    real="$(cd -P "$w" 2>/dev/null && pwd -P)" || { echo "safe_remove_work: realpath failed — not removing" >&2; return 0; }
-    parent="$(cd -P "$SCRIPT_DIR/.e2e_work" 2>/dev/null && pwd -P)" || { echo "safe_remove_work: no .e2e_work — not removing" >&2; return 0; }
-    if [ -z "$real" ] || [ "$real" = "/" ] || [ "$real" = "${HOME:-/nonexistent}" ] \
-       || [ "$real" = "$SCRIPT_DIR" ] || [ "$real" = "$parent" ]; then
-        echo "safe_remove_work: refusing '$real'" >&2; return 0
-    fi
-    case "$real" in
-        "$parent"/busyguard.[A-Za-z0-9]*) rm -rf -- "$real" ;;
-        *) echo "safe_remove_work: '$real' is not a busyguard work dir — not removing" >&2 ;;
-    esac
-    return 0
-}
+# 後始末: 変数パスへの rm -rf は書かない(Claude Code の確認画面で止まる・追補2)。
+# 作業木は <repo>/.e2e_work/busyguard.XXXXXX に残す(追跡外・小さい)。消す場合は人が固定パスで行う。
+safe_remove_work() { return 0; }
 
 # ── 道具 ──
 
@@ -322,7 +306,7 @@ c_run() {
     local verdict="$1" offsets="$2"; shift 2
     install_watcher "$NEW_WATCHER"
     if [ -z "${C_KEEP:-}" ]; then
-        rm -rf "$WORK/logs/watcher_busy"
+        rm -f -- "$WORK"/logs/watcher_busy/*.state
         : > "$WORK/notify.out"
     fi
     printf '%s' "$verdict" > "$WORK/verdict"
@@ -404,7 +388,7 @@ notify_count() { grep -c . "$WORK/notify.out" || true; }
     [[ "$output" == *"DRIVER_DONE"* ]]
     [ "$(notify_count)" -eq 0 ]
     # 対照: 途切れ許容を十分大きくすれば(連続と見なせば)同じ観測列で 60 分の知らせが出る
-    rm -rf "$WORK/logs/watcher_busy"; : > "$WORK/notify.out"
+    rm -f -- "$WORK"/logs/watcher_busy/*.state; : > "$WORK/notify.out"
     run_driver CYC_VERDICT_FILE="$WORK/verdict" CYC_AGE=0 CYC_CTX=1 CYC_INJECT=1 CYC_BASE="$C_BASE" CYC_OFFSETS="0 600 1200 1800 2400 3000 3600 4200" BUSYGUARD_RESUME_GAP_SEC=1000000
     [ "$(notify_count)" -eq 1 ]
 }
