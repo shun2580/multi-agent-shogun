@@ -225,6 +225,80 @@ reason_prefix() {
     [[ "$output" == *"reason=sockdir:"* ]]
 }
 
+# ── 兄弟ディレクトリ (専用ディレクトリ名と接頭辞が文字列として一致するだけ) は専用ディレクトリ配下ではない ──
+# 境界は『専用ディレクトリ + /』で判定する。"$ISO"_evil と "$ISO"evil の両形を拒否側で確かめる。
+
+mk_sibling() {
+    # mk_sibling <suffix> → SIB に ${ISO}<suffix> を作り、その下に tmux ソケット用ディレクトリも作る
+    SIB="${ISO}$1"
+    mkdir -p "$SIB/tmux/tmux-$UID_NUM"
+}
+
+@test "guard: DENY when TMUX_TMPDIR is a sibling dir sharing the disposable dir's name as a prefix" {
+    local suffix
+    for suffix in _evil evil; do
+        mk_sibling "$suffix"
+        export TMUX_TMPDIR="$SIB/tmux"
+        run_check
+        [ "$status" -ne 0 ]
+        [[ "$output" == *"reason=tmpdir:"* ]]
+    done
+}
+
+@test "guard: DENY when TMUX points at a socket under a sibling dir sharing the disposable dir's name as a prefix" {
+    local suffix
+    for suffix in _evil evil; do
+        mk_sibling "$suffix"
+        export TMUX="$SIB/tmux/tmux-$UID_NUM/default,4332,1"
+        run_check
+        [ "$status" -ne 0 ]
+        [[ "$output" == *"reason=tmuxenv:"* ]]
+    done
+}
+
+@test "guard: DENY when tmux reports a socket under a sibling dir sharing the disposable dir's name as a prefix" {
+    local suffix
+    for suffix in _evil evil; do
+        mk_sibling "$suffix"
+        export FAKE_TMUX_SOCKET="$SIB/tmux/tmux-$UID_NUM/default"
+        run_check
+        [ "$status" -ne 0 ]
+        [[ "$output" == *"reason=sockdir:"* ]]
+    done
+}
+
+@test "wrapper: send-keys REFUSED (0 calls) for each sibling-prefix path (TMUX_TMPDIR / TMUX / socket)" {
+    mk_sibling _evil
+    export TMUX_TMPDIR="$SIB/tmux"
+    wrap send-keys -t "multiagent:agents.4" "x" Enter
+    [ "$status" -eq 97 ]
+    [[ "$output" == *"tmpdir:"* ]]
+
+    mk_disposable; mk_sibling evil
+    export TMUX="$SIB/tmux/tmux-$UID_NUM/default,4332,1"
+    wrap send-keys -t "multiagent:agents.4" "x" Enter
+    [ "$status" -eq 97 ]
+    [[ "$output" == *"tmuxenv:"* ]]
+
+    unset TMUX
+    mk_disposable; mk_sibling _evil
+    export FAKE_TMUX_SOCKET="$SIB/tmux/tmux-$UID_NUM/default"
+    wrap send-keys -t "multiagent:agents.4" "x" Enter
+    [ "$status" -eq 97 ]
+    [[ "$output" == *"sockdir:"* ]]
+
+    [ "$(sendkeys_calls)" -eq 0 ]
+}
+
+@test "guard: a path strictly inside the disposable dir (boundary '<dir>/') is still allowed for TMUX_TMPDIR / TMUX / socket" {
+    mkdir -p "$ISO/tmux_evil/tmux-$UID_NUM"
+    export TMUX_TMPDIR="$ISO/tmux_evil"
+    export TMUX="$ISO/tmux_evil/tmux-$UID_NUM/default,4332,1"
+    export FAKE_TMUX_SOCKET="$ISO/tmux_evil/tmux-$UID_NUM/default"
+    run_check
+    [ "$status" -eq 0 ]
+}
+
 @test "guard: the default socket (/tmp/tmux-<uid>/default) is refused by the notdef check" {
     run bash -c 'source "$1"; _E2E_SOCK="/tmp/tmux-$2/default"; _e2e_chk_socket_not_default; echo "reason=$E2E_GUARD_REASON"' _ "$GUARD" "$UID_NUM"
     [[ "$output" == *"reason=notdef:"* ]]
@@ -465,6 +539,30 @@ mutate() {
     mutate _e2e_chk_socket_not_default
     run bash -c 'source "$1"; _E2E_SOCK="/tmp/tmux-$2/default"; _e2e_chk_socket_not_default && echo passed' _ "$MUTANT" "$UID_NUM"
     [[ "$output" == *"passed"* ]]
+}
+
+@test "mutation: weakening the boundary to a bare string-prefix match lets every sibling-prefix path through (so the sibling tests have teeth)" {
+    # 境界判定 _e2e_under を『接頭辞一致だけ』にした変異体。guard 本体は書換えず、source 後に関数を上書きする。
+    local mut='_e2e_under() { case "$1" in "$2"*) return 0 ;; esac; return 1; }'
+    local suffix
+    for suffix in _evil evil; do
+        mk_disposable; mk_sibling "$suffix"
+
+        export TMUX_TMPDIR="$SIB/tmux"
+        run bash -c 'source "$1"; eval "$2"; e2e_disposable_check; rc=$?; echo "reason=$E2E_GUARD_REASON"; exit $rc' _ "$GUARD" "$mut"
+        [[ "$output" != *"reason=tmpdir:"* ]]
+
+        mk_disposable; mk_sibling "$suffix"
+        export TMUX="$SIB/tmux/tmux-$UID_NUM/default,4332,1"
+        run bash -c 'source "$1"; eval "$2"; e2e_disposable_check; rc=$?; echo "reason=$E2E_GUARD_REASON"; exit $rc' _ "$GUARD" "$mut"
+        [[ "$output" != *"reason=tmuxenv:"* ]]
+        unset TMUX
+
+        mk_disposable; mk_sibling "$suffix"
+        export FAKE_TMUX_SOCKET="$SIB/tmux/tmux-$UID_NUM/default"
+        run bash -c 'source "$1"; eval "$2"; e2e_disposable_check; rc=$?; echo "reason=$E2E_GUARD_REASON"; exit $rc' _ "$GUARD" "$mut"
+        [[ "$output" != *"reason=sockdir:"* ]]
+    done
 }
 
 @test "mutation: the full check (no single check disabled) refuses every broken environment — and a mutant that disables a check allows at least one" {
