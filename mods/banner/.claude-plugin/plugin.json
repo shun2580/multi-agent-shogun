@@ -1,0 +1,6 @@
+{
+  "name": "shogun-banner",
+  "version": "0.1.0",
+  "description": "Observe-only role banner: one line above the prompt naming the agent's role (shogun, karo, gunshi, ashigaru 1-7), read once from SHOGUN_AGENT_ID",
+  "author": { "name": "multi-agent-shogun" }
+}

@@ -1,0 +1,4 @@
+{
+  "description": "shogun-banner hooks module (observe only)",
+  "modules": ["./register.js"]
+}
