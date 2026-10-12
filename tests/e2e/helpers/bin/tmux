@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# E2E_TMUX_WRAPPER_SHIM — e2e 用 tmux ラッパ (cmd_225)
+#
+# PATH 先頭に置かれ、e2e が呼ぶ tmux (bats / inbox_watcher / lib 経由を含む全部) を中継する。
+#   - 読取系サブコマンド (capture-pane, list-*, display-message, show-options, has-session 等) は素通し。
+#   - それ以外 (send-keys, respawn-pane, kill-*, set-option, new-session, split-window ...) は
+#     「書込系」とみなし、tests/e2e/helpers/disposable_guard.bash の判定を**自身で再実行**する。
+#     使い捨てサーバと証明できなければ exit 97 + 理由を stderr に出して拒否 (fail-closed)。
+#   - 書込系のうち send-keys 等は -t (対象) が空・省略なら拒否 (呼出元の現在セッションへ解決される事故を塞ぐ)。
+#   - 書込系でサブコマンドより前の -S/-L/-f/-c (グローバルオプション) があれば拒否。
+#     (サブコマンド以降の `capture-pane ... -S -` 等のフラグは別物ゆえ拾わない — 解析で区別する。)
+#   - kill-server は常に拒否。
+#   - E2E_TMUX_WRAPPER_LOG にパスを入れると、書込系の試行を1行ずつ追記する:
+#       <epoch> pid=<pid> <ALLOW|DENY> <subcommand> target=<t> reason=<...>
+#
+# 読取系は素通しのため、判定にかかる費用は書込系のみ。
+
+_WRAP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$_WRAP_DIR/../disposable_guard.bash"
+
+_wrap_log() {
+    # _wrap_log <ALLOW|DENY> <sub> <target> <reason>
+    [ -n "${E2E_TMUX_WRAPPER_LOG:-}" ] || return 0
+    printf '%s pid=%s %s %s target=%s reason=%s\n' "$(date +%s)" "$$" "$1" "$2" "$3" "$4" \
+        >> "$E2E_TMUX_WRAPPER_LOG" 2>/dev/null || true
+}
+
+_wrap_refuse() {
+    # _wrap_refuse <sub> <target> <reason>
+    echo "e2e tmux wrapper: REFUSE '$1' (target='$2'): $3" >&2
+    _wrap_log DENY "$1" "$2" "$3"
+    exit 97
+}
+
+# ── グローバルオプションの解析 (サブコマンドより前だけ) ──
+# 引数を取る: -c -f -L -S -T ／ 取らない: -2 -C -D -l -N -u -v -V
+global_flags=""      # 見つかったグローバルフラグ文字 (例: "S" "L")
+args=("$@")
+idx=0
+while [ "$idx" -lt "${#args[@]}" ]; do
+    a="${args[$idx]}"
+    case "$a" in
+        --) idx=$((idx + 1)); break ;;
+        -?*)
+            cluster="${a#-}"
+            consumed_next=0
+            while [ -n "$cluster" ]; do
+                ch="${cluster:0:1}"
+                cluster="${cluster:1}"
+                case "$ch" in
+                    c|f|L|S|T)
+                        global_flags+="$ch"
+                        if [ -z "$cluster" ]; then consumed_next=1; fi
+                        cluster=""    # 残りはこのオプションの値
+                        ;;
+                    *) ;;
+                esac
+            done
+            idx=$((idx + 1))
+            [ "$consumed_next" -eq 1 ] && idx=$((idx + 1))
+            ;;
+        *) break ;;
+    esac
+done
+
+sub="${args[$idx]:-}"
+rest=("${args[@]:$((idx + 1))}")
+
+# ── 読取系は素通し (サブコマンド名・別名の許可リスト。未知は書込系 = fail-closed) ──
+case "$sub" in
+    capture-pane|capturep|\
+    list-buffers|lsb|list-clients|lsc|list-commands|lscm|list-keys|lsk|list-panes|lsp|list-sessions|ls|list-windows|lsw|\
+    display-message|display|\
+    show-options|show|show-window-options|showw|show-environment|showenv|show-messages|showmsgs|show-hooks|show-buffer|showb|\
+    has-session|has|server-info|info)
+        real="$(e2e_find_real_tmux)" || { echo "e2e tmux wrapper: no real tmux found" >&2; exit 98; }
+        exec "$real" "$@"
+        ;;
+    "")
+        # `tmux -V` 等 (サブコマンド無し)。-V だけは素通し。それ以外の裸の tmux は new-session 相当 = 書込系。
+        case " $* " in
+            *" -V "*) real="$(e2e_find_real_tmux)" || exit 98; exec "$real" "$@" ;;
+        esac
+        sub="(none)"
+        ;;
+esac
+
+# ── ここから書込系 ──
+
+# サブコマンドの -t の値を取り出す (最後に現れたものを採用。-t 自体の欠落/空も検出)
+target=""; has_t=0
+i=0
+while [ "$i" -lt "${#rest[@]}" ]; do
+    r="${rest[$i]}"
+    case "$r" in
+        -t) has_t=1; target="${rest[$((i + 1))]:-}"; i=$((i + 2)); continue ;;
+        -t?*) has_t=1; target="${r#-t}" ;;
+    esac
+    i=$((i + 1))
+done
+
+case "$sub" in
+    kill-server)
+        _wrap_refuse "$sub" "$target" "kill-server is never allowed through the e2e wrapper"
+        ;;
+esac
+
+if [ -n "$global_flags" ]; then
+    case "$global_flags" in
+        *S*|*L*|*f*|*c*)
+            _wrap_refuse "$sub" "$target" "global option -${global_flags} (explicit socket/config/shell) is not allowed on write commands"
+            ;;
+    esac
+fi
+
+# 対象必須の書込系 (現在セッションへ解決される事故を塞ぐ)
+case "$sub" in
+    send-keys|send|send-prefix|respawn-pane|respawnp|respawn-window|respawnw|\
+    kill-session|kill-window|killw|kill-pane|killp|\
+    split-window|splitw|select-layout|selectl|select-pane|selectp|select-window|selectw|\
+    paste-buffer|pasteb|pipe-pane|pipep|resize-pane|resizep|swap-pane|swapp)
+        if [ "$has_t" -ne 1 ] || [ -z "$target" ]; then
+            _wrap_refuse "$sub" "$target" "empty or missing -t target (would resolve to the caller's current session)"
+        fi
+        ;;
+esac
+
+# 判定の再実行 (bats 側のガード呼び忘れ・直接 tmux 呼びを構造的に塞ぐ)
+if ! e2e_disposable_check 2>/dev/null; then
+    _wrap_refuse "$sub" "$target" "not a disposable tmux server: ${E2E_GUARD_REASON:-unknown}"
+fi
+
+real="$(e2e_find_real_tmux)" || _wrap_refuse "$sub" "$target" "no real tmux binary found"
+_wrap_log ALLOW "$sub" "$target" "disposable"
+exec "$real" "$@"

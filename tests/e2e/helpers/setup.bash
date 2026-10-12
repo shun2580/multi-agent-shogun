@@ -2,6 +2,14 @@
 # setup.bash — E2E test setup/teardown helpers for bats
 # Provides tmux session lifecycle and queue directory management.
 
+# ─── Disposable-server guard (cmd_225) ───
+# e2e は使い捨ての tmux サーバでのみ走る。tmux 呼出は必ず helpers/bin/tmux ラッパ経由
+# (書込系はラッパ自身がガードを再実行する)。直し方・使い方: scripts/run_e2e_isolated.sh
+_E2E_SETUP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$_E2E_SETUP_DIR/disposable_guard.bash"
+e2e_install_tmux_wrapper
+
 # ─── Constants ───
 E2E_SESSION_PREFIX="e2e_test"
 DEFAULT_PROCESSING_DELAY="${MOCK_PROCESSING_DELAY:-1}"
@@ -12,6 +20,9 @@ DEFAULT_AGENTS=("karo" "ashigaru1" "ashigaru2")
 # Call from setup_file() in .bats files.
 setup_e2e_session() {
     local num_panes="${1:-3}"
+
+    # キーを送る/ペインを作る/セッションを消す前に、使い捨てサーバであることを証明する (fail-closed)
+    e2e_require_disposable || return 1
 
     # Unique session name per test file
     export E2E_SESSION="${E2E_SESSION_PREFIX}_$$"
@@ -109,7 +120,11 @@ setup_e2e_session() {
 # Cleans up tmux session and temp directories.
 # Call from teardown_file() in .bats files.
 teardown_e2e_session() {
-    tmux kill-session -t "$E2E_SESSION" 2>/dev/null || true
+    # E2E_SESSION が空 (setup_file が skip/失敗で抜けた) ときは何もしない。空ターゲットの
+    # kill-session は呼出元の現在セッション (生きた陣) へ解決され得る。
+    if [ -n "${E2E_SESSION:-}" ]; then
+        tmux kill-session -t "$E2E_SESSION" 2>/dev/null || true
+    fi
     if [ -n "${E2E_QUEUE:-}" ] && [ -d "$E2E_QUEUE" ]; then
         rm -rf "$E2E_QUEUE"
     fi

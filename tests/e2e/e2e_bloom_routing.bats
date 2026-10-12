@@ -2,25 +2,62 @@
 # e2e_bloom_routing.bats — Dim C: スマート切り替えE2Eテスト
 # Issue #53 Phase 2 — find_agent_for_model() + karo bloom routing 統合検証
 #
-# VPS上でのみ実行を想定。tmuxセッション "multiagent" が起動済みで
-# 混合CLI設定（ashigaru1-3=Spark, ashigaru4-5=Sonnet, ashigaru6-7=Opus）が
-# 必要。
+# cmd_225: 生きた "multiagent" には一切触れない。使い捨ての tmux サーバ内に、
+# 偽の足軽(ashigaru1-7, 素の bash)を持つ使い捨てセッションを setup_file で自分で作り、
+# ビジー状態もそこへ作る。生きた陣の有無には依存しない。
 #
 # 事前条件:
-#   - VPS設定: ashigaru1-3=codex/spark, ashigaru4-5=claude/sonnet, ashigaru6-7=claude/opus
-#   - bloom_routing: "manual" または "auto"
-#   - 全足軽がアイドル状態（テスト開始前）
+#   - scripts/run_e2e_isolated.sh 経由で走らせること(使い捨てサーバでなければ止まる。SKIP にしない)
+#   - config/settings.yaml の cli.agents (モデル割当) は実物を読む
 #
 # 実行方法:
-#   bats tests/e2e/e2e_bloom_routing.bats
+#   bash scripts/run_e2e_isolated.sh tests/e2e/e2e_bloom_routing.bats
 
 PROJECT_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
 
-setup() {
-    # tmuxセッションの存在確認
-    if ! tmux has-session -t multiagent 2>/dev/null; then
-        skip "tmux session 'multiagent' が存在しない。VPS上でshutsuijin後に実行せよ。"
+# cmd_225: ガードとtmuxラッパ(PATH先頭)を有効にする
+E2E_HELPERS_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/helpers" && pwd)"
+source "$E2E_HELPERS_DIR/setup.bash"
+
+BLOOM_FAKE_AGENTS=(ashigaru1 ashigaru2 ashigaru3 ashigaru4 ashigaru5 ashigaru6 ashigaru7)
+
+setup_file() {
+    command -v tmux &>/dev/null || skip "tmux not available"
+
+    # 使い捨てサーバでなければ、ペインを作る前に止まる (SKIP にしない)
+    e2e_require_disposable || return 1
+
+    # 使い捨てサーバ内に偽の足軽セッションを作る (素の bash。@agent_id/@agent_cli を付す)
+    export E2E_SESSION="${E2E_SESSION_PREFIX}_bloom_$$"
+    tmux new-session -d -s "$E2E_SESSION" -n agents -x 200 -y 50 "bash --norc"
+    local i
+    for ((i = 1; i < ${#BLOOM_FAKE_AGENTS[@]}; i++)); do
+        tmux split-window -t "${E2E_SESSION}:agents" "bash --norc"
+        tmux select-layout -t "${E2E_SESSION}:agents" tiled
+    done
+    for ((i = 0; i < ${#BLOOM_FAKE_AGENTS[@]}; i++)); do
+        tmux set-option -p -t "${E2E_SESSION}:agents.${i}" @agent_id "${BLOOM_FAKE_AGENTS[$i]}"
+        tmux set-option -p -t "${E2E_SESSION}:agents.${i}" @agent_cli "claude"
+    done
+}
+
+teardown_file() {
+    # E2E_SESSION が空 (setup_file が skip/失敗) なら何もしない: 空ターゲットは現在セッションへ解決される
+    if [ -n "${E2E_SESSION:-}" ]; then
+        tmux kill-session -t "$E2E_SESSION" 2>/dev/null || true
     fi
+}
+
+# 偽足軽のペインターゲットを返す (使い捨てセッション内だけを探す。list-panes -a は使わない)
+bloom_pane_of() {
+    tmux list-panes -s -t "$E2E_SESSION" -F '#{session_name}:#{window_index}.#{pane_index} #{@agent_id}' \
+        | awk -v agent="$1" '$2 == agent {print $1}' | head -1
+}
+
+setup() {
+    # 読取も含め、使い捨てサーバ以外は見ない (fail-closed)
+    e2e_require_disposable || return 1
+    BLOOM_BUSY_PANES=()
 
     # lib/cli_adapter.sh のロード
     export CLI_ADAPTER_PROJECT_ROOT="$PROJECT_ROOT"
@@ -32,8 +69,12 @@ setup() {
 }
 
 teardown() {
-    # テスト後にtaskファイルをクリーンアップ
-    :
+    # ビジーにしたペインを元に戻す (trap EXIT は bats 自身の EXIT trap を潰して結果行を失わせるので使わない)
+    local p
+    for p in "${BLOOM_BUSY_PANES[@]:-}"; do
+        [ -n "$p" ] && tmux send-keys -t "$p" '' C-c
+    done
+    sleep 0.3
 }
 
 # ─────────────────────────────────────────────
@@ -86,16 +127,14 @@ teardown() {
 # ─────────────────────────────────────────────
 @test "TC-BLOOM-004: ashigaru4ビジー時、L5タスクはashigaru5に振られる" {
     # ashigaru4のペインターゲットを取得
-    pane4=$(tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index} #{@agent_id}' \
-        | awk '$2 == "ashigaru4" {print $1}')
+    pane4=$(bloom_pane_of ashigaru4)
 
     if [[ -z "$pane4" ]]; then
         skip "ashigaru4ペインが見つからない"
     fi
 
-    # sleep でビジー状態を作成（teardownはtrapで保証）
-    # shellcheck disable=SC2064
-    trap "tmux send-keys -t '$pane4' '' C-c; sleep 0.3" EXIT
+    # sleep でビジー状態を作成（元に戻すのは teardown）
+    BLOOM_BUSY_PANES=("$pane4")
     tmux send-keys -t "$pane4" "echo 'Working...'; sleep 30" Enter
     sleep 1
 
@@ -125,18 +164,15 @@ teardown() {
 # TC-BLOOM-005: ashigaru4/5両方ビジー + L5タスク → QUEUE（Codexに降格しない）
 # ─────────────────────────────────────────────
 @test "TC-BLOOM-005: Sonnet足軽全員ビジー時、QUEUEになる（Codexへの降格なし確認）" {
-    pane4=$(tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index} #{@agent_id}' \
-        | awk '$2 == "ashigaru4" {print $1}')
-    pane5=$(tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index} #{@agent_id}' \
-        | awk '$2 == "ashigaru5" {print $1}')
+    pane4=$(bloom_pane_of ashigaru4)
+    pane5=$(bloom_pane_of ashigaru5)
 
     if [[ -z "$pane4" || -z "$pane5" ]]; then
         skip "ashigaru4またはashigaru5ペインが見つからない"
     fi
 
-    # sleep でashigaru4/5をビジー状態に（teardownはtrapで保証）
-    # shellcheck disable=SC2064
-    trap "tmux send-keys -t '$pane4' '' C-c; tmux send-keys -t '$pane5' '' C-c; sleep 0.3" EXIT
+    # sleep でashigaru4/5をビジー状態に（元に戻すのは teardown）
+    BLOOM_BUSY_PANES=("$pane4" "$pane5")
     tmux send-keys -t "$pane4" "echo 'Working...'; sleep 30" Enter
     tmux send-keys -t "$pane5" "echo 'Working...'; sleep 30" Enter
     sleep 1

@@ -30,6 +30,8 @@ setup_file() {
     command -v python3 &>/dev/null || skip "python3 not available"
     python3 -c "import yaml" 2>/dev/null || skip "python3-yaml not available"
 
+    # cmd_225: 使い捨てサーバでなければ、ペインを作る前に止まる (SKIP にしない)
+    e2e_require_disposable || return 1
     setup_e2e_session 3
 }
 
