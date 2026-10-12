@@ -1,0 +1,6 @@
+{
+  "name": "shogun-toolrow",
+  "version": "0.1.0",
+  "description": "Display-only tool row: draws a tool call's heading row as a warrior-style name with the original tool name kept in brackets (e.g. 陣触れ（Bash）). Changes ui.render ToolUse only; never touches tool.call, tool.check or tool.describe",
+  "author": { "name": "multi-agent-shogun" }
+}

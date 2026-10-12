@@ -1,0 +1,4 @@
+{
+  "description": "shogun-toolrow hooks module (display only: ui.render ToolUse)",
+  "modules": ["./register.js"]
+}
