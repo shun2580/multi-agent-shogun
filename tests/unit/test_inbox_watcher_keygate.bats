@@ -651,7 +651,7 @@ EOF
     echo "関数: $fn"
     [ "$fn" = "wk_send_keys()" ]
     # 他の関数は send-keys を直接書かず wk_send_keys を使う(本数の目安)
-    [ "$(grep -c 'wk_send_keys' "$NEW_WATCHER")" -ge 30 ]
+    [ "$(grep -c -E "wk_send_(keys|soft)" "$NEW_WATCHER")" -ge 30 ]
 }
 
 @test "T-KG-S2: settings.yaml.example に新しい鍵(confirm_repeat_notify_minutes・confirm_screen_regex の説明)があり、既定値が実効値(30)と同じ" {
