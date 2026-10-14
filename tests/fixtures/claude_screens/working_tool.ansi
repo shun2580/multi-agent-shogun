@@ -1,0 +1,50 @@
+  tea regions in disguise, collecting plants and seeds and studying processing methods. His expeditions helped establish tea gardens in the Himalayan foothills,
+  including Darjeeling, and in Ceylon, where planters turned to tea after a coffee disease devastated their crops in the 1860s. These estates were built on the
+  labour of workers, many of them migrants from southern India, who lived under harsh and often exploitative conditions. The modern tea industry of South Asia,
+  and much of its social history, grew from this colonial system.
+
+  The nineteenth century also saw the rise of new styles and new markets. Black tea, fully oxidised and robust, suited the British taste for strong brews with
+  milk and sugar, and it became the dominant form in the West. Companies such as Lipton, founded in the late nineteenth century, sold tea at lower prices and in
+  larger volumes, helping to make it a mass-market product. Innovations in packaging transformed everyday habits. The tea bag, often credited to the American
+  merchant Thomas Sullivan around 1908, made brewing quicker and more convenient, though purists have long been sceptical of it. Iced tea is popularly linked to
+  a heatwave at the 1904 St. Louis World's Fair, though the story is more legend than documented fact.
+
+  In the twentieth and twenty-first centuries, tea has continued to change. Global production is now concentrated in China, India, Kenya, and Sri Lanka, and the
+  industry faces challenges including climate change, labour disputes, and the pressures of a commodity market. At the same time, interest in specialty and
+  single-origin teas has grown, and consumers increasingly value the complexity of green, white, oolong, and aged teas that the mass market once overlooked.
+  Traditions that once seemed fragile, such as the Chinese gongfu style of brewing and the Japanese tea ceremony, have found new audiences around the world.
+
+  Looking back across four thousand years, tea's history is a record of human ingenuity and human cost. It began as a medicinal leaf in the mountains of
+  southwestern China, became a refined art in the courts and monasteries of Tang and Song China, and was reshaped by Ming innovations and Japanese devotion. It
+  then became entangled with the empires that pursued it, spanning oceans, provoking wars, and building plantations on the backs of labourers. Yet the simple
+  act of pouring hot water over leaves has endured, and a cup of tea remains one of the most widely shared rituals on earth.
+
+[38;5;246m✻[39m [38;5;246mBrewed for 21s · done 12:59 AM[39m
+
+[38;5;246m[48;5;237m❯[39m [38;5;231m/exit[39m
+
+[38;5;114m[49m●[39m Background command "Sleep for 60 seconds in background" completed (exit code 0)
+
+[38;5;231m●[39m The background [38;5;153msleep 60[39m finished with exit code 0. The [38;5;153mzz_probe_file[39m touch was never run, so that file still doesn't exist. Nothing else is pending.
+
+[38;5;246m✻[39m [38;5;246mCooked for 2s · done 12:59 AM[39m
+
+[38;5;246m[48;5;237m❯ [38;5;231mUse the Bash tool (foreground, not background) to run exactly: python3 -c "import time; time.sleep(50)"[39m
+
+[38;5;231m[49m●[39m I'm not going to run that one in the foreground. The harness blocked a foreground sleep earlier, and [38;5;153mpython3 -c "import time; time.sleep(50)"[39m is the same kind
+  of wait under a different spelling, so running it would get around that block. I can run the same command with [38;5;153mrun_in_background: true[39m, which is the route
+  the harness allows and the one that worked for the [38;5;153msleep 60[39m. Say the word and I'll start it that way.
+
+[38;5;246m✻[39m [38;5;246mCrunched for 3s · done 12:59 AM[39m
+
+[38;5;246m[48;5;237m❯ [38;5;231mUse the Bash tool in the foreground to run exactly: yes | head -c 6000000000 | wc -c[39m
+
+[38;5;246m[49m●[39m Counting bytes from 6 GB of yes output in foreground
+[38;5;246m  ⎿  $ yes | head -c 6000000000 | wc -c[39m
+
+[38;5;174m✶[39m [38;5;174mWhatchamacalliting… [38;5;246m(6s · ↓[39m [38;5;246m251 tokens)[39m
+                                                                                                                                            [38;5;246m◐ medium · /effort[39m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [39m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;246m⏸ manual mode on · esc to interrupt · ← for agents[39m

@@ -735,26 +735,95 @@ else:
 #   confirm      確認画面(許可待ち・Dangerous 確認 ほか): BUSYGUARD_CONFIRM_RE に合い、最終行が作業中の状態行でない
 #   working      作業中の目印(WK_WORKING_RE / 最終行の状態行)
 #   undetermined 画面は取れたが待機と言い切れぬ(空画面・入力欄が無い・入力欄に見慣れぬ文字・余計な行・見慣れぬ状態)
+# 薄字の例外(S-23/S-24): 待機中の Claude Code は入力欄に薄字(SGR 2)の提案文『Try "…"』等を出す。画面は -e つきで取り、
+#   入力欄の文字が『見える字の全てが薄字(SGR 2・属性が読める)』と証明できるときに限り、その提案文を空と見なす。
+#   通常の字が1字でも混じる・属性が読めぬ(コロン区切りの SGR・未知の制御列)・薄字の字が無い は従来どおり undetermined=送らぬ。
+#   確認画面・作業中の判定は薄字の判定より先に行う(提案文があっても確認画面・作業中は送らぬ)。
 #   failed       画面を取れなかった(pane不在・capture失敗・timeout)
 # idle 以外は全て『送らない』。判別不能・取得失敗は送らない側に倒れる。
+# wk_strip_ansi — 標準入力の制御列(SGR ほかの CSI・OSC)を落とし、NBSP を空白にして出す(行数は変えぬ)
+wk_strip_ansi() {
+    LC_ALL=C sed -E $'s/\x1b\\[[0-9;:?<=>]*[ -/]*[@-~]//g; s/\x1b\\][^\x07\x1b]*(\x07|\x1b\\\\)//g; s/\xc2\xa0/ /g'
+}
+
+# wk_prompt_is_dim_placeholder <入力欄の行(属性つきの生)> — 0=入力欄の見える字が全て薄字(SGR 2)と証明できた。
+# 先頭の入力欄の印(❯ ›)までは読み飛ばし、以降の字を1字ずつ見る。薄字でない字が1字でもある・見える字が無い・
+# 読めぬ属性(コロン区切りの SGR)や未知の制御列がある、のいずれかなら 1(=証明できぬ=従来どおり送らぬ)。
+wk_prompt_is_dim_placeholder() {
+    local s="$1" nb=$'\xc2\xa0'
+    s="${s//$nb/ }"
+    local glyph_re='(❯|›)'
+    if [[ "$s" =~ $glyph_re ]]; then
+        s="${s#*"${BASH_REMATCH[1]}"}"
+    else
+        return 1
+    fi
+    local dim=0 saw=0 i=0 k n=${#s} ch rest params
+    local -a P
+    local sgr_re=$'^\x1b\\[([0-9;:]*)m' csi_re=$'^\x1b\\[[0-9;:?]*[ -/]*[@-~]'
+    while [ "$i" -lt "$n" ]; do
+        ch="${s:i:1}"
+        if [ "$ch" = $'\x1b' ]; then
+            rest="${s:i}"
+            if [[ "$rest" =~ $sgr_re ]]; then
+                params="${BASH_REMATCH[1]}"
+                i=$((i + ${#BASH_REMATCH[0]}))
+                if [[ "$params" == *:* ]]; then return 1; fi
+                IFS=';' read -ra P <<< "$params"
+                if [ "${#P[@]}" -eq 0 ]; then dim=0; fi
+                k=0
+                while [ "$k" -lt "${#P[@]}" ]; do
+                    case "${P[k]:-0}" in
+                        0) dim=0 ;;
+                        2) dim=1 ;;
+                        22) dim=0 ;;
+                        38|48|58)   # 色の指定。後ろの 5;n(2つ)・2;r;g;b(4つ)は色の引数ゆえ、薄字の 2 と取り違えぬ
+                            if [ "${P[k+1]:-}" = "5" ]; then k=$((k + 2))
+                            elif [ "${P[k+1]:-}" = "2" ]; then k=$((k + 4)); fi ;;
+                    esac
+                    k=$((k + 1))
+                done
+                continue
+            elif [[ "$rest" =~ $csi_re ]]; then
+                i=$((i + ${#BASH_REMATCH[0]}))
+                continue
+            fi
+            return 1
+        fi
+        if [[ "$ch" != [[:space:]] ]]; then
+            if [ "$dim" -ne 1 ]; then return 1; fi
+            saw=1
+        fi
+        i=$((i + 1))
+    done
+    [ "$saw" -eq 1 ]
+}
+
 WK_PROMPT_RE='^([[:space:]]|│|\|)*(❯|›)(.*)$'
 WK_PROMPT_BOX_RE='^[[:space:]]*│[[:space:]]*>(.*)$'
 WK_BUSYBAR_RE='esc to interrupt|ctrl\+c to (stop|interrupt)'
 WK_WORKING_RE='esc to |ctrl\+c to |…[[:space:]]*\(|\.\.\.[[:space:]]*\(|Compacting conversation|background terminal running'
-wk_screen_class() {
+_wk_classify() {
     local mode="${1:-empty}"
+    WK_PLACEHOLDER=0
+    WK_CLASS_RESULT=undetermined
     local cap rc=0
-    cap=$(timeout 2 tmux capture-pane -t "$PANE_TARGET" -p 2>/dev/null) || rc=$?
-    if [ "$rc" -ne 0 ]; then echo failed; return 0; fi
+    # 1回の取得(-e つき)から、属性を落とした文字列と属性つきの生の行を同じ画面で得る(取得の間のずれを避ける)
+    cap=$(timeout 2 tmux capture-pane -t "$PANE_TARGET" -p -e 2>/dev/null) || rc=$?
+    if [ "$rc" -ne 0 ]; then WK_CLASS_RESULT=failed; return 0; fi
 
-    local -a L=()
-    local line
-    while IFS= read -r line; do
+    local -a L=() RAWL=() RAWALL=() PLNALL=()
+    local line i2 rawline
+    mapfile -t RAWALL <<< "$cap"
+    mapfile -t PLNALL < <(wk_strip_ansi <<< "$cap")
+    for ((i2 = 0; i2 < ${#PLNALL[@]}; i2++)); do
+        line="${PLNALL[i2]}"
+        rawline="${RAWALL[i2]:-}"
         line="${line%"${line##*[![:space:]]}"}"
-        if [ -n "$line" ]; then L+=("$line"); fi
-    done <<< "$cap"
+        if [ -n "$line" ]; then L+=("$line"); RAWL+=("$rawline"); fi
+    done
     local n=${#L[@]}
-    if [ "$n" -eq 0 ]; then echo undetermined; return 0; fi
+    if [ "$n" -eq 0 ]; then WK_CLASS_RESULT=undetermined; return 0; fi
 
     local window="$WK_PROMPT_WINDOW" below_max="$WK_BELOW_MAX"
     if [ "$mode" = "pending" ]; then window="$WK_PENDING_WINDOW"; below_max=12; fi
@@ -772,10 +841,10 @@ wk_screen_class() {
         # 入力欄が見えぬ: 待機とは言えぬ。知らせ分けのため、末尾8行から確認画面/作業中/不明を見分ける
         start=$((n - 8)); if [ "$start" -lt 0 ]; then start=0; fi
         region=$(printf '%s\n' "${L[@]:$start}")
-        if grep -qiE -- "$WK_BUSYBAR_RE" <<< "$last"; then echo working; return 0; fi
-        if grep -qiE -- "$BUSYGUARD_CONFIRM_RE" <<< "$region"; then echo confirm; return 0; fi
-        if grep -qiE -- "$WK_WORKING_RE" <<< "$region"; then echo working; return 0; fi
-        echo undetermined; return 0
+        if grep -qiE -- "$WK_BUSYBAR_RE" <<< "$last"; then WK_CLASS_RESULT=working; return 0; fi
+        if grep -qiE -- "$BUSYGUARD_CONFIRM_RE" <<< "$region"; then WK_CLASS_RESULT=confirm; return 0; fi
+        if grep -qiE -- "$WK_WORKING_RE" <<< "$region"; then WK_CLASS_RESULT=working; return 0; fi
+        WK_CLASS_RESULT=undetermined; return 0
     fi
 
     # 入力欄の文字を整える(前後の空白・枠線を落とす)
@@ -793,14 +862,22 @@ wk_screen_class() {
     region+=$'\n'"$text"
     if [ "$((n - 1))" -gt "$pi" ]; then region+=$'\n'"$(printf '%s\n' "${L[@]:$((pi + 1))}")"; fi
 
-    if grep -qiE -- "$WK_BUSYBAR_RE" <<< "$last"; then echo working; return 0; fi
-    if grep -qiE -- "$BUSYGUARD_CONFIRM_RE" <<< "$region"; then echo confirm; return 0; fi
-    if grep -qiE -- "$WK_WORKING_RE" <<< "$region"; then echo working; return 0; fi
-    if [ "$((n - 1 - pi))" -gt "$below_max" ]; then echo undetermined; return 0; fi
-    if [ "$mode" = "pending" ]; then echo idle; return 0; fi
-    if [ -z "$text" ] || [[ "$text" =~ ^inbox[0-9]+$ ]]; then echo idle; return 0; fi
-    echo undetermined
+    if grep -qiE -- "$WK_BUSYBAR_RE" <<< "$last"; then WK_CLASS_RESULT=working; return 0; fi
+    if grep -qiE -- "$BUSYGUARD_CONFIRM_RE" <<< "$region"; then WK_CLASS_RESULT=confirm; return 0; fi
+    if grep -qiE -- "$WK_WORKING_RE" <<< "$region"; then WK_CLASS_RESULT=working; return 0; fi
+    if [ "$((n - 1 - pi))" -gt "$below_max" ]; then WK_CLASS_RESULT=undetermined; return 0; fi
+    if [ "$mode" = "pending" ]; then WK_CLASS_RESULT=idle; return 0; fi
+    if [ -z "$text" ] || [[ "$text" =~ ^inbox[0-9]+$ ]]; then WK_CLASS_RESULT=idle; return 0; fi
+    # 薄字の例外: 入力欄の文字が全て薄字(SGR 2)と証明できるときだけ、提案文として空と見なす
+    if wk_prompt_is_dim_placeholder "${RAWL[pi]}"; then WK_PLACEHOLDER=1; WK_CLASS_RESULT=idle; return 0; fi
+    WK_CLASS_RESULT=undetermined
 }
+
+# 分類の結果は WK_CLASS_RESULT、薄字の例外で idle にしたかは WK_PLACEHOLDER(1/0)。サブシェルを介さず現在の shell に残す。
+WK_CLASS_RESULT=""
+WK_PLACEHOLDER=0
+# wk_screen_class [empty|pending] — 分類を標準出力へ(試験・知らせ用)
+wk_screen_class() { _wk_classify "$@"; echo "$WK_CLASS_RESULT"; }
 
 # wk_pane_ready [empty|pending] — idle と言い切れるときだけ 0。結果の分類を WK_LAST_CLASS に残す。
 WK_LAST_CLASS=""
@@ -808,7 +885,8 @@ WK_SEQ_OPEN=0       # 1=この列で既に1キー送った(以降は pending で
 WK_REFUSED=0        # 直近の列で見送りがあったか
 WK_PORT=""          # 送信口の名前(ログ用)
 wk_pane_ready() {
-    WK_LAST_CLASS=$(wk_screen_class "${1:-empty}")
+    _wk_classify "${1:-empty}"
+    WK_LAST_CLASS="$WK_CLASS_RESULT"
     [ "$WK_LAST_CLASS" = "idle" ]
 }
 
@@ -849,7 +927,12 @@ wk_send_soft() {
 # wk_gate <送信口> — 列を始める前の事前確認(副作用の前に見送れるように)。0=送ってよい
 wk_gate() {
     wk_begin_seq "$1"
-    if wk_pane_ready empty; then return 0; fi
+    if wk_pane_ready empty; then
+        if [ "$WK_PLACEHOLDER" = "1" ]; then
+            echo "[$(date)] [KEY-GATE] agent=$AGENT_ID port=$1 screen=idle placeholder=dim — 入力欄は薄字の提案文のみ(全字が SGR 2)ゆえ空と見なして送る" >&2
+        fi
+        return 0
+    fi
     WK_REFUSED=1
     wk_log_withheld empty
     return 1

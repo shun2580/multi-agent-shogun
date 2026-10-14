@@ -14,9 +14,12 @@
 # T-KG-C* : 画面の分類(待機と言い切れる積極条件)  T-KG-M* : 場面×送信口の送信回数表(直す前=本番版 / 直した後=.new)
 # T-KG-N* : 確認画面・判別不能の知らせ            T-KG-F* : ntfy の戻り値のログ(失敗を模擬)
 # T-KG-S* : 送信口が1本・設定               T-KG-I1 : 隔離の実測
+# T-KG-D* : 薄字(SGR 2)の提案文の例外(S-23/S-24)  — 実機の Claude Code の実画面の写し(-e つき・tests/fixtures/claude_screens/)で示す
+# T-KG-A* : cmd_232 の非待機29場面+確認画面の実画面の当て直し(直す前=本番版/直した後=.new を一つの表で)
 
 SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
 PROD_WATCHER="$SCRIPT_DIR/scripts/inbox_watcher.sh"
+FX_DIR="$SCRIPT_DIR/tests/fixtures/claude_screens"
 NEW_WATCHER="$SCRIPT_DIR/scripts/inbox_watcher.sh.new"
 
 setup() {
@@ -75,7 +78,7 @@ EOF
     cat > "$WORK/fakepane.sh" <<'EOF'
 #!/usr/bin/env bash
 # 偽ペイン: 画面を作り、受け取った入力を recv.log へ追記する(C-c は無視、C-d で終わる)
-mode="$1"; recv="$2"
+mode="$1"; recv="$2"; fxdir="${3:-}"; fxfile="${4:-}"
 trap '' INT
 stty -echo 2>/dev/null
 RULE='────────────────────────────────────────'
@@ -97,6 +100,8 @@ case "$mode" in
   typed_long) printf '%s\n❯ Session Start — do ALL of this in one turn, do NOT stop early: 1) tmux display-message to\n  identify yourself. 2) Read queue/tasks/ashigaru9.yaml. 3) Read queue/inbox/ashigaru9.yaml.\n  4) Read context_files. 5) Execute the assigned task to completion.\n%s\n  ⏵⏵ bypass permissions on (shift+tab to cycle)\n' "$RULE" "$RULE" ;;
   noprompt)   printf 'unexpected full-screen pager\n-- lines 1-40/200 (END) --\n' ;;
   blank)      printf '\n\n\n' ;;
+  fx_*)       printf '%s' "$(cat "$fxdir/${mode#fx_}.ansi")" ;;
+  fxfile)     printf '%s' "$(cat "$fxfile")" ;;
 esac
 exec cat >> "$recv"
 EOF
@@ -143,7 +148,7 @@ install_watcher() {
 }
 
 start_pane() {
-    iso_tmux new-session -d -s bgt -x 200 -y 50 "bash $WORK/fakepane.sh $1 $WORK/recv.log"
+    iso_tmux new-session -d -s bgt -x 200 -y 50 "bash $WORK/fakepane.sh $1 $WORK/recv.log $FX_DIR ${3:-}"
     iso_tmux set-option -p -t bgt:0.0 @agent_cli "${2:-claude}"
     local i
     for i in $(seq 1 40); do
@@ -304,6 +309,87 @@ EOF
 }
 
 # ═══════════════════════════════════════════════════════════════
+# D. 薄字(SGR 2)の提案文の例外(S-23/S-24)— 実機の Claude Code の実画面の写し(-e つき)で示す
+# ═══════════════════════════════════════════════════════════════
+# 写しは tests/fixtures/claude_screens/*.ansi(使い捨ての tmux サーバで本物の claude を動かして capture-pane -p -e で採取。
+# 生きた陣には触れていない。パスだけ /work/cwd に置換)。偽ペインへ cat して画面と属性を再現する。
+
+class_of_file() {   # class_of_file <ansi ファイル> [empty|pending] — 属性つきの画面を立てて分類と薄字の例外の使用を得る
+    install_watcher "$NEW_WATCHER"
+    start_pane fxfile claude "$1"
+    run_snippet "wk_pane_ready ${2:-empty} || true; echo \"CLASS=\$WK_LAST_CLASS PLACEHOLDER=\$WK_PLACEHOLDER\""
+    stop_pane
+    echo "$output" | tail -1
+}
+
+@test "T-KG-D1: 実画面の写し — 提案文つきの待機は薄字の例外で idle(2種)、打ちかけの文字・作業中・確認画面は idle にならぬ" {
+    [ "$(class_of_file "$FX_DIR/idle_placeholder.ansi")" = "CLASS=idle PLACEHOLDER=1" ]
+    [ "$(class_of_file "$FX_DIR/idle_suggestion_after_turn.ansi")" = "CLASS=idle PLACEHOLDER=1" ]
+    [ "$(class_of_file "$FX_DIR/typed_text.ansi")" = "CLASS=undetermined PLACEHOLDER=0" ]
+    [ "$(class_of_file "$FX_DIR/working_stream.ansi")" = "CLASS=working PLACEHOLDER=0" ]
+    [ "$(class_of_file "$FX_DIR/working_tool.ansi")" = "CLASS=working PLACEHOLDER=0" ]
+    [ "$(class_of_file "$FX_DIR/confirm_bash.ansi")" = "CLASS=confirm PLACEHOLDER=0" ]
+    [ "$(class_of_file "$FX_DIR/confirm_exit_dialog.ansi")" = "CLASS=confirm PLACEHOLDER=0" ]
+}
+
+@test "T-KG-D2: 薄字と証明できぬ入力欄は idle にならぬ(通常の字が混じる・薄字の属性が無い・コロン区切りの SGR・色の引数の 2・未知の制御列)" {
+    local src="$FX_DIR/idle_placeholder.ansi" v out
+    mkdir -p "$WORK/variants"
+    # 元の入力欄: ESC[39m ❯ NBSP ESC[2m Try "refactor inbox_watcher.sh" ESC[0m
+    grep -aq $'\x1b\\[2mTry "refactor inbox_watcher.sh"\x1b\\[0m' "$src"
+    sed $'s/\x1b\\[2m//' "$src"                                                           > "$WORK/variants/nodim.ansi"
+    sed $'s/\x1b\\[2mTry /\x1b[2mTry \x1b[22m/'  "$src"                                   > "$WORK/variants/mixed_after.ansi"
+    sed $'s/\x1b\\[2mTry /\x1b[0mTry \x1b[2m/'   "$src"                                   > "$WORK/variants/mixed_before.ansi"
+    sed $'s/\x1b\\[2m/\x1b[2:1m/'                "$src"                                   > "$WORK/variants/colon_sgr.ansi"
+    sed $'s/\x1b\\[2m/\x1b[38;2;10;20;30m/'      "$src"                                   > "$WORK/variants/truecolor_2.ansi"
+    sed $'s/\x1b\\[2m/\x1b[38;5;2m/'             "$src"                                   > "$WORK/variants/color256_2.ansi"
+    sed $'s/\x1b\\[2mTry /\x1b[2mTry \x1b[0m/'   "$src"                                   > "$WORK/variants/reset_mid.ansi"
+    for v in nodim mixed_after mixed_before colon_sgr truecolor_2 color256_2 reset_mid; do
+        out="$(class_of_file "$WORK/variants/$v.ansi")"
+        echo "variant $v => $out"
+        [ "$out" = "CLASS=undetermined PLACEHOLDER=0" ]
+    done
+    # 未知の制御列(tmux は capture-pane で SGR 以外を再描画して落とすので、関数へ直接渡して示す)
+    install_watcher "$NEW_WATCHER"
+    start_pane idle
+    run_snippet 'P=$(printf "\033[39m❯\302\240\033[2mTry\033[0m"); wk_prompt_is_dim_placeholder "$P" && echo "base=PLACEHOLDER" || echo "base=NO"
+        P=$(printf "\033[39m❯\302\240\0337\033[2mTry\033[0m"); wk_prompt_is_dim_placeholder "$P" && echo "esc7=PLACEHOLDER" || echo "esc7=NO"
+        P=$(printf "\033[39m❯\302\240\033]8;;http://x\033\\\\\033[2mTry\033[0m"); wk_prompt_is_dim_placeholder "$P" && echo "osc=PLACEHOLDER" || echo "osc=NO"
+        P=$(printf "\033[39m❯\302\240\033[2C\033[2mTry\033[0m"); wk_prompt_is_dim_placeholder "$P" && echo "cursor_move=PLACEHOLDER" || echo "cursor_move=NO"
+        P=$(printf "no prompt glyph \033[2mTry\033[0m"); wk_prompt_is_dim_placeholder "$P" && echo "noglyph=PLACEHOLDER" || echo "noglyph=NO"
+        P=$(printf "\033[39m❯\302\240\033[2m   \033[0m"); wk_prompt_is_dim_placeholder "$P" && echo "blank_dim=PLACEHOLDER" || echo "blank_dim=NO"'
+    echo "$output"
+    echo "$output" | grep -qx "base=PLACEHOLDER"
+    echo "$output" | grep -qx "esc7=NO"
+    echo "$output" | grep -qx "osc=NO"
+    echo "$output" | grep -qx "cursor_move=PLACEHOLDER"
+    echo "$output" | grep -qx "noglyph=NO"
+    echo "$output" | grep -qx "blank_dim=NO"
+    stop_pane
+}
+
+@test "T-KG-D3: 薄字と証明できる別の書式は idle(太字+薄字・色+薄字・薄字の解除で終わる)。色の引数の 2 は薄字と取り違えぬ" {
+    local src="$FX_DIR/idle_placeholder.ansi" v out
+    mkdir -p "$WORK/variants"
+    sed $'s/\x1b\\[2m/\x1b[1;2m/'                "$src" > "$WORK/variants/bold_dim.ansi"
+    sed $'s/\x1b\\[2m/\x1b[38;5;246;2m/'         "$src" > "$WORK/variants/color_dim.ansi"
+    sed $'s/\x1b\\[2m/\x1b[38;2;1;2;3;2m/'       "$src" > "$WORK/variants/truecolor_then_dim.ansi"
+    sed $'s/\x1b\\[0m$/\x1b[22m\x1b[39m/'        "$src" > "$WORK/variants/ends_22.ansi"
+    for v in bold_dim color_dim truecolor_then_dim ends_22; do
+        out="$(class_of_file "$WORK/variants/$v.ansi")"
+        echo "variant $v => $out"
+        [ "$out" = "CLASS=idle PLACEHOLDER=1" ]
+    done
+}
+
+@test "T-KG-D4: 実機の空の入力欄は『❯』の後が NBSP — 空白と見なして idle(薄字の例外は使わぬ)" {
+    mkdir -p "$WORK/variants"
+    sed $'s/\x1b\\[2mTry .*\x1b\\[0m//' "$FX_DIR/idle_placeholder.ansi" > "$WORK/variants/empty_nbsp.ansi"
+    grep -aq $'\xc2\xa0$' "$WORK/variants/empty_nbsp.ansi"
+    [ "$(class_of_file "$WORK/variants/empty_nbsp.ansi")" = "CLASS=idle PLACEHOLDER=0" ]
+}
+
+# ═══════════════════════════════════════════════════════════════
 # M. 場面×送信口 の送信回数表 — 直す前(本番版)と直した後(.new)を並べる
 # ═══════════════════════════════════════════════════════════════
 # 場面: 確認画面 / 作業中 / 判別不能 / 待機。待機の目印(idle flag)は『あり(古い目印が残る最悪の場合)』と『なし』の両方。
@@ -331,36 +417,46 @@ mkinbox() {
 }
 port() { echo "PORT $1" >> "$KEYLOG"; reset_state; }
 now=$(date +%s)
-port nudge;          mkinbox task;  NEW_CONTEXT_SENT=1; FIRST_UNREAD_SEEN=$((now - 60));  process_unread timeout || true
-port phase2-claude;  mkinbox task;  NEW_CONTEXT_SENT=1; FIRST_UNREAD_SEEN=$((now - 150)); process_unread timeout || true
-port phase2-copilot; mkinbox task;  NEW_CONTEXT_SENT=1; FIRST_UNREAD_SEEN=$((now - 150)); tmux set-option -p -t bgt:0.0 @agent_cli copilot; CLI_TYPE=copilot; process_unread timeout || true; tmux set-option -p -t bgt:0.0 @agent_cli claude; CLI_TYPE=claude
-port phase3-clear;   mkinbox task;  NEW_CONTEXT_SENT=1; FIRST_UNREAD_SEEN=$((now - 400)); process_unread timeout || true
-port context-reset;  mkinbox task;  NEW_CONTEXT_SENT=0; FIRST_UNREAD_SEEN=0;              process_unread timeout || true
-port clear_command;  mkinbox clear; process_unread event || true
-port model_switch;   mkinbox model; process_unread event || true
-port clear-input;    mkinbox none;  process_unread timeout || true
-port startup-prompt; send_startup_prompt || true
+do_port() {
+    case "$1" in
+    nudge)          port nudge;          mkinbox task;  NEW_CONTEXT_SENT=1; FIRST_UNREAD_SEEN=$((now - 60));  process_unread timeout || true ;;
+    phase2-claude)  port phase2-claude;  mkinbox task;  NEW_CONTEXT_SENT=1; FIRST_UNREAD_SEEN=$((now - 150)); process_unread timeout || true ;;
+    phase2-copilot) port phase2-copilot; mkinbox task;  NEW_CONTEXT_SENT=1; FIRST_UNREAD_SEEN=$((now - 150)); tmux set-option -p -t bgt:0.0 @agent_cli copilot; CLI_TYPE=copilot; process_unread timeout || true; tmux set-option -p -t bgt:0.0 @agent_cli claude; CLI_TYPE=claude ;;
+    phase3-clear)   port phase3-clear;   mkinbox task;  NEW_CONTEXT_SENT=1; FIRST_UNREAD_SEEN=$((now - 400)); process_unread timeout || true ;;
+    context-reset)  port context-reset;  mkinbox task;  NEW_CONTEXT_SENT=0; FIRST_UNREAD_SEEN=0;              process_unread timeout || true ;;
+    clear_command)  port clear_command;  mkinbox clear; process_unread event || true ;;
+    model_switch)   port model_switch;   mkinbox model; process_unread event || true ;;
+    clear-input)    port clear-input;    mkinbox none;  process_unread timeout || true ;;
+    startup-prompt) port startup-prompt; send_startup_prompt || true ;;
+    esac
+}
+if [ -n "${KG_ONLY_PORT:-}" ]; then
+    do_port "$KG_ONLY_PORT"
+else
+    for p in nudge phase2-claude phase2-copilot phase3-clear context-reset clear_command model_switch clear-input startup-prompt; do do_port "$p"; done
+fi
 echo "MATRIX_DONE"
 EOF
 }
 
 # matrix_run <prod|new> <scene> <present|absent> — 1場面分を走らせ、$WORK/matrix_<who>_<scene>_<flag>.keys に KEYLOG を保存する
 matrix_run() {
-    local who="$1" scene="$2" flag="$3" out
+    local who="$1" scene="$2" flag="$3" only="${4:-}" out
     : > "$KEYLOG"; : > "$WORK/recv.log"      # 場面ごとに記録を空にする(前の場面の入力を持ち越さぬ)
     if [ "$who" = prod ]; then install_watcher "$PROD_WATCHER"; else install_watcher "$NEW_WATCHER"; fi
     start_pane "$scene"
     write_matrix_driver
     # 偽ペインの画面を、場面名どおりのまま保つ(送信の影響を受けぬ静的な画面)
-    run_snippet 'source "$KG_WORK/matrix.sh"' KG_FLAG="$flag" WK_STARTUP_WAIT_TRIES=1
+    run_snippet 'source "$KG_WORK/matrix.sh"' KG_FLAG="$flag" KG_ONLY_PORT="$only" WK_STARTUP_WAIT_TRIES=1
     out="$output"
     echo "$out" | grep -q "MATRIX_DONE"
     # 運転が終わるまで待ち、偽ペインが入力を書き終えるのを待つ
     sleep 1
     mkdir -p "$BATS_FILE_TMPDIR/matrix"
-    cp "$KEYLOG" "$BATS_FILE_TMPDIR/matrix/${who}_${scene}_${flag}.keys"
-    cp "$WORK/recv.log" "$BATS_FILE_TMPDIR/matrix/${who}_${scene}_${flag}.recv"
-    cp "$WORK/snippet.log" "$BATS_FILE_TMPDIR/matrix/${who}_${scene}_${flag}.log"
+    local tag="${who}_${scene}_${flag}${only:+_$only}"
+    cp "$KEYLOG" "$BATS_FILE_TMPDIR/matrix/$tag.keys"
+    cp "$WORK/recv.log" "$BATS_FILE_TMPDIR/matrix/$tag.recv"
+    cp "$WORK/snippet.log" "$BATS_FILE_TMPDIR/matrix/$tag.log"
     stop_pane
 }
 
@@ -374,9 +470,12 @@ port_count() {
 
 PORTS="nudge phase2-claude phase2-copilot phase3-clear context-reset clear_command model_switch clear-input startup-prompt"
 
-@test "T-KG-M1: 【直した後】.new — 確認画面・作業中・判別不能の画面には、idle flag が残っていても、全ての送信口で Enter を含むキーが 0 回" {
-    local scene flag p
-    for scene in confirm working noprompt; do
+ZERO_SCENES="confirm working noprompt fx_confirm_bash fx_confirm_exit_dialog fx_working_stream fx_working_tool fx_typed_text"
+IDLE_SCENES="idle fx_idle_placeholder fx_idle_suggestion_after_turn"
+
+@test "T-KG-M1: 【直した後】.new — 確認画面・作業中・判別不能・打ちかけの画面(実画面の写しを含む)には、idle flag が残っていても、全ての送信口で Enter を含むキーが 0 回" {
+    local scene flag
+    for scene in $ZERO_SCENES; do
         for flag in present absent; do
             matrix_run new "$scene" "$flag"
             local f="$BATS_FILE_TMPDIR/matrix/new_${scene}_${flag}.keys"
@@ -395,16 +494,21 @@ PORTS="nudge phase2-claude phase2-copilot phase3-clear context-reset clear_comma
     grep -q "notify(confirm)" "$f"
     f="$BATS_FILE_TMPDIR/matrix/new_noprompt_present.log"
     grep -q "screen=undetermined" "$f"
+    # 実画面の写し(確認画面)でも同じ
+    f="$BATS_FILE_TMPDIR/matrix/new_fx_confirm_bash_present.log"
+    grep -q "\[KEY-WITHHELD\]" "$f"
+    grep -q "screen=confirm" "$f"
 }
 
-@test "T-KG-M3: 【直した後】.new — 待機の画面では従来どおり起こせる(退行なし): 全送信口が動き、Escape も届く" {
-    local flag p
+@test "T-KG-M3: 【直した後】.new — 待機の画面(薄字の提案文つきの実画面の写しを含む)では従来どおり起こせる(退行なし): 全送信口が動き、Escape も届く" {
+    local flag p scene
+    for scene in $IDLE_SCENES; do
     for flag in present absent; do
-        matrix_run new idle "$flag"
-        local f="$BATS_FILE_TMPDIR/matrix/new_idle_${flag}.keys"
+        matrix_run new "$scene" "$flag"
+        local f="$BATS_FILE_TMPDIR/matrix/new_${scene}_${flag}.keys"
         for p in nudge phase2-claude phase2-copilot phase3-clear context-reset clear_command model_switch clear-input startup-prompt; do
             local n; n=$(port_count "$f" "$p" total)
-            echo "new / idle / flag=$flag / $p: $n 回(Enter $(port_count "$f" "$p" enter))"
+            echo "new / $scene / flag=$flag / $p: $n 回(Enter $(port_count "$f" "$p" enter))"
             # 通常の起こし(nudge)は、待機の目印が無い間は従来どおり『働き中』扱いで送らぬ(本番版も同じ。送らぬ側への据え置きで退行ではない)
             if [ "$p" = nudge ] && [ "$flag" = absent ]; then [ "$n" -eq 0 ]; continue; fi
             [ "$n" -ge 1 ]
@@ -413,12 +517,15 @@ PORTS="nudge phase2-claude phase2-copilot phase3-clear context-reset clear_comma
         if [ "$flag" = present ]; then
             awk '/^PORT nudge/{on=1;next}/^PORT /{on=0}on' "$f" | grep -q -P '^KEY\t1\tEnter'
         fi
-        grep -q -x "inbox1" "$BATS_FILE_TMPDIR/matrix/new_idle_${flag}.recv"
+        grep -q -x "inbox1" "$BATS_FILE_TMPDIR/matrix/new_${scene}_${flag}.recv"
         # Escape 経路(copilot)で Escape が届く
         awk '/^PORT phase2-copilot/{on=1;next}/^PORT /{on=0}on' "$f" | grep -q "Escape"
         # /clear が届く
-        grep -q -x "/clear" "$BATS_FILE_TMPDIR/matrix/new_idle_${flag}.recv"
+        grep -q -x "/clear" "$BATS_FILE_TMPDIR/matrix/new_${scene}_${flag}.recv"
     done
+    done
+    # 薄字の例外で通したことがログに残る
+    grep -q "\[KEY-GATE\].*placeholder=dim" "$BATS_FILE_TMPDIR/matrix/new_fx_idle_placeholder_present.log"
 }
 
 @test "T-KG-M4: 【直す前】本番版 scripts/inbox_watcher.sh — 同じ場面(確認画面・作業中・判別不能)に idle flag が残ると Enter を含むキーが送られる(今宵 00:10〜00:12 の再現)" {
@@ -429,6 +536,15 @@ PORTS="nudge phase2-claude phase2-copilot phase3-clear context-reset clear_comma
             local f="$BATS_FILE_TMPDIR/matrix/prod_${scene}_${flag}.keys"
             echo "--- prod / $scene / flag=$flag: KEY 行 $(grep -c '^KEY' "$f")、うち Enter $(grep -c -P '^KEY\t1\t' "$f") ---"
         done
+    done
+    # 実画面の写し: 確認画面・作業中・打ちかけは idle flag あり(最悪)で、待機の提案文つきは両方
+    for scene in fx_confirm_bash fx_confirm_exit_dialog fx_working_stream fx_working_tool fx_typed_text; do
+        matrix_run prod "$scene" present
+        local f="$BATS_FILE_TMPDIR/matrix/prod_${scene}_present.keys"
+        echo "--- prod / $scene / flag=present: KEY 行 $(grep -c '^KEY' "$f")、うち Enter $(grep -c -P '^KEY\t1\t' "$f") ---"
+    done
+    for scene in fx_idle_placeholder fx_idle_suggestion_after_turn; do
+        for flag in present absent; do matrix_run prod "$scene" "$flag"; done
     done
     # 確認画面 + idle flag あり: 起こし(inbox1+Enter)が確認画面に入る
     local f="$BATS_FILE_TMPDIR/matrix/prod_confirm_present.keys"
@@ -442,15 +558,20 @@ PORTS="nudge phase2-claude phase2-copilot phase3-clear context-reset clear_comma
     [ "$(port_count "$f" nudge enter)" -eq 0 ]
     [ "$(grep -c -P '^KEY\t1\t' "$f")" -ge 1 ]
     [ "$(port_count "$f" startup-prompt enter)" -ge 1 ]
+    # 実画面の確認画面(Claude Code の『Do you want to proceed?』)にも本番版は Enter を送る
+    f="$BATS_FILE_TMPDIR/matrix/prod_fx_confirm_bash_present.keys"
+    [ "$(port_count "$f" nudge enter)" -ge 1 ]
+    [ "$(grep -c -P '^KEY\t1\t' "$f")" -ge 1 ]
+    grep -q -x "inbox1" "$BATS_FILE_TMPDIR/matrix/prod_fx_confirm_bash_present.recv"
 }
 
 @test "T-KG-M5: 【表】場面×送信口の送信回数(Enter を含む送信)— 直す前(本番版)/ 直した後(.new)" {
     local f
-    for f in prod_confirm_present new_confirm_present; do [ -f "$BATS_FILE_TMPDIR/matrix/$f.keys" ]; done
+    for f in prod_confirm_present new_confirm_present prod_fx_confirm_bash_present new_fx_confirm_bash_present; do [ -f "$BATS_FILE_TMPDIR/matrix/$f.keys" ]; done
     local who scene flag p
     printf '\n| 場面 | idle flag | 版 | %s |\n' "$(echo $PORTS | sed 's/ / | /g')"
     printf '|---|---|---|%s\n' "$(for p in $PORTS; do printf -- '---|'; done)"
-    for scene in confirm working noprompt idle; do
+    for scene in confirm working noprompt $(echo $ZERO_SCENES | cut -d' ' -f4-) idle fx_idle_placeholder fx_idle_suggestion_after_turn; do
         for flag in present absent; do
             for who in prod new; do
                 f="$BATS_FILE_TMPDIR/matrix/${who}_${scene}_${flag}.keys"
@@ -464,17 +585,102 @@ PORTS="nudge phase2-claude phase2-copilot phase3-clear context-reset clear_comma
     echo "(セルは『送信回数/うち Enter を含む回数』)"
 }
 
-@test "T-KG-M6: 待機の画面では 本番版と .new の送信が同じ(退行なし) — 各送信口の送信回数と、偽ペインが受け取った入力列が一致" {
-    local flag p
+@test "T-KG-M6: 待機の画面(薄字の提案文つきの実画面の写しを含む)では 本番版と .new の送信が同じ(退行なし) — 各送信口の送信回数と、偽ペインが受け取った入力列が一致" {
+    local flag p scene
+    for scene in $IDLE_SCENES; do
     for flag in present absent; do
-        local fp="$BATS_FILE_TMPDIR/matrix/prod_idle_${flag}.keys" fn="$BATS_FILE_TMPDIR/matrix/new_idle_${flag}.keys"
+        local fp="$BATS_FILE_TMPDIR/matrix/prod_${scene}_${flag}.keys" fn="$BATS_FILE_TMPDIR/matrix/new_${scene}_${flag}.keys"
         [ -f "$fp" ] && [ -f "$fn" ]
         for p in $PORTS; do
-            echo "idle / flag=$flag / $p: prod=$(port_count "$fp" "$p" total) new=$(port_count "$fn" "$p" total)"
+            echo "$scene / flag=$flag / $p: prod=$(port_count "$fp" "$p" total) new=$(port_count "$fn" "$p" total)"
             [ "$(port_count "$fp" "$p" total)" = "$(port_count "$fn" "$p" total)" ]
         done
-        diff "$BATS_FILE_TMPDIR/matrix/prod_idle_${flag}.recv" "$BATS_FILE_TMPDIR/matrix/new_idle_${flag}.recv"
+        diff "$BATS_FILE_TMPDIR/matrix/prod_${scene}_${flag}.recv" "$BATS_FILE_TMPDIR/matrix/new_${scene}_${flag}.recv"
     done
+    done
+}
+
+# ═══════════════════════════════════════════════════════════════
+# A. cmd_232 の非待機29場面+確認画面の実画面を当て直す(S-23/S-24)— 直す前(本番版)/ 直した後(.new)を一つの表で
+# ═══════════════════════════════════════════════════════════════
+# 29場面の出典: queue/reports/cmd232_watcher_keystroke_audit.md ②-1。各場面の『送った物』を送信口に、『判定』の画面を実画面の写しに対応させる
+#   Ctrl-C→/clear(Phase 3)=phase3-clear / 起こし inboxN+Enter=nudge / /clear+Enter(CONTEXT-RESET)=context-reset
+#   作業中=fx_working_tool(長い Bash 実行中)または fx_working_stream(思考・生成中) / 確認画面=fx_confirm_bash
+#   idle flag は全場面で『あり』(cmd232: 29回全て path=flag verdict=idle が根拠)。
+
+SCENES29='1|10-12 20:03:04|足軽3|phase3-clear|fx_working_tool
+2|10-12 20:15:32|足軽1|phase3-clear|fx_working_stream
+3|10-12 20:24:41|軍師|nudge|fx_working_tool
+4|10-12 20:25:45|軍師|nudge|fx_working_tool
+5|10-12 20:45:39|軍師|nudge|fx_working_tool
+6|10-12 20:46:43|軍師|nudge|fx_working_tool
+7|10-12 20:47:48|軍師|nudge|fx_working_tool
+8|10-12 20:50:56|軍師|nudge|fx_working_tool
+9|10-12 20:52:00|軍師|nudge|fx_working_tool
+10|10-12 20:53:04|軍師|nudge|fx_working_tool
+11|10-12 20:54:09|軍師|nudge|fx_working_tool
+12|10-12 21:01:15|足軽2|phase3-clear|fx_working_tool
+13|10-12 21:23:39|足軽3|phase3-clear|fx_working_stream
+14|10-12 21:32:06|足軽2|phase3-clear|fx_working_stream
+15|10-12 22:07:41|足軽3|phase3-clear|fx_working_tool
+16|10-12 22:08:00|足軽1|phase3-clear|fx_working_tool
+17|10-12 22:21:19|軍師|nudge|fx_working_tool
+18|10-12 22:22:23|軍師|nudge|fx_working_tool
+19|10-12 22:23:27|軍師|nudge|fx_working_tool
+20|10-12 22:26:36|軍師|nudge|fx_working_tool
+21|10-12 22:27:40|軍師|nudge|fx_working_tool
+22|10-12 22:28:44|軍師|nudge|fx_working_tool
+23|10-12 22:29:48|軍師|nudge|fx_working_tool
+24|10-12 23:26:53|足軽1|phase3-clear|fx_working_tool
+25|10-12 23:52:05|軍師|nudge|fx_working_tool
+26|10-12 23:54:26|家老|nudge|fx_working_stream
+27|10-13 00:10:12|足軽2|context-reset|fx_confirm_bash
+28|10-13 00:11:00|足軽2|nudge|fx_working_tool
+29|10-13 00:12:05|足軽2|nudge|fx_working_tool'
+
+# scene_counts <who> <scene> <port> → "total/enter"(同じ入力は実走結果を使い回さず、行ごとに実走する。.new は必ず行ごとに実走)
+scene_counts() {
+    local who="$1" scene="$2" port="$3"
+    matrix_run "$who" "$scene" present "$port"
+    local f="$BATS_FILE_TMPDIR/matrix/${who}_${scene}_present_${port}.keys"
+    echo "$(port_count "$f" "$port" total)/$(port_count "$f" "$port" enter)"
+}
+
+@test "T-KG-A1: 【表】cmd_232 の非待機29場面を、実画面の写しで当て直す — .new は全場面 0 回(Enter も 0)、本番版は全場面で送る" {
+    local row n tm who port scene new prod
+    local -A PRODCACHE=()
+    local bad=0
+    printf '\n| # | 時刻 | 者 | 送った物(送信口) | 画面(実画面の写し) | 直す前(本番版) 送信/Enter | 直した後(.new) 送信/Enter |\n|--|--|--|--|--|--|--|\n'
+    while IFS='|' read -r n tm who port scene; do
+        new="$(scene_counts new "$scene" "$port")"
+        if [ -z "${PRODCACHE[$scene:$port]:-}" ]; then PRODCACHE[$scene:$port]="$(scene_counts prod "$scene" "$port")"; fi
+        prod="${PRODCACHE[$scene:$port]}"
+        printf '| %s | %s | %s | %s | %s | %s | %s |\n' "$n" "$tm" "$who" "$port" "$scene" "$prod" "$new"
+        [ "$new" = "0/0" ] || bad=$((bad + 1))
+        [ "${prod%%/*}" -ge 1 ] || bad=$((bad + 1))
+    done <<< "$SCENES29"
+    echo "(本番版は同じ『画面×送信口』を1度実走して全行に当てた。.new は29行を行ごとに実走)"
+    [ "$bad" -eq 0 ]
+}
+
+@test "T-KG-A2: 【表】確認画面の実画面(2種)× 全送信口 — 薄字の例外を入れた後も .new は 0 回(Enter も 0)。直す前の本番版は送る" {
+    local scene flag p who f
+    printf '\n| 確認画面(実画面) | idle flag | 版 | %s |\n|---|---|---|%s\n' "$(echo $PORTS | sed 's/ / | /g')" "$(for p in $PORTS; do printf -- '---|'; done)"
+    for scene in fx_confirm_bash fx_confirm_exit_dialog; do
+        for flag in present absent; do
+            for who in prod new; do
+                if [ "$who" = prod ] && [ "$flag" = absent ]; then continue; fi
+                matrix_run "$who" "$scene" "$flag"
+                f="$BATS_FILE_TMPDIR/matrix/${who}_${scene}_${flag}.keys"
+                printf '| %s | %s | %s |' "$scene" "$flag" "$who"
+                for p in $PORTS; do printf ' %s/%s |' "$(port_count "$f" "$p" total)" "$(port_count "$f" "$p" enter)"; done
+                printf '\n'
+                if [ "$who" = new ]; then [ "$(grep -c '^KEY' "$f")" -eq 0 ]; fi
+                if [ "$who" = prod ]; then [ "$(grep -c -P '^KEY\t1\t' "$f")" -ge 1 ]; fi
+            done
+        done
+    done
+    echo "(セルは『送信回数/うち Enter を含む回数』)"
 }
 
 # ═══════════════════════════════════════════════════════════════
@@ -567,6 +773,47 @@ ncount() { grep -c . "$WORK/notify.out" || true; }
     grep -q "働き中のまま未読" "$WORK/notify.out"
     tick_run 2 "3600"
     grep -q "働き中のまま.*連続" "$WORK/notify.out"
+}
+
+@test "T-KG-N6: 【S-24】薄字の見分けが外れて(提案文つきの待機画面を undetermined と判じて)伝言が届かぬときも、黙って溜めず settings の目安で殿へ知らせが届く" {
+    install_watcher "$NEW_WATCHER"
+    # 薄字の属性が読めなくなった状況を再現: 実画面の写しから薄字の属性(ESC[2m)を落とす
+    sed $'s/\x1b\\[2m//' "$FX_DIR/idle_placeholder.ansi" > "$WORK/placeholder_undetected.ansi"
+    start_pane fxfile claude "$WORK/placeholder_undetected.ansi"
+    # (a) 既定の目安(30分): 29分59秒までは出ず、30分で1回、続く間は60分ごと
+    tick_run 3 "0 600 1200 1799"
+    [ "$(ncount)" -eq 0 ]
+    tick_run 3 "1800 1860 3000"
+    echo "--- 既定(30分) notify.out ---"; cat "$WORK/notify.out"
+    [ "$(ncount)" -eq 1 ]
+    grep -q "待機と判じられぬ画面" "$WORK/notify.out"
+    grep -q "ashigaru9" "$WORK/notify.out"
+    grep -q "subtask_999_A" "$WORK/notify.out"
+    grep -q "未読3件" "$WORK/notify.out"
+    ! grep -qiE "topic|token|bearer|password" "$WORK/notify.out"
+    tick_run 3 "5399"
+    [ "$(ncount)" -eq 1 ]
+    tick_run 3 "5400"
+    [ "$(ncount)" -eq 2 ]
+    # この間に一度もキーは送られていない(黙って溜めるが、送りもしない)
+    [ ! -s "$WORK/recv.log" ]
+    [ "$(grep -c '^KEY' "$KEYLOG")" -eq 0 ]
+    # (b) settings の目安を変えると、その分数で知らせる(busy_guard.unread_notify_minutes: 10)
+    : > "$WORK/notify.out"; rm -f "$WORK/logs/watcher_busy/ashigaru9.state"
+    sed -i '/^busy_guard:/,/^[a-z_]*:/{/^busy_guard:/d;/^  /d}' "$WORK/config/settings.yaml"
+    printf 'busy_guard:\n  unread_notify_minutes: 10\n' >> "$WORK/config/settings.yaml"
+    tick_run 3 "0 599"
+    [ "$(ncount)" -eq 0 ]
+    tick_run 3 "600"
+    echo "--- settings 10分 notify.out ---"; cat "$WORK/notify.out"
+    [ "$(ncount)" -eq 1 ]
+    grep -q "10分" "$WORK/notify.out"
+    stop_pane
+    # (c) 対照: 薄字の属性が読めるとき(元の実画面)は idle ゆえ送れる。知らせは要らず、何時間経っても出ない
+    : > "$WORK/notify.out"; rm -f "$WORK/logs/watcher_busy/ashigaru9.state"
+    start_pane fx_idle_placeholder
+    tick_run 3 "0 1800 3600 10800"
+    [ "$(ncount)" -eq 0 ]
 }
 
 # ═══════════════════════════════════════════════════════════════

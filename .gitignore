@@ -252,6 +252,9 @@ tests/specs/osato_lms_*
 !tests/*.sh
 !tests/fixtures/
 !tests/fixtures/*.yaml
+# cmd_231: Claude Code 実画面の写し(-e つき・使い捨て環境で採取・パスは /work/cwd に置換)
+!tests/fixtures/claude_screens/
+!tests/fixtures/claude_screens/*.ansi
 !tests/unit/
 !tests/unit/*.bats
 !tests/integration/
