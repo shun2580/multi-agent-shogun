@@ -92,7 +92,7 @@ MOCK
     mkdir -p "$TEST_INBOX_DIR"
 
     # Default mock control variables
-    export MOCK_CAPTURE_PANE=""
+    export MOCK_CAPTURE_PANE="❯ "
     export MOCK_SENDKEYS_RC=0
     export MOCK_PANE_CLI=""
     export MOCK_PANE_ACTIVE=""

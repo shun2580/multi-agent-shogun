@@ -86,7 +86,7 @@ MOCK
     #   MOCK_CAPTURE_PANE_RC    — capture-pane exit code (non-zero = observation failure)
     #   MOCK_DISPLAY_PANEID_RC  — display-message '#{pane_id}' exit code (non-zero = pane absent)
     #   MOCK_PANE_CLI           — show-options @agent_cli stdout
-    export MOCK_CAPTURE_PANE=""
+    export MOCK_CAPTURE_PANE="❯ "
     export MOCK_CAPTURE_PANE_RC=0
     export MOCK_DISPLAY_PANEID_RC=0
     export MOCK_PANE_CLI=""
@@ -310,7 +310,7 @@ teardown() {
 @test "T-TRI-014: send_cli_command /clear proceeds when agent is known idle" {
     run bash -c '
         MOCK_PANE_CLI="codex"
-        MOCK_CAPTURE_PANE="› ready
+        MOCK_CAPTURE_PANE="›
   ? for shortcuts                100% context left"
         source "'"$TEST_HARNESS"'"
         CLI_TYPE="codex"
