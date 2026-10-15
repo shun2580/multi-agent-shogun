@@ -1,7 +1,9 @@
 #!/usr/bin/env bats
 # test_inbox_watcher_busyguard.bats — cmd_231 / 殿命 S-19
 #   見張り役(inbox_watcher)が、画面が働き中と見える足軽へ /clear を送る欠陥の是正を、
-#   別名ファイル scripts/inbox_watcher.sh.new で示す。本番 scripts/inbox_watcher.sh は触らない。
+#   本番 scripts/inbox_watcher.sh(工程C で .new から差し替えた版)で示す。比較の相手「直す前の版」は
+#   cmd_231 着手前の commit(BASE_WATCHER_COMMIT=cf432d8)の scripts/inbox_watcher.sh を git show で
+#   試験ごとの一時ファイル($BATS_TEST_TMPDIR)へ取り出して使う(リポジトリ内に新規の追跡ファイルは置かぬ)。
 #
 # 実証の仕組み:
 #   - 試験ごとに bats 自身の置場 $BATS_TEST_TMPDIR に使い捨ての木を作り(bats が走行後に消す。リポジトリ内に残骸を残さぬ。
@@ -13,27 +15,31 @@
 #   - c の実証は、画面観測だけを差し替え(agent_is_busy_check)、時刻を INBOX_WATCHER_TEST_NOW で進め、
 #     ntfy の送り先を BUSYGUARD_NOTIFY_CMD で「ファイルへの追記(写し)」に替える。本物の ntfy は送らない。
 #
-# T-BG-A1/A2 : 【直す前】本番版は、働き中と見える足軽へ /clear を送る(欠陥の記録)
-# T-BG-B1/B2 : 【直した後】.new は同じ場面で /clear を送らず、時間を進めても送らない
+# T-BG-A1/A2 : 【直す前】旧版は、働き中と見える足軽へ /clear を送る(欠陥の記録)
+# T-BG-B1/B2 : 【直した後】新版 は同じ場面で /clear を送らず、時間を進めても送らない
 # T-BG-B3    : 働き中でない足軽は従来どおり段階的に起こす(本番と同一の入力列)
 # T-BG-B4    : 受け取りの印(read: true)に頼らず成り立つ(未読が残ったままでも送らない)
 # T-BG-C1〜C6: 固まった足軽の知らせ(30分/60分/60分ごと・名と長さ・秘匿値なし・idleで止まる・途切れで数え直す)
 # T-BG-S1〜S2: settings の鍵と既定値
-# T-BG-P1〜P2: 本番の watcher が無変更 / 起動経路に .new が入っていない
+# T-BG-P1〜P2: 差替が完結している(.new が残らず、旧版は履歴から取れ、本番は旧版と別物) / 起動経路に .new が入っていない
 #
-# 注意(工程C=本番差し替え時): T-BG-A1/A2 は「本番版の欠陥」を記録する試験ゆえ、差し替え後は
-#   BUSYGUARD_TEST_PROD を .new に向けるか削除する。T-BG-P1 は差し替えで落ちる(意図どおり)ので外す。
+# 工程C(本番差し替え)後の読み方: T-BG-A1/A2 は「直す前(旧版 cf432d8)の欠陥」の記録、B* は「直した後(本番 .sh)」の証明。
+#   旧版は履歴から取り出すので、本番 .sh が今後さらに変わっても A* は旧版の欠陥を示し続ける。
 
 # 足軽の名は生きた陣に居ない ashigaru9 を使う(生きた見張り役の inotifywait を self-watch と誤認せぬため)
 SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-PROD_WATCHER="$SCRIPT_DIR/scripts/inbox_watcher.sh"
-NEW_WATCHER="$SCRIPT_DIR/scripts/inbox_watcher.sh.new"
-BASE_WATCHER_COMMIT="cf432d8"   # cmd_231 着手前の HEAD
+NEW_WATCHER="$SCRIPT_DIR/scripts/inbox_watcher.sh"
+BASE_WATCHER_COMMIT="cf432d8"   # cmd_231 着手前の HEAD(=直す前の見張り役が本番だった版)
+OLD_WATCHER=""                  # setup() が $BATS_TEST_TMPDIR へ git show で取り出して埋める
 
 setup() {
     WORK="$BATS_TEST_TMPDIR/w"
     mkdir -p "$WORK"
     export WORK
+    # 直す前の版: 追跡ファイルを増やさず、試験ごとの一時領域へ履歴から取り出す(取り出せなければ以降の試験を失敗させる)
+    OLD_WATCHER="$BATS_TEST_TMPDIR/inbox_watcher.$BASE_WATCHER_COMMIT.sh"
+    git -C "$SCRIPT_DIR" show "$BASE_WATCHER_COMMIT:scripts/inbox_watcher.sh" > "$OLD_WATCHER"
+    [ -s "$OLD_WATCHER" ]
     mkdir -p "$WORK/scripts" "$WORK/lib" "$WORK/config" "$WORK/queue/inbox" "$WORK/queue/tasks" \
              "$WORK/queue/metrics" "$WORK/flags" "$WORK/tmux" "$WORK/logs"
     cp "$SCRIPT_DIR/lib/cli_adapter.sh" "$SCRIPT_DIR/lib/agent_status.sh" "$WORK/lib/"
@@ -123,7 +129,7 @@ start_pane() {
 
 # write_driver — process_unread を直接呼ぶ運転台
 #   CYC_AGE      FIRST_UNREAD_SEEN を何秒前にするか(欠陥の再現: 未読が古く残る)
-#   CYC_OFFSETS  .new のとき、各回の「いま」を base からの秒数で注入(本番は注入口が無いので無視)
+#   CYC_OFFSETS  新版 のとき、各回の「いま」を base からの秒数で注入(旧版は注入口が無いので無視)
 #   CYC_CTX      NEW_CONTEXT_SENT の初期値(1=着任時の /clear は済んだ後)
 #   CYC_BASE     「いま」の起点(epoch秒)を固定する。複数回の運転で状態ファイルの時刻を繋ぐ用
 #   CYC_VERDICT_FILE があれば agent_is_busy_check を差し替え(ファイルの数字 0/1/2 を返す)
@@ -150,7 +156,7 @@ set -euo pipefail
 sleep() { command sleep 0.1; }
 if [ -n "${CYC_VERDICT_FILE:-}" ]; then
     agent_is_busy_check() { return "$(cat "$CYC_VERDICT_FILE")"; }
-    # cmd_231 工程B: .new の知らせは wk_screen_class(画面の分類)を見る。固定値 0/1/2 を 作業中/待機/取得失敗 に対応させる
+    # cmd_231 工程B: 新版 の知らせは wk_screen_class(画面の分類)を見る。固定値 0/1/2 を 作業中/待機/取得失敗 に対応させる
     wk_screen_class() { case "$(cat "$CYC_VERDICT_FILE")" in 0) echo working ;; 1) echo idle ;; *) echo failed ;; esac; }
 fi
 NEW_CONTEXT_SENT="${CYC_CTX:-1}"
@@ -176,11 +182,11 @@ run_driver() {
 recv() { cat "$WORK/recv.log"; }
 
 # ═══════════════════════════════════════════════════════════════
-# a. 【直す前】本番版は働き中と見える足軽に /clear を送る
+# a. 【直す前】旧版は働き中と見える足軽に /clear を送る
 # ═══════════════════════════════════════════════════════════════
 
-@test "T-BG-A1: 【直す前】本番版: 画面が働き中・idleフラグ無し・未読400秒 → stale busy recovery で /clear が送られる" {
-    install_watcher "$PROD_WATCHER"
+@test "T-BG-A1: 【直す前】旧版: 画面が働き中・idleフラグ無し・未読400秒 → stale busy recovery で /clear が送られる" {
+    install_watcher "$OLD_WATCHER"
     start_pane working
     run_driver CYC_AGE=400 CYC_CTX=1
     echo "--- driver.log (抜粋) ---"; grep -E "BUSY-DETERMINATION|stale busy|forcing idle|Phase 3|SEND-KEYS|BUSY-GUARD" "$WORK/driver.log" | head -20
@@ -195,8 +201,8 @@ recv() { cat "$WORK/recv.log"; }
     iso_tmux capture-pane -t bgt:0.0 -p | grep -q "esc to interrupt"
 }
 
-@test "T-BG-A2: 【直す前】本番版: 画面が働き中でも idleフラグが残っていれば Phase 3 で /clear が送られる" {
-    install_watcher "$PROD_WATCHER"
+@test "T-BG-A2: 【直す前】旧版: 画面が働き中でも idleフラグが残っていれば Phase 3 で /clear が送られる" {
+    install_watcher "$OLD_WATCHER"
     start_pane working
     touch "$WORK/flags/shogun_idle_ashigaru9"
     run_driver CYC_AGE=400 CYC_CTX=1
@@ -208,10 +214,10 @@ recv() { cat "$WORK/recv.log"; }
 }
 
 # ═══════════════════════════════════════════════════════════════
-# b. 【直した後】.new は働き中の足軽へ /clear を送らない
+# b. 【直した後】新版 は働き中の足軽へ /clear を送らない
 # ═══════════════════════════════════════════════════════════════
 
-@test "T-BG-B1: 【直した後】.new: A1 と同じ場面で /clear を送らず、2〜4分・4分超・5分超に相当する経過でも送らない" {
+@test "T-BG-B1: 【直した後】新版: A1 と同じ場面で /clear を送らず、2〜4分・4分超・5分超に相当する経過でも送らない" {
     install_watcher "$NEW_WATCHER"
     start_pane working
     # 0秒 / 2分 / 3分 / 4分超 / 6分 / 10分 に相当する各回(「いま」を注入)
@@ -229,7 +235,7 @@ recv() { cat "$WORK/recv.log"; }
     [ ! -e "$WORK/flags/shogun_idle_ashigaru9" ]
 }
 
-@test "T-BG-B2: 【直した後】.new: A2 と同じ場面(idleフラグ残り+画面は働き中)でも Phase 3 を見送り /clear を送らない" {
+@test "T-BG-B2: 【直した後】新版: A2 と同じ場面(idleフラグ残り+画面は働き中)でも Phase 3 を見送り /clear を送らない" {
     install_watcher "$NEW_WATCHER"
     start_pane working
     touch "$WORK/flags/shogun_idle_ashigaru9"
@@ -242,12 +248,12 @@ recv() { cat "$WORK/recv.log"; }
     [ ! -s "$WORK/recv.log" ]
 }
 
-@test "T-BG-B3: .new: 働き中でない足軽(idle)は従来どおり段階的に起こす(本番と同一の入力列。退行なし)" {
+@test "T-BG-B3: 新版: 働き中でない足軽(idle)は従来どおり段階的に起こす(旧版と同一の入力列。退行なし)" {
     # 段階: 未読 60s(Phase1: 通常nudgeは無効=何も送らぬ) → 150s(Phase2: nudge) → 400s(Phase3: /clear)
-    local who got_prod got_new
-    for who in prod new; do
+    local who got_old got_new
+    for who in old new; do
         : > "$WORK/recv.log"
-        if [ "$who" = prod ]; then install_watcher "$PROD_WATCHER"; else install_watcher "$NEW_WATCHER"; fi
+        if [ "$who" = old ]; then install_watcher "$OLD_WATCHER"; else install_watcher "$NEW_WATCHER"; fi
         start_pane idle
         touch "$WORK/flags/shogun_idle_ashigaru9"
         # 3つの段階を別プロセスで(各回 FIRST_UNREAD_SEEN を段階の古さにする)
@@ -256,16 +262,16 @@ recv() { cat "$WORK/recv.log"; }
             run_driver CYC_AGE=$age CYC_CTX=1
             [[ "$output" == *"DRIVER_DONE"* ]]
         done
-        if [ "$who" = prod ]; then got_prod="$(recv)"; else got_new="$(recv)"; fi
+        if [ "$who" = old ]; then got_old="$(recv)"; else got_new="$(recv)"; fi
         # 次の周回のためにペインを閉じる
         iso_tmux send-keys -t bgt:0.0 C-d C-d 2>/dev/null || true
         local i
         for i in 1 2 3 4 5 6 7 8 9 10; do iso_tmux list-sessions >/dev/null 2>&1 || break; sleep 0.5; done
     done
-    echo "--- prod recv ---"; echo "$got_prod"
+    echo "--- old recv ---"; echo "$got_old"
     echo "--- new  recv ---"; echo "$got_new"
     # 退行なし: 同一の入力列
-    [ "$got_prod" = "$got_new" ]
+    [ "$got_old" = "$got_new" ]
     # 段階が実際に働いている: Phase2 の nudge と Phase3 の /clear が含まれる
     echo "$got_new" | grep -qx "inbox1"
     echo "$got_new" | grep -qx "/clear"
@@ -282,7 +288,7 @@ recv() { cat "$WORK/recv.log"; }
     [ ! -s "$WORK/recv.log" ]
 }
 
-@test "T-BG-B5: .new: 着任時の文脈リセット(send_context_reset)も、働き中と見える足軽には送らず、idleになってから送る" {
+@test "T-BG-B5: 新版: 着任時の文脈リセット(send_context_reset)も、働き中と見える足軽には送らず、idleになってから送る" {
     install_watcher "$NEW_WATCHER"
     start_pane working
     touch "$WORK/flags/shogun_idle_ashigaru9"   # フラグはidleだが画面は働き中
@@ -402,17 +408,17 @@ notify_count() { grep -c . "$WORK/notify.out" || true; }
 }
 
 # ═══════════════════════════════════════════════════════════════
-# 追補②: 確認画面(許可待ち・Dangerous 確認)で待つ足軽を知らせの対象にできるか(可否の実測。.new へは未組込み)
+# 追補②: 確認画面(許可待ち・Dangerous 確認)で待つ足軽を知らせの対象にできるか(可否の実測。新版 へは未組込み)
 # ═══════════════════════════════════════════════════════════════
 
-# 候補の検出(試験内の定義。.new には入れていない): 画面の最終行が "Esc to cancel" で、かつ直近に選択肢 "❯ 1. Yes" がある
+# 候補の検出(試験内の定義。新版 には入れていない): 画面の最終行が "Esc to cancel" で、かつ直近に選択肢 "❯ 1. Yes" がある
 confirm_screen() {
     local tail_
     tail_="$(iso_tmux capture-pane -t bgt:0.0 -p | grep -v '^[[:space:]]*$' | tail -8)"
     echo "$tail_" | tail -1 | grep -qiE 'esc to cancel' && echo "$tail_" | grep -qE '❯ *1\. *Yes'
 }
 
-@test "T-BG-D1: 確認画面で待つ足軽: 現行の画面判定は busy と読むが、.new は『確認画面』と判じ、待たずに即時に1回知らせ(60分待ちにせぬ)、キーは一切送らない" {
+@test "T-BG-D1: 確認画面で待つ足軽: 現行の画面判定は busy と読むが、新版 は『確認画面』と判じ、待たずに即時に1回知らせ(60分待ちにせぬ)、キーは一切送らない" {
     install_watcher "$NEW_WATCHER"
     start_pane confirm
     iso_tmux capture-pane -t bgt:0.0 -p | grep -q "Do you want to proceed?"
@@ -495,17 +501,27 @@ EOF
 }
 
 # ═══════════════════════════════════════════════════════════════
-# 本番の watcher が既定で無変更
+# 差替が完結している(旧: 本番は着手前から無変更 → 差替後: 本番は旧版と別物・.new は残らない)
 # ═══════════════════════════════════════════════════════════════
 
-@test "T-BG-P1: 本番 scripts/inbox_watcher.sh は cmd_231 着手前から無変更(コミットも差分も無い)" {
+@test "T-BG-P1: 差替が完結している — 旧版 cf432d8 は履歴の祖先から取れて構文が通り、本番 .sh は旧版と別物(直した版)で、.new は残っていない" {
     cd "$SCRIPT_DIR"
-    [ -z "$(git diff --stat -- scripts/inbox_watcher.sh)" ]
-    [ -z "$(git diff --cached --stat -- scripts/inbox_watcher.sh)" ]
-    [ -z "$(git log --oneline "$BASE_WATCHER_COMMIT"..HEAD -- scripts/inbox_watcher.sh)" ]
+    # 旧版は HEAD の祖先の commit から取り出せ、中身がある(比較の相手が実在する)
+    git merge-base --is-ancestor "$BASE_WATCHER_COMMIT" HEAD
+    [ -s "$OLD_WATCHER" ]
+    bash -n "$OLD_WATCHER"
+    # 本番 .sh は旧版そのものではない(直した版が入っている)・構文が通る
+    ! cmp -s "$OLD_WATCHER" "$SCRIPT_DIR/scripts/inbox_watcher.sh"
+    bash -n "$SCRIPT_DIR/scripts/inbox_watcher.sh"
+    # 直した版の目印(旧版には無く、本番 .sh にある): 送信口 wk_send_keys と画面の分類 wk_screen_class
+    ! grep -q '^wk_send_keys()' "$OLD_WATCHER"
+    grep -q '^wk_send_keys()' "$SCRIPT_DIR/scripts/inbox_watcher.sh"
+    grep -q 'wk_screen_class' "$SCRIPT_DIR/scripts/inbox_watcher.sh"
+    # 差替で .new が消えた(二重化していない)
+    [ ! -e "$SCRIPT_DIR/scripts/inbox_watcher.sh.new" ]
 }
 
-@test "T-BG-P2: .new は本番の起動経路(watcher_supervisor / shutsujin / switch_cli 等)から参照されない" {
+@test "T-BG-P2: .new は(もう存在せず)本番の起動経路(watcher_supervisor / shutsujin / switch_cli 等)から参照されない" {
     cd "$SCRIPT_DIR"
     local hits
     hits="$(grep -rl "inbox_watcher.sh.new" --include='*.sh' --include='*.yaml' --include='*.py' scripts lib config shutsujin_departure.sh first_setup.sh 2>/dev/null | grep -v '^scripts/inbox_watcher.sh.new$' || true)"

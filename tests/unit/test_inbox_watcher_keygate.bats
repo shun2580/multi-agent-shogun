@@ -1,8 +1,9 @@
 #!/usr/bin/env bats
 # test_inbox_watcher_keygate.bats — cmd_231 工程B / 殿命 S-19 追補(00:20)
 #   見張り役(inbox_watcher)がキー(起こしの文字・Enter・Escape・C-u・C-c・/clear・起動の口上 ほか全て)を送ってよいのは、
-#   「送る直前に画面を見て、待機中のプロンプトと言い切れるとき」だけ — を、別名ファイル scripts/inbox_watcher.sh.new で示す。
-#   本番 scripts/inbox_watcher.sh は触らない(比較の相手として複製して動かすだけ)。
+#   「送る直前に画面を見て、待機中のプロンプトと言い切れるとき」だけ — を、本番 scripts/inbox_watcher.sh(工程C で .new から差し替えた版)で示す。
+#   比較の相手「直す前の版」は、cmd_231 着手前の commit(BASE_WATCHER_COMMIT=cf432d8)の scripts/inbox_watcher.sh を
+#   git show で試験ごとの一時ファイル($BATS_TEST_TMPDIR)へ取り出して使う(リポジトリ内に新規の追跡ファイルは置かぬ)。
 #
 # 実証の仕組み(busyguard bats と同じ隔離):
 #   - 試験ごとに $BATS_TEST_TMPDIR(bats が消す。リポジトリ内に残骸を残さぬ)へ使い捨ての木を作り、
@@ -11,20 +12,25 @@
 #     記録つき tmux ラッパ($WORK/bin/tmux)は、TMUX_TMPDIR が使い捨て配下でなければ exit 97 で中継を拒み、
 #     send-keys を1回ずつ KEYLOG へ記録する(Enter を含む送信かどうかも)。T-KG-I1 が拒否を実測する。
 #
-# T-KG-C* : 画面の分類(待機と言い切れる積極条件)  T-KG-M* : 場面×送信口の送信回数表(直す前=本番版 / 直した後=.new)
+# T-KG-C* : 画面の分類(待機と言い切れる積極条件)  T-KG-M* : 場面×送信口の送信回数表(直す前=旧版 / 直した後=新版)
 # T-KG-N* : 確認画面・判別不能の知らせ            T-KG-F* : ntfy の戻り値のログ(失敗を模擬)
 # T-KG-S* : 送信口が1本・設定               T-KG-I1 : 隔離の実測
 # T-KG-D* : 薄字(SGR 2)の提案文の例外(S-23/S-24)  — 実機の Claude Code の実画面の写し(-e つき・tests/fixtures/claude_screens/)で示す
-# T-KG-A* : cmd_232 の非待機29場面+確認画面の実画面の当て直し(直す前=本番版/直した後=.new を一つの表で)
+# T-KG-A* : cmd_232 の非待機29場面+確認画面の実画面の当て直し(直す前=旧版/直した後=新版 を一つの表で)
 
 SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-PROD_WATCHER="$SCRIPT_DIR/scripts/inbox_watcher.sh"
+BASE_WATCHER_COMMIT="cf432d8"   # cmd_231 着手前の HEAD(=直す前の見張り役が本番だった版)
+OLD_WATCHER=""                  # setup() が $BATS_TEST_TMPDIR へ git show で取り出して埋める
 FX_DIR="$SCRIPT_DIR/tests/fixtures/claude_screens"
-NEW_WATCHER="$SCRIPT_DIR/scripts/inbox_watcher.sh.new"
+NEW_WATCHER="$SCRIPT_DIR/scripts/inbox_watcher.sh"
 
 setup() {
     WORK="$BATS_TEST_TMPDIR/w"
     export WORK
+    # 直す前の版: 追跡ファイルを増やさず、試験ごとの一時領域へ履歴から取り出す(取り出せなければ以降の試験を失敗させる)
+    OLD_WATCHER="$BATS_TEST_TMPDIR/inbox_watcher.$BASE_WATCHER_COMMIT.sh"
+    git -C "$SCRIPT_DIR" show "$BASE_WATCHER_COMMIT:scripts/inbox_watcher.sh" > "$OLD_WATCHER"
+    [ -s "$OLD_WATCHER" ]
     mkdir -p "$WORK/scripts" "$WORK/lib" "$WORK/config" "$WORK/queue/inbox" "$WORK/queue/tasks" \
              "$WORK/queue/metrics" "$WORK/flags" "$WORK/tmux" "$WORK/logs" "$WORK/bin"
     cp "$SCRIPT_DIR/lib/cli_adapter.sh" "$SCRIPT_DIR/lib/agent_status.sh" "$WORK/lib/"
@@ -390,7 +396,7 @@ class_of_file() {   # class_of_file <ansi ファイル> [empty|pending] — 属�
 }
 
 # ═══════════════════════════════════════════════════════════════
-# M. 場面×送信口 の送信回数表 — 直す前(本番版)と直した後(.new)を並べる
+# M. 場面×送信口 の送信回数表 — 直す前(旧版)と直した後(新版)を並べる
 # ═══════════════════════════════════════════════════════════════
 # 場面: 確認画面 / 作業中 / 判別不能 / 待機。待機の目印(idle flag)は『あり(古い目印が残る最悪の場合)』と『なし』の両方。
 # 送信口: nudge / phase2(claude) / phase2(copilot=Escape) / phase3(/clear) / 着任時リセット / clear_command / model_switch /
@@ -439,11 +445,11 @@ echo "MATRIX_DONE"
 EOF
 }
 
-# matrix_run <prod|new> <scene> <present|absent> — 1場面分を走らせ、$WORK/matrix_<who>_<scene>_<flag>.keys に KEYLOG を保存する
+# matrix_run <old|new> <scene> <present|absent> — 1場面分を走らせ、$WORK/matrix_<who>_<scene>_<flag>.keys に KEYLOG を保存する
 matrix_run() {
     local who="$1" scene="$2" flag="$3" only="${4:-}" out
     : > "$KEYLOG"; : > "$WORK/recv.log"      # 場面ごとに記録を空にする(前の場面の入力を持ち越さぬ)
-    if [ "$who" = prod ]; then install_watcher "$PROD_WATCHER"; else install_watcher "$NEW_WATCHER"; fi
+    if [ "$who" = old ]; then install_watcher "$OLD_WATCHER"; else install_watcher "$NEW_WATCHER"; fi
     start_pane "$scene"
     write_matrix_driver
     # 偽ペインの画面を、場面名どおりのまま保つ(送信の影響を受けぬ静的な画面)
@@ -473,7 +479,7 @@ PORTS="nudge phase2-claude phase2-copilot phase3-clear context-reset clear_comma
 ZERO_SCENES="confirm working noprompt fx_confirm_bash fx_confirm_exit_dialog fx_working_stream fx_working_tool fx_typed_text"
 IDLE_SCENES="idle fx_idle_placeholder fx_idle_suggestion_after_turn"
 
-@test "T-KG-M1: 【直した後】.new — 確認画面・作業中・判別不能・打ちかけの画面(実画面の写しを含む)には、idle flag が残っていても、全ての送信口で Enter を含むキーが 0 回" {
+@test "T-KG-M1: 【直した後】新版 — 確認画面・作業中・判別不能・打ちかけの画面(実画面の写しを含む)には、idle flag が残っていても、全ての送信口で Enter を含むキーが 0 回" {
     local scene flag
     for scene in $ZERO_SCENES; do
         for flag in present absent; do
@@ -486,7 +492,7 @@ IDLE_SCENES="idle fx_idle_placeholder fx_idle_suggestion_after_turn"
     done
 }
 
-@test "T-KG-M2: 【直した後】.new — 打鍵ゼロの間、見送りが [KEY-WITHHELD] で記録される(黙って捨てない)。確認画面の足軽には即時の知らせが出る" {
+@test "T-KG-M2: 【直した後】新版 — 打鍵ゼロの間、見送りが [KEY-WITHHELD] で記録される(黙って捨てない)。確認画面の足軽には即時の知らせが出る" {
     local f="$BATS_FILE_TMPDIR/matrix/new_confirm_present.log"
     [ -f "$f" ]
     grep -q "\[KEY-WITHHELD\]" "$f"
@@ -500,7 +506,7 @@ IDLE_SCENES="idle fx_idle_placeholder fx_idle_suggestion_after_turn"
     grep -q "screen=confirm" "$f"
 }
 
-@test "T-KG-M3: 【直した後】.new — 待機の画面(薄字の提案文つきの実画面の写しを含む)では従来どおり起こせる(退行なし): 全送信口が動き、Escape も届く" {
+@test "T-KG-M3: 【直した後】新版 — 待機の画面(薄字の提案文つきの実画面の写しを含む)では従来どおり起こせる(退行なし): 全送信口が動き、Escape も届く" {
     local flag p scene
     for scene in $IDLE_SCENES; do
     for flag in present absent; do
@@ -509,7 +515,7 @@ IDLE_SCENES="idle fx_idle_placeholder fx_idle_suggestion_after_turn"
         for p in nudge phase2-claude phase2-copilot phase3-clear context-reset clear_command model_switch clear-input startup-prompt; do
             local n; n=$(port_count "$f" "$p" total)
             echo "new / $scene / flag=$flag / $p: $n 回(Enter $(port_count "$f" "$p" enter))"
-            # 通常の起こし(nudge)は、待機の目印が無い間は従来どおり『働き中』扱いで送らぬ(本番版も同じ。送らぬ側への据え置きで退行ではない)
+            # 通常の起こし(nudge)は、待機の目印が無い間は従来どおり『働き中』扱いで送らぬ(旧版も同じ。送らぬ側への据え置きで退行ではない)
             if [ "$p" = nudge ] && [ "$flag" = absent ]; then [ "$n" -eq 0 ]; continue; fi
             [ "$n" -ge 1 ]
         done
@@ -528,52 +534,52 @@ IDLE_SCENES="idle fx_idle_placeholder fx_idle_suggestion_after_turn"
     grep -q "\[KEY-GATE\].*placeholder=dim" "$BATS_FILE_TMPDIR/matrix/new_fx_idle_placeholder_present.log"
 }
 
-@test "T-KG-M4: 【直す前】本番版 scripts/inbox_watcher.sh — 同じ場面(確認画面・作業中・判別不能)に idle flag が残ると Enter を含むキーが送られる(今宵 00:10〜00:12 の再現)" {
+@test "T-KG-M4: 【直す前】旧版 scripts/inbox_watcher.sh — 同じ場面(確認画面・作業中・判別不能)に idle flag が残ると Enter を含むキーが送られる(今宵 00:10〜00:12 の再現)" {
     local scene flag
     for scene in confirm working noprompt idle; do
         for flag in present absent; do
-            matrix_run prod "$scene" "$flag"
-            local f="$BATS_FILE_TMPDIR/matrix/prod_${scene}_${flag}.keys"
-            echo "--- prod / $scene / flag=$flag: KEY 行 $(grep -c '^KEY' "$f")、うち Enter $(grep -c -P '^KEY\t1\t' "$f") ---"
+            matrix_run old "$scene" "$flag"
+            local f="$BATS_FILE_TMPDIR/matrix/old_${scene}_${flag}.keys"
+            echo "--- old / $scene / flag=$flag: KEY 行 $(grep -c '^KEY' "$f")、うち Enter $(grep -c -P '^KEY\t1\t' "$f") ---"
         done
     done
     # 実画面の写し: 確認画面・作業中・打ちかけは idle flag あり(最悪)で、待機の提案文つきは両方
     for scene in fx_confirm_bash fx_confirm_exit_dialog fx_working_stream fx_working_tool fx_typed_text; do
-        matrix_run prod "$scene" present
-        local f="$BATS_FILE_TMPDIR/matrix/prod_${scene}_present.keys"
-        echo "--- prod / $scene / flag=present: KEY 行 $(grep -c '^KEY' "$f")、うち Enter $(grep -c -P '^KEY\t1\t' "$f") ---"
+        matrix_run old "$scene" present
+        local f="$BATS_FILE_TMPDIR/matrix/old_${scene}_present.keys"
+        echo "--- old / $scene / flag=present: KEY 行 $(grep -c '^KEY' "$f")、うち Enter $(grep -c -P '^KEY\t1\t' "$f") ---"
     done
     for scene in fx_idle_placeholder fx_idle_suggestion_after_turn; do
-        for flag in present absent; do matrix_run prod "$scene" "$flag"; done
+        for flag in present absent; do matrix_run old "$scene" "$flag"; done
     done
     # 確認画面 + idle flag あり: 起こし(inbox1+Enter)が確認画面に入る
-    local f="$BATS_FILE_TMPDIR/matrix/prod_confirm_present.keys"
+    local f="$BATS_FILE_TMPDIR/matrix/old_confirm_present.keys"
     [ "$(port_count "$f" nudge enter)" -ge 1 ]
-    grep -q -x "inbox1" "$BATS_FILE_TMPDIR/matrix/prod_confirm_present.recv"
+    grep -q -x "inbox1" "$BATS_FILE_TMPDIR/matrix/old_confirm_present.recv"
     # 作業中 + idle flag あり: 同じく送られる
-    f="$BATS_FILE_TMPDIR/matrix/prod_working_present.keys"
+    f="$BATS_FILE_TMPDIR/matrix/old_working_present.keys"
     [ "$(port_count "$f" nudge enter)" -ge 1 ]
     # 判別不能 + 目印なし: 通常の起こしは目印が無いので出ぬが、画面を見ぬ他の送信口(/clear・起動の口上 ほか)には Enter が送られる
-    f="$BATS_FILE_TMPDIR/matrix/prod_noprompt_absent.keys"
+    f="$BATS_FILE_TMPDIR/matrix/old_noprompt_absent.keys"
     [ "$(port_count "$f" nudge enter)" -eq 0 ]
     [ "$(grep -c -P '^KEY\t1\t' "$f")" -ge 1 ]
     [ "$(port_count "$f" startup-prompt enter)" -ge 1 ]
-    # 実画面の確認画面(Claude Code の『Do you want to proceed?』)にも本番版は Enter を送る
-    f="$BATS_FILE_TMPDIR/matrix/prod_fx_confirm_bash_present.keys"
+    # 実画面の確認画面(Claude Code の『Do you want to proceed?』)にも旧版は Enter を送る
+    f="$BATS_FILE_TMPDIR/matrix/old_fx_confirm_bash_present.keys"
     [ "$(port_count "$f" nudge enter)" -ge 1 ]
     [ "$(grep -c -P '^KEY\t1\t' "$f")" -ge 1 ]
-    grep -q -x "inbox1" "$BATS_FILE_TMPDIR/matrix/prod_fx_confirm_bash_present.recv"
+    grep -q -x "inbox1" "$BATS_FILE_TMPDIR/matrix/old_fx_confirm_bash_present.recv"
 }
 
-@test "T-KG-M5: 【表】場面×送信口の送信回数(Enter を含む送信)— 直す前(本番版)/ 直した後(.new)" {
+@test "T-KG-M5: 【表】場面×送信口の送信回数(Enter を含む送信)— 直す前(旧版)/ 直した後(新版)" {
     local f
-    for f in prod_confirm_present new_confirm_present prod_fx_confirm_bash_present new_fx_confirm_bash_present; do [ -f "$BATS_FILE_TMPDIR/matrix/$f.keys" ]; done
+    for f in old_confirm_present new_confirm_present old_fx_confirm_bash_present new_fx_confirm_bash_present; do [ -f "$BATS_FILE_TMPDIR/matrix/$f.keys" ]; done
     local who scene flag p
     printf '\n| 場面 | idle flag | 版 | %s |\n' "$(echo $PORTS | sed 's/ / | /g')"
     printf '|---|---|---|%s\n' "$(for p in $PORTS; do printf -- '---|'; done)"
     for scene in confirm working noprompt $(echo $ZERO_SCENES | cut -d' ' -f4-) idle fx_idle_placeholder fx_idle_suggestion_after_turn; do
         for flag in present absent; do
-            for who in prod new; do
+            for who in old new; do
                 f="$BATS_FILE_TMPDIR/matrix/${who}_${scene}_${flag}.keys"
                 [ -f "$f" ] || continue
                 printf '| %s | %s | %s |' "$scene" "$flag" "$who"
@@ -585,23 +591,23 @@ IDLE_SCENES="idle fx_idle_placeholder fx_idle_suggestion_after_turn"
     echo "(セルは『送信回数/うち Enter を含む回数』)"
 }
 
-@test "T-KG-M6: 待機の画面(薄字の提案文つきの実画面の写しを含む)では 本番版と .new の送信が同じ(退行なし) — 各送信口の送信回数と、偽ペインが受け取った入力列が一致" {
+@test "T-KG-M6: 待機の画面(薄字の提案文つきの実画面の写しを含む)では 旧版と 新版 の送信が同じ(退行なし) — 各送信口の送信回数と、偽ペインが受け取った入力列が一致" {
     local flag p scene
     for scene in $IDLE_SCENES; do
     for flag in present absent; do
-        local fp="$BATS_FILE_TMPDIR/matrix/prod_${scene}_${flag}.keys" fn="$BATS_FILE_TMPDIR/matrix/new_${scene}_${flag}.keys"
+        local fp="$BATS_FILE_TMPDIR/matrix/old_${scene}_${flag}.keys" fn="$BATS_FILE_TMPDIR/matrix/new_${scene}_${flag}.keys"
         [ -f "$fp" ] && [ -f "$fn" ]
         for p in $PORTS; do
-            echo "$scene / flag=$flag / $p: prod=$(port_count "$fp" "$p" total) new=$(port_count "$fn" "$p" total)"
+            echo "$scene / flag=$flag / $p: old=$(port_count "$fp" "$p" total) new=$(port_count "$fn" "$p" total)"
             [ "$(port_count "$fp" "$p" total)" = "$(port_count "$fn" "$p" total)" ]
         done
-        diff "$BATS_FILE_TMPDIR/matrix/prod_${scene}_${flag}.recv" "$BATS_FILE_TMPDIR/matrix/new_${scene}_${flag}.recv"
+        diff "$BATS_FILE_TMPDIR/matrix/old_${scene}_${flag}.recv" "$BATS_FILE_TMPDIR/matrix/new_${scene}_${flag}.recv"
     done
     done
 }
 
 # ═══════════════════════════════════════════════════════════════
-# A. cmd_232 の非待機29場面+確認画面の実画面を当て直す(S-23/S-24)— 直す前(本番版)/ 直した後(.new)を一つの表で
+# A. cmd_232 の非待機29場面+確認画面の実画面を当て直す(S-23/S-24)— 直す前(旧版)/ 直した後(新版)を一つの表で
 # ═══════════════════════════════════════════════════════════════
 # 29場面の出典: queue/reports/cmd232_watcher_keystroke_audit.md ②-1。各場面の『送った物』を送信口に、『判定』の画面を実画面の写しに対応させる
 #   Ctrl-C→/clear(Phase 3)=phase3-clear / 起こし inboxN+Enter=nudge / /clear+Enter(CONTEXT-RESET)=context-reset
@@ -638,7 +644,7 @@ SCENES29='1|10-12 20:03:04|足軽3|phase3-clear|fx_working_tool
 28|10-13 00:11:00|足軽2|nudge|fx_working_tool
 29|10-13 00:12:05|足軽2|nudge|fx_working_tool'
 
-# scene_counts <who> <scene> <port> → "total/enter"(同じ入力は実走結果を使い回さず、行ごとに実走する。.new は必ず行ごとに実走)
+# scene_counts <who> <scene> <port> → "total/enter"(同じ入力は実走結果を使い回さず、行ごとに実走する。新版 は必ず行ごとに実走)
 scene_counts() {
     local who="$1" scene="$2" port="$3"
     matrix_run "$who" "$scene" present "$port"
@@ -646,37 +652,37 @@ scene_counts() {
     echo "$(port_count "$f" "$port" total)/$(port_count "$f" "$port" enter)"
 }
 
-@test "T-KG-A1: 【表】cmd_232 の非待機29場面を、実画面の写しで当て直す — .new は全場面 0 回(Enter も 0)、本番版は全場面で送る" {
-    local row n tm who port scene new prod
-    local -A PRODCACHE=()
+@test "T-KG-A1: 【表】cmd_232 の非待機29場面を、実画面の写しで当て直す — 新版 は全場面 0 回(Enter も 0)、旧版は全場面で送る" {
+    local row n tm who port scene new old
+    local -A OLDCACHE=()
     local bad=0
-    printf '\n| # | 時刻 | 者 | 送った物(送信口) | 画面(実画面の写し) | 直す前(本番版) 送信/Enter | 直した後(.new) 送信/Enter |\n|--|--|--|--|--|--|--|\n'
+    printf '\n| # | 時刻 | 者 | 送った物(送信口) | 画面(実画面の写し) | 直す前(旧版) 送信/Enter | 直した後(新版) 送信/Enter |\n|--|--|--|--|--|--|--|\n'
     while IFS='|' read -r n tm who port scene; do
         new="$(scene_counts new "$scene" "$port")"
-        if [ -z "${PRODCACHE[$scene:$port]:-}" ]; then PRODCACHE[$scene:$port]="$(scene_counts prod "$scene" "$port")"; fi
-        prod="${PRODCACHE[$scene:$port]}"
-        printf '| %s | %s | %s | %s | %s | %s | %s |\n' "$n" "$tm" "$who" "$port" "$scene" "$prod" "$new"
+        if [ -z "${OLDCACHE[$scene:$port]:-}" ]; then OLDCACHE[$scene:$port]="$(scene_counts old "$scene" "$port")"; fi
+        old="${OLDCACHE[$scene:$port]}"
+        printf '| %s | %s | %s | %s | %s | %s | %s |\n' "$n" "$tm" "$who" "$port" "$scene" "$old" "$new"
         [ "$new" = "0/0" ] || bad=$((bad + 1))
-        [ "${prod%%/*}" -ge 1 ] || bad=$((bad + 1))
+        [ "${old%%/*}" -ge 1 ] || bad=$((bad + 1))
     done <<< "$SCENES29"
-    echo "(本番版は同じ『画面×送信口』を1度実走して全行に当てた。.new は29行を行ごとに実走)"
+    echo "(旧版は同じ『画面×送信口』を1度実走して全行に当てた。新版 は29行を行ごとに実走)"
     [ "$bad" -eq 0 ]
 }
 
-@test "T-KG-A2: 【表】確認画面の実画面(2種)× 全送信口 — 薄字の例外を入れた後も .new は 0 回(Enter も 0)。直す前の本番版は送る" {
+@test "T-KG-A2: 【表】確認画面の実画面(2種)× 全送信口 — 薄字の例外を入れた後も 新版 は 0 回(Enter も 0)。直す前の旧版は送る" {
     local scene flag p who f
     printf '\n| 確認画面(実画面) | idle flag | 版 | %s |\n|---|---|---|%s\n' "$(echo $PORTS | sed 's/ / | /g')" "$(for p in $PORTS; do printf -- '---|'; done)"
     for scene in fx_confirm_bash fx_confirm_exit_dialog; do
         for flag in present absent; do
-            for who in prod new; do
-                if [ "$who" = prod ] && [ "$flag" = absent ]; then continue; fi
+            for who in old new; do
+                if [ "$who" = old ] && [ "$flag" = absent ]; then continue; fi
                 matrix_run "$who" "$scene" "$flag"
                 f="$BATS_FILE_TMPDIR/matrix/${who}_${scene}_${flag}.keys"
                 printf '| %s | %s | %s |' "$scene" "$flag" "$who"
                 for p in $PORTS; do printf ' %s/%s |' "$(port_count "$f" "$p" total)" "$(port_count "$f" "$p" enter)"; done
                 printf '\n'
                 if [ "$who" = new ]; then [ "$(grep -c '^KEY' "$f")" -eq 0 ]; fi
-                if [ "$who" = prod ]; then [ "$(grep -c -P '^KEY\t1\t' "$f")" -ge 1 ]; fi
+                if [ "$who" = old ]; then [ "$(grep -c -P '^KEY\t1\t' "$f")" -ge 1 ]; fi
             done
         done
     done
@@ -886,7 +892,7 @@ EOF
 # S. 送信口が1本・設定
 # ═══════════════════════════════════════════════════════════════
 
-@test "T-KG-S1: .new に実行される tmux send-keys は wk_send_keys の1箇所だけ(送信口を数える)" {
+@test "T-KG-S1: 新版 に実行される tmux send-keys は wk_send_keys の1箇所だけ(送信口を数える)" {
     local lines
     lines="$(grep -n 'tmux send-keys' "$NEW_WATCHER" | grep -v -E '^[0-9]+:[[:space:]]*#' | grep -v -E 'echo|WARNING' || true)"
     echo "$lines"

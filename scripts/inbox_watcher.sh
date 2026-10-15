@@ -19,6 +19,9 @@
 #   2〜4分: Copilot/Kimi は Escape×2 + Ctrl-C + nudge。
 #            Claude/Codex/OpenCode は通常nudgeへフォールバック
 #   4分〜 : /clear送信（5分に1回まで。強制リセット+YAML再読）
+#   ただし (cmd_231/殿命S-19) 画面が働き中と見える足軽には、未読の古さを問わず /clear を
+#   送らない(stale busy recoveryは撤去)。働き中が長く続くときは /clear せず殿へntfyで知らせる
+#   (busy_guard。目安は config/settings.yaml の busy_guard: ブロック)。
 # ═══════════════════════════════════════════════════════════════
 
 # ─── Testing guard ───
@@ -190,6 +193,88 @@ except Exception:
 " 2>/dev/null
 }
 ASSIGNMENT_GRACE_SECONDS=${ASSIGNMENT_GRACE_SECONDS:-$(_read_assignment_grace_setting after_nudge_seconds 30)}
+
+# ─── Busy guard config (cmd_231 / 殿命 S-19) ───
+# 働き中と見える足軽へ /clear を送らぬ。働き中が長く続くときは /clear せず殿へ ntfy で知らせる。
+# config/settings.yaml `busy_guard:` ブロック(無ければ下記の既定=将軍案)。env でも上書き可。
+#   unread_notify_minutes     働き中のまま未読が残る分数 → 知らせ(既定30)
+#   continuous_notify_minutes 未読の有無を問わず働き中が連続する分数 → 知らせ(既定60)
+#   repeat_notify_minutes     知らせた後、続く間の再通知間隔(既定60)
+# 試験用の口(本番では使わぬ):
+#   INBOX_WATCHER_TEST_NOW    process_unread / busy_guard_tick の「いま」(epoch秒)を注入する
+#   BUSYGUARD_NOTIFY_CMD      ntfy の送り先を写しに替える実行ファイル(引数1=本文)。空なら scripts/ntfy.sh
+#   BUSYGUARD_STATE_DIR       足軽ごとの状態ファイルの置場(既定: <repo>/logs/watcher_busy。logs/ は追跡外)
+_read_busy_guard_setting() {
+    local key="$1" default="$2"
+    "$SCRIPT_DIR/.venv/bin/python3" -c "
+import yaml
+try:
+    with open('${SCRIPT_DIR}/config/settings.yaml', encoding='utf-8') as f:
+        data = yaml.safe_load(f) or {}
+    v = (data.get('busy_guard') or {}).get('$key')
+    if v is None:
+        v = '$default'
+    if isinstance(v, bool):
+        v = str(v).lower()
+    print(v)
+except Exception:
+    print('$default')
+" 2>/dev/null
+}
+# 正の整数でなければ既定へ戻す(設定の誤記で知らせが暴走・沈黙せぬように)
+_bg_posint() {
+    case "${1:-}" in
+        ''|*[!0-9]*) echo "$2" ;;
+        *) if [ "$1" -gt 0 ]; then echo "$1"; else echo "$2"; fi ;;
+    esac
+}
+BUSYGUARD_UNREAD_MIN=$(_bg_posint "${BUSYGUARD_UNREAD_MIN:-$(_read_busy_guard_setting unread_notify_minutes 30)}" 30)
+BUSYGUARD_CONTINUOUS_MIN=$(_bg_posint "${BUSYGUARD_CONTINUOUS_MIN:-$(_read_busy_guard_setting continuous_notify_minutes 60)}" 60)
+BUSYGUARD_REPEAT_MIN=$(_bg_posint "${BUSYGUARD_REPEAT_MIN:-$(_read_busy_guard_setting repeat_notify_minutes 60)}" 60)
+# 観測がこれ以上途切れたら(見張り役の停止等)、働き中の連続は数え直す
+BUSYGUARD_RESUME_GAP_SEC=${BUSYGUARD_RESUME_GAP_SEC:-300}
+# ntfy が失敗したときの再試行間隔(毎tick叩かぬ)
+BUSYGUARD_RETRY_SEC=${BUSYGUARD_RETRY_SEC:-300}
+BUSYGUARD_STATE_DIR=${BUSYGUARD_STATE_DIR:-${SCRIPT_DIR}/logs/watcher_busy}
+BUSYGUARD_NOTIFY_CMD=${BUSYGUARD_NOTIFY_CMD:-}
+
+# ─── Key gate config (cmd_231 工程B / 殿命 S-19 追補 00:20) ───
+# 見張り役がキー(起こしの文字・Enter・Escape・C-u・/clear・起動の口上 ほか全て)を送ってよいのは、
+# 送る直前に画面(pane の capture)を見て『待機中のプロンプト』と言い切れるときのみ(wk_screen_class)。
+#   confirm_screen_regex            確認画面の検出文言(ERE・大小無視)。Claude Code の画面文言が変わったら
+#                                   config/settings.yaml の busy_guard.confirm_screen_regex で差し替える。
+#                                   ※ 実機未確認: 既定値は模擬画面(偽ペイン)で確かめたもの。実 Claude Code の確認画面の文言は未確認。
+#   confirm_repeat_notify_minutes   同じ確認画面が続く間の再通知間隔(既定30分)。確認画面と判じたときは待たず即時に1回知らせる。
+# 画面の窓: WK_PROMPT_WINDOW 行(空行除く)の中の最後の入力欄を『入力欄』とみなす。
+_BUSYGUARD_CONFIRM_RE_DEFAULT='Esc to cancel|Do you want to |\(y/n\)|\[Y/n\]|\[y/N\]|[0-9]+\.[[:space:]]+(Yes|No)([[:space:]]|,|$)|Press Enter to|Enter to confirm'
+_read_busy_guard_regex() {
+    # 文字列値をそのまま(YAMLのパース結果として)出す。空・誤記・読めぬときは何も出さない(呼び側で既定へ)。
+    "$SCRIPT_DIR/.venv/bin/python3" -c "
+import yaml
+try:
+    with open('${SCRIPT_DIR}/config/settings.yaml', encoding='utf-8') as f:
+        data = yaml.safe_load(f) or {}
+    v = (data.get('busy_guard') or {}).get('confirm_screen_regex')
+    if isinstance(v, str) and v.strip():
+        print(v.strip())
+except Exception:
+    pass
+" 2>/dev/null
+}
+BUSYGUARD_CONFIRM_RE=${BUSYGUARD_CONFIRM_RE:-$(_read_busy_guard_regex)}
+BUSYGUARD_CONFIRM_RE=${BUSYGUARD_CONFIRM_RE:-$_BUSYGUARD_CONFIRM_RE_DEFAULT}
+# 誤記の ERE(grep が構文エラーを返す)は既定へ戻す: 検出が黙って無効になるのを防ぐ
+if printf 'x\n' | grep -qiE -- "$BUSYGUARD_CONFIRM_RE" 2>/dev/null; [ $? -eq 2 ]; then
+    BUSYGUARD_CONFIRM_RE=$_BUSYGUARD_CONFIRM_RE_DEFAULT
+fi
+BUSYGUARD_CONFIRM_REPEAT_MIN=$(_bg_posint "${BUSYGUARD_CONFIRM_REPEAT_MIN:-$(_read_busy_guard_setting confirm_repeat_notify_minutes 30)}" 30)
+WK_PROMPT_WINDOW=${WK_PROMPT_WINDOW:-7}      # 入力欄を探す範囲(末尾から数えた空行を除く行数)
+WK_PENDING_WINDOW=${WK_PENDING_WINDOW:-10}   # 文字を打ちかけの入力欄(折り返しで下へ伸びる)を探す範囲
+WK_ABOVE_LINES=${WK_ABOVE_LINES:-4}          # 入力欄の上で作業中の目印を探す行数
+WK_BELOW_MAX=${WK_BELOW_MAX:-4}              # 入力欄の下に許す行数(罫線・状態行)
+WK_STARTUP_WAIT_TRIES=${WK_STARTUP_WAIT_TRIES:-6}   # /clear 後に待機のプロンプトを待つ回数(5秒ごと)
+
+_now_epoch() { echo "${INBOX_WATCHER_TEST_NOW:-$(date +%s)}"; }
 
 # ─── Nudge throttle ───
 # Avoid spamming the same "inboxN" into the pane every timeout tick.
@@ -633,6 +718,226 @@ else:
 " 2>/dev/null
 }
 
+# ─── Key gate (cmd_231 工程B / 殿命 S-19 追補 00:20) ───────────────────────────────────────
+# 見張り役がキー(起こしの文字・Enter・Escape・C-u・C-c・/clear・起動の口上 ほか全て)を送ってよいのは、
+# 『送る直前に画面を見て、待機中のプロンプトと言い切れるとき』だけ。許すものだけを数える形で、
+# 確認画面を見分けて避ける形ではない。待機の目印ファイル(idle flag)は参考にとどめ、根拠にしない。
+# 送信口は全て wk_send_keys を通る(この関数群の外に tmux send-keys を書かぬこと。T-KG-S1 が数える)。
+
+# wk_screen_class [empty|pending] — 画面の分類。待機と言い切れる条件はここ1箇所に集約する。
+#   idle         待機中のプロンプト。次を全て満たす:
+#                 ①画面を取れた  ②末尾 WK_PROMPT_WINDOW 行(空行除く)に入力欄(❯ / › / 枠内の >)がある
+#                 ③入力欄の上 WK_ABOVE_LINES 行と下の全行に、作業中の目印(WK_WORKING_RE)も確認画面の文言
+#                  (BUSYGUARD_CONFIRM_RE)も無く、最終行が『esc to interrupt』等の作業中の状態行でない
+#                 ④入力欄の下が WK_BELOW_MAX 行以内(罫線・状態行だけ)
+#                 ⑤mode=empty: 入力欄が空、または自分が打った nudge の打ち残し(inboxN)のみ
+#                  mode=pending: 自分が打った列の途中(入力欄に文字があってよい。下へ折り返す分だけ窓を広げる)
+#   confirm      確認画面(許可待ち・Dangerous 確認 ほか): BUSYGUARD_CONFIRM_RE に合い、最終行が作業中の状態行でない
+#   working      作業中の目印(WK_WORKING_RE / 最終行の状態行)
+#   undetermined 画面は取れたが待機と言い切れぬ(空画面・入力欄が無い・入力欄に見慣れぬ文字・余計な行・見慣れぬ状態)
+# 薄字の例外(S-23/S-24): 待機中の Claude Code は入力欄に薄字(SGR 2)の提案文『Try "…"』等を出す。画面は -e つきで取り、
+#   入力欄の文字が『見える字の全てが薄字(SGR 2・属性が読める)』と証明できるときに限り、その提案文を空と見なす。
+#   通常の字が1字でも混じる・属性が読めぬ(コロン区切りの SGR・未知の制御列)・薄字の字が無い は従来どおり undetermined=送らぬ。
+#   確認画面・作業中の判定は薄字の判定より先に行う(提案文があっても確認画面・作業中は送らぬ)。
+#   failed       画面を取れなかった(pane不在・capture失敗・timeout)
+# idle 以外は全て『送らない』。判別不能・取得失敗は送らない側に倒れる。
+# wk_strip_ansi — 標準入力の制御列(SGR ほかの CSI・OSC)を落とし、NBSP を空白にして出す(行数は変えぬ)
+wk_strip_ansi() {
+    LC_ALL=C sed -E $'s/\x1b\\[[0-9;:?<=>]*[ -/]*[@-~]//g; s/\x1b\\][^\x07\x1b]*(\x07|\x1b\\\\)//g; s/\xc2\xa0/ /g'
+}
+
+# wk_prompt_is_dim_placeholder <入力欄の行(属性つきの生)> — 0=入力欄の見える字が全て薄字(SGR 2)と証明できた。
+# 先頭の入力欄の印(❯ ›)までは読み飛ばし、以降の字を1字ずつ見る。薄字でない字が1字でもある・見える字が無い・
+# 読めぬ属性(コロン区切りの SGR)や未知の制御列がある、のいずれかなら 1(=証明できぬ=従来どおり送らぬ)。
+wk_prompt_is_dim_placeholder() {
+    local s="$1" nb=$'\xc2\xa0'
+    s="${s//$nb/ }"
+    local glyph_re='(❯|›)'
+    if [[ "$s" =~ $glyph_re ]]; then
+        s="${s#*"${BASH_REMATCH[1]}"}"
+    else
+        return 1
+    fi
+    local dim=0 saw=0 i=0 k n=${#s} ch rest params
+    local -a P
+    local sgr_re=$'^\x1b\\[([0-9;:]*)m' csi_re=$'^\x1b\\[[0-9;:?]*[ -/]*[@-~]'
+    while [ "$i" -lt "$n" ]; do
+        ch="${s:i:1}"
+        if [ "$ch" = $'\x1b' ]; then
+            rest="${s:i}"
+            if [[ "$rest" =~ $sgr_re ]]; then
+                params="${BASH_REMATCH[1]}"
+                i=$((i + ${#BASH_REMATCH[0]}))
+                if [[ "$params" == *:* ]]; then return 1; fi
+                IFS=';' read -ra P <<< "$params"
+                if [ "${#P[@]}" -eq 0 ]; then dim=0; fi
+                k=0
+                while [ "$k" -lt "${#P[@]}" ]; do
+                    case "${P[k]:-0}" in
+                        0) dim=0 ;;
+                        2) dim=1 ;;
+                        22) dim=0 ;;
+                        38|48|58)   # 色の指定。後ろの 5;n(2つ)・2;r;g;b(4つ)は色の引数ゆえ、薄字の 2 と取り違えぬ
+                            if [ "${P[k+1]:-}" = "5" ]; then k=$((k + 2))
+                            elif [ "${P[k+1]:-}" = "2" ]; then k=$((k + 4)); fi ;;
+                    esac
+                    k=$((k + 1))
+                done
+                continue
+            elif [[ "$rest" =~ $csi_re ]]; then
+                i=$((i + ${#BASH_REMATCH[0]}))
+                continue
+            fi
+            return 1
+        fi
+        if [[ "$ch" != [[:space:]] ]]; then
+            if [ "$dim" -ne 1 ]; then return 1; fi
+            saw=1
+        fi
+        i=$((i + 1))
+    done
+    [ "$saw" -eq 1 ]
+}
+
+WK_PROMPT_RE='^([[:space:]]|│|\|)*(❯|›)(.*)$'
+WK_PROMPT_BOX_RE='^[[:space:]]*│[[:space:]]*>(.*)$'
+WK_BUSYBAR_RE='esc to interrupt|ctrl\+c to (stop|interrupt)'
+WK_WORKING_RE='esc to |ctrl\+c to |…[[:space:]]*\(|\.\.\.[[:space:]]*\(|Compacting conversation|background terminal running'
+_wk_classify() {
+    local mode="${1:-empty}"
+    WK_PLACEHOLDER=0
+    WK_CLASS_RESULT=undetermined
+    local cap rc=0
+    # 1回の取得(-e つき)から、属性を落とした文字列と属性つきの生の行を同じ画面で得る(取得の間のずれを避ける)
+    cap=$(timeout 2 tmux capture-pane -t "$PANE_TARGET" -p -e 2>/dev/null) || rc=$?
+    if [ "$rc" -ne 0 ]; then WK_CLASS_RESULT=failed; return 0; fi
+
+    local -a L=() RAWL=() RAWALL=() PLNALL=()
+    local line i2 rawline
+    mapfile -t RAWALL <<< "$cap"
+    mapfile -t PLNALL < <(wk_strip_ansi <<< "$cap")
+    for ((i2 = 0; i2 < ${#PLNALL[@]}; i2++)); do
+        line="${PLNALL[i2]}"
+        rawline="${RAWALL[i2]:-}"
+        line="${line%"${line##*[![:space:]]}"}"
+        if [ -n "$line" ]; then L+=("$line"); RAWL+=("$rawline"); fi
+    done
+    local n=${#L[@]}
+    if [ "$n" -eq 0 ]; then WK_CLASS_RESULT=undetermined; return 0; fi
+
+    local window="$WK_PROMPT_WINDOW" below_max="$WK_BELOW_MAX"
+    if [ "$mode" = "pending" ]; then window="$WK_PENDING_WINDOW"; below_max=12; fi
+
+    # 入力欄: 窓の中で最後にある行
+    local pi=-1 i lo=$((n - window)) text=""
+    if [ "$lo" -lt 0 ]; then lo=0; fi
+    for ((i = n - 1; i >= lo; i--)); do
+        if [[ "${L[i]}" =~ $WK_PROMPT_RE ]]; then text="${BASH_REMATCH[3]}"; pi=$i; break; fi
+        if [[ "${L[i]}" =~ $WK_PROMPT_BOX_RE ]]; then text="${BASH_REMATCH[1]}"; pi=$i; break; fi
+    done
+
+    local last="${L[n-1]}" region="" start
+    if [ "$pi" -lt 0 ]; then
+        # 入力欄が見えぬ: 待機とは言えぬ。知らせ分けのため、末尾8行から確認画面/作業中/不明を見分ける
+        start=$((n - 8)); if [ "$start" -lt 0 ]; then start=0; fi
+        region=$(printf '%s\n' "${L[@]:$start}")
+        if grep -qiE -- "$WK_BUSYBAR_RE" <<< "$last"; then WK_CLASS_RESULT=working; return 0; fi
+        if grep -qiE -- "$BUSYGUARD_CONFIRM_RE" <<< "$region"; then WK_CLASS_RESULT=confirm; return 0; fi
+        if grep -qiE -- "$WK_WORKING_RE" <<< "$region"; then WK_CLASS_RESULT=working; return 0; fi
+        WK_CLASS_RESULT=undetermined; return 0
+    fi
+
+    # 入力欄の文字を整える(前後の空白・枠線を落とす)
+    text="${text#"${text%%[![:space:]]*}"}"
+    local t2
+    while :; do
+        t2="${text%[[:space:]]}"; t2="${t2%│}"; t2="${t2%|}"
+        if [ "$t2" = "$text" ]; then break; fi
+        text="$t2"
+    done
+
+    # 入力欄の上 WK_ABOVE_LINES 行 + 入力欄の文字 + 入力欄より下の全行
+    start=$((pi - WK_ABOVE_LINES)); if [ "$start" -lt 0 ]; then start=0; fi
+    if [ "$start" -lt "$pi" ]; then region=$(printf '%s\n' "${L[@]:$start:$((pi - start))}"); fi
+    region+=$'\n'"$text"
+    if [ "$((n - 1))" -gt "$pi" ]; then region+=$'\n'"$(printf '%s\n' "${L[@]:$((pi + 1))}")"; fi
+
+    if grep -qiE -- "$WK_BUSYBAR_RE" <<< "$last"; then WK_CLASS_RESULT=working; return 0; fi
+    if grep -qiE -- "$BUSYGUARD_CONFIRM_RE" <<< "$region"; then WK_CLASS_RESULT=confirm; return 0; fi
+    if grep -qiE -- "$WK_WORKING_RE" <<< "$region"; then WK_CLASS_RESULT=working; return 0; fi
+    if [ "$((n - 1 - pi))" -gt "$below_max" ]; then WK_CLASS_RESULT=undetermined; return 0; fi
+    if [ "$mode" = "pending" ]; then WK_CLASS_RESULT=idle; return 0; fi
+    if [ -z "$text" ] || [[ "$text" =~ ^inbox[0-9]+$ ]]; then WK_CLASS_RESULT=idle; return 0; fi
+    # 薄字の例外: 入力欄の文字が全て薄字(SGR 2)と証明できるときだけ、提案文として空と見なす
+    if wk_prompt_is_dim_placeholder "${RAWL[pi]}"; then WK_PLACEHOLDER=1; WK_CLASS_RESULT=idle; return 0; fi
+    WK_CLASS_RESULT=undetermined
+}
+
+# 分類の結果は WK_CLASS_RESULT、薄字の例外で idle にしたかは WK_PLACEHOLDER(1/0)。サブシェルを介さず現在の shell に残す。
+WK_CLASS_RESULT=""
+WK_PLACEHOLDER=0
+# wk_screen_class [empty|pending] — 分類を標準出力へ(試験・知らせ用)
+wk_screen_class() { _wk_classify "$@"; echo "$WK_CLASS_RESULT"; }
+
+# wk_pane_ready [empty|pending] — idle と言い切れるときだけ 0。結果の分類を WK_LAST_CLASS に残す。
+WK_LAST_CLASS=""
+WK_SEQ_OPEN=0       # 1=この列で既に1キー送った(以降は pending で判定する)
+WK_REFUSED=0        # 直近の列で見送りがあったか
+WK_PORT=""          # 送信口の名前(ログ用)
+wk_pane_ready() {
+    _wk_classify "${1:-empty}"
+    WK_LAST_CLASS="$WK_CLASS_RESULT"
+    [ "$WK_LAST_CLASS" = "idle" ]
+}
+
+# wk_begin_seq <送信口> — キー列の頭。以降の wk_send_keys の最初の1キーは mode=empty で判定する。
+wk_begin_seq() { WK_PORT="${1:-?}"; WK_SEQ_OPEN=0; WK_REFUSED=0; }
+
+# wk_log_withheld — 見送りの記録(秘匿値なし。待機の目印は参考として併記)
+wk_log_withheld() {
+    local flag=absent
+    if [ -f "${IDLE_FLAG_DIR:-/tmp}/shogun_idle_${AGENT_ID}" ]; then flag=present; fi
+    echo "[$(date)] [KEY-WITHHELD] agent=$AGENT_ID port=${WK_PORT:-?} screen=${WK_LAST_CLASS:-?} seq=${1:-empty} idle_flag=${flag}(参考のみ) — 待機中のプロンプトと言い切れぬためキーを送らない" >&2
+}
+
+# wk_send_keys <tmux send-keys の引数...> — 全ての送信口の唯一の出口。
+# 送る直前に画面を見て、idle と言い切れなければ送らず 1 を返す(WK_REFUSED=1)。送れたら tmux の戻り値。
+WK_CALL_REFUSED=0   # 直近の1回の呼び出しが見送られたか
+wk_send_keys() {
+    local mode=empty
+    WK_CALL_REFUSED=0
+    if [ "${WK_SEQ_OPEN:-0}" = "1" ]; then mode=pending; fi
+    if ! wk_pane_ready "$mode"; then
+        WK_REFUSED=1; WK_CALL_REFUSED=1
+        wk_log_withheld "$mode"
+        return 1
+    fi
+    WK_SEQ_OPEN=1
+    timeout 5 tmux send-keys -t "$PANE_TARGET" "$@" 2>/dev/null
+}
+
+# wk_send_soft <tmux send-keys の引数...> — 従来の『tmux が失敗しても続ける(|| true)』キーの送り方。
+# 見送り(待機と言い切れぬ)のときだけ 1 を返す。tmux 自体の失敗は従来どおり無視する(戻り値 0)。
+wk_send_soft() {
+    wk_send_keys "$@" || true
+    if [ "${WK_CALL_REFUSED:-0}" = "1" ]; then return 1; fi
+    return 0
+}
+
+# wk_gate <送信口> — 列を始める前の事前確認(副作用の前に見送れるように)。0=送ってよい
+wk_gate() {
+    wk_begin_seq "$1"
+    if wk_pane_ready empty; then
+        if [ "$WK_PLACEHOLDER" = "1" ]; then
+            echo "[$(date)] [KEY-GATE] agent=$AGENT_ID port=$1 screen=idle placeholder=dim — 入力欄は薄字の提案文のみ(全字が SGR 2)ゆえ空と見なして送る" >&2
+        fi
+        return 0
+    fi
+    WK_REFUSED=1
+    wk_log_withheld empty
+    return 1
+}
+
 # ─── Send CLI command via pty direct write ───
 # For /clear and /model only. These are CLI commands, not conversation messages.
 # CLI_TYPE別分岐: claude→そのまま, codex→/clear対応・/modelスキップ,
@@ -677,6 +982,13 @@ send_cli_command() {
         return 0
     fi
 
+    # cmd_231 工程B / 殿命 S-19 追補: /clear に限らず全ての CLI コマンド(/new・/model・再起動の口上 ほか)は、
+    # 画面が『待機中のプロンプト』と言い切れるときだけ送る。見送りは return 1(呼び側は送った扱いにしない)。
+    if ! wk_gate "cli-command:${cmd%% *}"; then
+        echo "[$(date)] [KEY-WITHHELD] $cmd deferred to next cycle (agent=$AGENT_ID)" >&2
+        return 1
+    fi
+
     # CLI別コマンド変換
     local actual_cmd="$cmd"
     case "$effective_cli" in
@@ -691,13 +1003,13 @@ send_cli_command() {
                 fi
                 echo "[$(date)] [SEND-KEYS] Codex /clear→/new: starting new conversation for $AGENT_ID" >&2
                 # Dismiss suggestion UI first (typing "x" clears autocomplete prompt)
-                timeout 5 tmux send-keys -t "$PANE_TARGET" "x" 2>/dev/null || true
+                wk_send_soft "x" || return 1
                 sleep 0.3
-                timeout 5 tmux send-keys -t "$PANE_TARGET" C-u 2>/dev/null || true
+                wk_send_soft C-u || return 1
                 sleep 0.3
-                timeout 5 tmux send-keys -t "$PANE_TARGET" "/new" 2>/dev/null || true
+                wk_send_soft "/new" || return 1
                 sleep 0.3
-                timeout 5 tmux send-keys -t "$PANE_TARGET" Enter 2>/dev/null || true
+                wk_send_soft Enter || return 1
                 sleep 3
                 # Send startup prompt immediately (don't defer to context-reset cycle)
                 send_startup_prompt
@@ -717,11 +1029,11 @@ send_cli_command() {
                     return 0
                 fi
                 echo "[$(date)] [SEND-KEYS] OpenCode /new for clear_command: starting new conversation for $AGENT_ID" >&2
-                timeout 5 tmux send-keys -t "$PANE_TARGET" C-u 2>/dev/null || true
+                wk_send_soft C-u || return 1
                 sleep 0.3
-                timeout 5 tmux send-keys -t "$PANE_TARGET" "/new" 2>/dev/null || true
+                wk_send_soft "/new" || return 1
                 sleep 0.3
-                timeout 5 tmux send-keys -t "$PANE_TARGET" Enter 2>/dev/null || true
+                wk_send_soft Enter || return 1
                 sleep 3
                 NEW_CONTEXT_SENT=1
                 return 0
@@ -735,11 +1047,11 @@ send_cli_command() {
             # Copilot: /clearはCtrl-C+再起動, /model非対応→スキップ
             if [[ "$cmd" == "/clear" ]]; then
                 echo "[$(date)] [SEND-KEYS] Copilot /clear: sending Ctrl-C + restart for $AGENT_ID" >&2
-                timeout 5 tmux send-keys -t "$PANE_TARGET" C-c 2>/dev/null || true
+                wk_send_soft C-c || return 1
                 sleep 2
-                timeout 5 tmux send-keys -t "$PANE_TARGET" "copilot --yolo" 2>/dev/null || true
+                wk_send_soft "copilot --yolo" || return 1
                 sleep 0.3
-                timeout 5 tmux send-keys -t "$PANE_TARGET" Enter 2>/dev/null || true
+                wk_send_soft Enter || return 1
                 sleep 3
                 return 0
             fi
@@ -756,9 +1068,9 @@ send_cli_command() {
                     return 0
                 fi
                 echo "[$(date)] [SEND-KEYS] Cursor /clear→/new-chat: starting new conversation for $AGENT_ID" >&2
-                timeout 5 tmux send-keys -t "$PANE_TARGET" "/new-chat" 2>/dev/null || true
+                wk_send_soft "/new-chat" || return 1
                 sleep 0.3
-                timeout 5 tmux send-keys -t "$PANE_TARGET" Enter 2>/dev/null || true
+                wk_send_soft Enter || return 1
                 sleep 3
                 NEW_CONTEXT_SENT=1
                 return 0
@@ -777,17 +1089,17 @@ send_cli_command() {
     # Clear stale input first, then send command (text and Enter separated for Codex TUI)
     # Codex CLI: C-c when idle causes CLI to exit — skip it
     if [[ "$effective_cli" != "codex" ]]; then
-        timeout 5 tmux send-keys -t "$PANE_TARGET" C-c 2>/dev/null || true
+        wk_send_soft C-c || return 1
         sleep 0.5
     fi
-    timeout 5 tmux send-keys -t "$PANE_TARGET" "$actual_cmd" 2>/dev/null || true
+    wk_send_soft "$actual_cmd" || return 1
     # /clear needs longer gap before Enter — CLI prompt may not be ready at 0.3s
     if [[ "$actual_cmd" == "/clear" || "$actual_cmd" == "/new" ]]; then
         sleep 1.0
     else
         sleep 0.3
     fi
-    timeout 5 tmux send-keys -t "$PANE_TARGET" Enter 2>/dev/null || true
+    wk_send_soft Enter || return 1
 
     # /clear needs extra wait time before follow-up
     if [[ "$actual_cmd" == "/clear" ]]; then
@@ -810,18 +1122,25 @@ send_cli_command() {
 send_startup_prompt() {
     # Poll until agent becomes idle (prompt ready) instead of fixed sleep.
     # Max 15s (3 attempts × 5s). If still busy after 15s, proceed anyway.
-    local attempt
-    for attempt in 1 2 3; do
+    # cmd_231 工程B / 殿命 S-19 追補: 『待機中のプロンプト』と言い切れるまで待つ。最後まで言い切れなければ
+    # 送らない(旧: 15秒待って "proceeding anyway" で送っていた)。送らなかった分は、次の周期の nudge(同じ関門)が起こす。
+    local attempt ready=0
+    for attempt in $(seq 1 "$WK_STARTUP_WAIT_TRIES"); do
         sleep 5
-        if ! agent_is_busy; then
-            echo "[$(date)] [STARTUP] $AGENT_ID idle after ${attempt}×5s — sending startup prompt" >&2
+        if wk_pane_ready empty; then
+            echo "[$(date)] [STARTUP] $AGENT_ID at idle prompt after ${attempt}×5s — sending startup prompt" >&2
+            ready=1
             break
         fi
-        echo "[$(date)] [STARTUP] $AGENT_ID still busy after ${attempt}×5s — retrying" >&2
+        echo "[$(date)] [STARTUP] $AGENT_ID not at idle prompt (screen=${WK_LAST_CLASS}) after ${attempt}×5s — waiting" >&2
     done
-    if agent_is_busy; then
-        echo "[$(date)] [STARTUP] $AGENT_ID still busy after 15s — proceeding with startup prompt anyway" >&2
+    if [ "$ready" -ne 1 ]; then
+        WK_PORT="startup-prompt"; WK_REFUSED=1
+        wk_log_withheld empty
+        echo "[$(date)] [STARTUP] $AGENT_ID: startup prompt withheld (no idle prompt within $((WK_STARTUP_WAIT_TRIES * 5))s)" >&2
+        return 0
     fi
+    wk_begin_seq "startup-prompt"
 
     local startup_prompt=""
     if type get_startup_prompt &>/dev/null; then
@@ -835,14 +1154,14 @@ send_startup_prompt() {
     echo "[$(date)] [STARTUP] Sending startup prompt to $AGENT_ID (${effective_cli}): ${startup_prompt:0:80}..." >&2
     # Dismiss suggestion UI, then send startup prompt
     if [[ "$effective_cli" != "opencode" ]]; then
-        timeout 5 tmux send-keys -t "$PANE_TARGET" "x" 2>/dev/null || true
+        wk_send_soft "x" || return 0
         sleep 0.3
-        timeout 5 tmux send-keys -t "$PANE_TARGET" C-u 2>/dev/null || true
+        wk_send_soft C-u || return 0
         sleep 0.3
     fi
-    timeout 5 tmux send-keys -l -t "$PANE_TARGET" "$startup_prompt" 2>/dev/null || true
+    wk_send_soft -l "$startup_prompt" || return 0
     sleep 0.3
-    timeout 5 tmux send-keys -t "$PANE_TARGET" Enter 2>/dev/null || true
+    wk_send_soft Enter || return 0
     STARTUP_PROMPT_SENT=1
 }
 
@@ -866,6 +1185,15 @@ send_context_reset() {
         return 0
     fi
 
+    # cmd_231 / 殿命S-19: 働き中と見える足軽には /clear・/new を送らぬ(観測不能もbusy側=従来の向き)。
+    # 見送った場合は return 1 — 呼び出し側は NEW_CONTEXT_SENT を立てず、idleになってから送り直す。
+    if agent_is_busy_for_clear; then
+        echo "[$(date)] [BUSY-GUARD] $AGENT_ID: context reset withheld (agent working or not observable)" >&2
+        return 1
+    fi
+    # cmd_231 工程B: 待機中のプロンプトと言い切れぬ画面(確認画面・判別不能 ほか)には /clear・/new も送らない
+    if ! wk_gate "context-reset"; then return 1; fi
+
     local reset_cmd
     case "$effective_cli" in
         codex)    reset_cmd="/new" ;;
@@ -886,16 +1214,16 @@ send_context_reset() {
     if [[ "$effective_cli" == "codex" || "$effective_cli" == "opencode" || "$effective_cli" == "cursor" ]]; then
         # Dismiss suggestion UI (Codex only) + send reset command
         if [[ "$effective_cli" == "codex" ]]; then
-            timeout 5 tmux send-keys -t "$PANE_TARGET" "x" 2>/dev/null || true
+            wk_send_soft "x" || return 1
             sleep 0.3
         fi
         if [[ "$effective_cli" != "cursor" ]]; then
-            timeout 5 tmux send-keys -t "$PANE_TARGET" C-u 2>/dev/null || true
+            wk_send_soft C-u || return 1
             sleep 0.3
         fi
-        timeout 5 tmux send-keys -t "$PANE_TARGET" "$reset_cmd" 2>/dev/null || true
+        wk_send_soft "$reset_cmd" || return 1
         sleep 0.3
-        timeout 5 tmux send-keys -t "$PANE_TARGET" Enter 2>/dev/null || true
+        wk_send_soft Enter || return 1
         sleep 3
         # Codex: send startup prompt (agent has no auto-loaded instructions).
         # OpenCode: skip — agent definition is auto-loaded via --agent flag.
@@ -907,10 +1235,10 @@ send_context_reset() {
 
     # Non-Codex CLIs: send /clear and wait for idle
     # Send the command (text and Enter separated for TUI compatibility)
-    timeout 5 tmux send-keys -t "$PANE_TARGET" "$reset_cmd" 2>/dev/null || true
+    wk_send_soft "$reset_cmd" || return 1
     # Longer gap for /clear — CLI prompt rendering needs time
     sleep 1.0
-    timeout 5 tmux send-keys -t "$PANE_TARGET" Enter 2>/dev/null || true
+    wk_send_soft Enter || return 1
     # Mark /clear timestamp so agent_is_busy() treats it as busy during processing
     if [[ "$reset_cmd" == "/clear" ]]; then
         LAST_CLEAR_TS=$(date +%s)
@@ -1039,7 +1367,19 @@ agent_is_busy() {
 agent_is_busy_for_clear() {
     agent_is_busy_tri
     local rc=$?
-    [ "$rc" -ne 1 ]
+    [ "$rc" -ne 1 ] && return 0
+    # cmd_231 / 殿命S-19: idle判定が idleフラグ由来だと、画面が働き中でも idle と読まれ得る
+    # (watcher自身が未読0のtickごとにフラグを置き直し、PreToolUseが消すまで残るため)。
+    # /clear系の破壊的動作では、フラグがidleでも画面が働き中なら busy とする(陽性の働き中証拠を優先)。
+    # 画面が idle / 観測不能のときは従来どおり(フラグのidleを尊重)。
+    local effective_cli pane_rc=0
+    effective_cli=$(get_effective_cli_type)
+    agent_is_busy_check "$PANE_TARGET" "$effective_cli" || pane_rc=$?
+    if [ "$pane_rc" -eq 0 ]; then
+        echo "[$(date)] [BUSY-GUARD] agent=$AGENT_ID idle verdict overridden: pane shows working — busy for /clear" >&2
+        return 0
+    fi
+    return 1
 }
 
 # ─── Pane focus detection (human safety) ───
@@ -1097,6 +1437,13 @@ send_wakeup() {
         return 0
     fi
 
+    # cmd_231 工程B / 殿命 S-19 追補: 起こし(nudge)も、画面が『待機中のプロンプト』と言い切れるときだけ送る。
+    # 旧: idle flag(または未観測)だけを根拠に送り、確認画面・作業中の足軽にも inboxN+Enter が入った(今宵 20件)。
+    # 見送ったら throttle も記帳しない(待機に戻った最初の周期で送る)。長く言い切れぬときは busy_guard_tick が殿へ知らせる。
+    if ! wk_gate "nudge"; then
+        return 0
+    fi
+
     if should_throttle_nudge "$unread_count"; then
         return 0
     fi
@@ -1138,9 +1485,9 @@ except Exception as e:
     fi
 
     if [[ "$effective_cli_for_nudge" == "codex" ]]; then
-        timeout 5 tmux send-keys -t "$PANE_TARGET" "x" 2>/dev/null || true
+        wk_send_soft "x" || return 0
         sleep 0.3
-        timeout 5 tmux send-keys -t "$PANE_TARGET" C-u 2>/dev/null || true
+        wk_send_soft C-u || return 0
         sleep 0.3
     fi
 
@@ -1148,17 +1495,18 @@ except Exception as e:
     local max_retries=2
     local attempt=0
     while [ $attempt -le $max_retries ]; do
-        # C-u で行をクリア
-        timeout 5 tmux send-keys -t "$PANE_TARGET" C-u 2>/dev/null || true
+        # C-u で行をクリア(見送ったら以降のキーも送らず終える)
+        wk_send_soft C-u || return 0
         sleep 0.3
         # nudge 送信
-        if ! timeout 5 tmux send-keys -t "$PANE_TARGET" "$nudge" 2>/dev/null; then
+        if ! wk_send_keys "$nudge"; then
+            if [ "$WK_REFUSED" -eq 1 ]; then return 0; fi
             echo "[$(date)] WARNING: send-keys nudge failed for $AGENT_ID (attempt $((attempt+1)))" >&2
             attempt=$((attempt+1))
             continue
         fi
         sleep 0.3
-        timeout 5 tmux send-keys -t "$PANE_TARGET" Enter 2>/dev/null || true
+        wk_send_soft Enter || return 0
         sleep 0.5
         if [[ "$effective_cli_for_nudge" == "codex" ]]; then
             # Codex echoes submitted text in the transcript; seeing inboxN after
@@ -1173,7 +1521,7 @@ except Exception as e:
         if echo "$pane_content" | grep -qF "$nudge"; then
             # nudgeテキストが残存 → 送信失敗 → C-u クリアしてリトライ
             echo "[$(date)] WARNING: nudge text still visible in pane, retrying (attempt $((attempt+1)))" >&2
-            timeout 5 tmux send-keys -t "$PANE_TARGET" C-u 2>/dev/null || true
+            wk_send_soft C-u || return 0
             sleep 0.3
             attempt=$((attempt+1))
             continue
@@ -1247,23 +1595,234 @@ send_wakeup_with_escape() {
         return 0
     fi
 
+    # cmd_231 工程B: Escape も『待機中のプロンプト』と言い切れる画面にだけ送る
+    if ! wk_gate "escape-nudge"; then return 0; fi
+
     echo "[$(date)] [SEND-KEYS] ESCALATION Phase 2: Escape×2 + nudge for $AGENT_ID (cli=$effective_cli)" >&2
     # Escape×2 to exit any mode
-    timeout 5 tmux send-keys -t "$PANE_TARGET" Escape Escape 2>/dev/null || true
+    wk_send_soft Escape Escape || return 0
     sleep 0.5
     if [[ "$effective_cli" == "copilot" || "$effective_cli" == "kimi" ]]; then
-        timeout 5 tmux send-keys -t "$PANE_TARGET" C-c 2>/dev/null || true
+        wk_send_soft C-c || return 0
         sleep 0.5
     fi
-    if timeout 5 tmux send-keys -t "$PANE_TARGET" "$nudge" 2>/dev/null; then
+    if wk_send_keys "$nudge"; then
         sleep 0.3
-        timeout 5 tmux send-keys -t "$PANE_TARGET" Enter 2>/dev/null || true
+        wk_send_soft Enter || return 0
         echo "[$(date)] Escape+nudge sent to $AGENT_ID (${unread_count} unread, cli=$effective_cli)" >&2
         return 0
     fi
+    if [ "$WK_REFUSED" -eq 1 ]; then return 0; fi
 
     echo "[$(date)] WARNING: send-keys failed for Escape+nudge ($AGENT_ID)" >&2
     return 0  # Never return 1 — set -euo pipefail would kill the watcher daemon
+}
+
+# ─── Busy guard: 待機と言い切れぬ状態が長く続くときの知らせ (cmd_231 / 殿命 S-19・追補 00:20) ───
+# キー(/clear・nudge ほか)は送らず、殿へ ntfy で知らせる。足軽ごとの状態ファイル(<BUSYGUARD_STATE_DIR>/<agent>.state,
+# key=value)に「待機と言い切れぬ画面が連続して観測された開始時刻」を持つ。idle が1度観測されたら止まる。
+#   busy_since        待機と言い切れぬ画面(作業中・確認画面・判別不能)が観測され続けている開始時刻
+#   unread_since      その間に未読が残り続けている開始時刻
+#   last_seen         最後に観測した時刻(途切れたら数え直す)
+#   unread_notified / long_notified   各知らせを最後に出した時刻   *_attempt  最後に試みた時刻
+#   confirm_since / confirm_sig / confirm_notified / confirm_attempt   確認画面(同じ画面の署名=末尾8行の cksum)
+# 判定は wk_screen_class(画面のみ)。idleフラグは watcher が置き直すので『待機』の証拠に使えない。
+# 画面を取れなかった(failed)ときは、連続を始めも止めもしない(保持)。
+_bg_state_file() { echo "${BUSYGUARD_STATE_DIR}/${AGENT_ID}.state"; }
+
+_bg_load() {
+    BG_BUSY_SINCE=0; BG_UNREAD_SINCE=0; BG_LAST_SEEN=0
+    BG_UNREAD_NOTIFIED=0; BG_LONG_NOTIFIED=0; BG_UNREAD_ATTEMPT=0; BG_LONG_ATTEMPT=0
+    BG_CONFIRM_SINCE=0; BG_CONFIRM_SIG=0; BG_CONFIRM_NOTIFIED=0; BG_CONFIRM_ATTEMPT=0
+    local f k v
+    f=$(_bg_state_file)
+    [ -f "$f" ] || return 0
+    while IFS='=' read -r k v; do
+        case "$v" in ''|*[!0-9]*) continue ;; esac
+        case "$k" in
+            busy_since) BG_BUSY_SINCE=$v ;;
+            unread_since) BG_UNREAD_SINCE=$v ;;
+            last_seen) BG_LAST_SEEN=$v ;;
+            unread_notified) BG_UNREAD_NOTIFIED=$v ;;
+            long_notified) BG_LONG_NOTIFIED=$v ;;
+            unread_attempt) BG_UNREAD_ATTEMPT=$v ;;
+            long_attempt) BG_LONG_ATTEMPT=$v ;;
+            confirm_since) BG_CONFIRM_SINCE=$v ;;
+            confirm_sig) BG_CONFIRM_SIG=$v ;;
+            confirm_notified) BG_CONFIRM_NOTIFIED=$v ;;
+            confirm_attempt) BG_CONFIRM_ATTEMPT=$v ;;
+        esac
+    done < "$f"
+    return 0
+}
+
+_bg_save() {
+    local f tmp
+    f=$(_bg_state_file)
+    mkdir -p "$BUSYGUARD_STATE_DIR" 2>/dev/null || return 0
+    tmp="${f}.tmp.$$"
+    {
+        echo "busy_since=$BG_BUSY_SINCE"
+        echo "unread_since=$BG_UNREAD_SINCE"
+        echo "last_seen=$BG_LAST_SEEN"
+        echo "unread_notified=$BG_UNREAD_NOTIFIED"
+        echo "long_notified=$BG_LONG_NOTIFIED"
+        echo "unread_attempt=$BG_UNREAD_ATTEMPT"
+        echo "long_attempt=$BG_LONG_ATTEMPT"
+        echo "confirm_since=$BG_CONFIRM_SINCE"
+        echo "confirm_sig=$BG_CONFIRM_SIG"
+        echo "confirm_notified=$BG_CONFIRM_NOTIFIED"
+        echo "confirm_attempt=$BG_CONFIRM_ATTEMPT"
+    } > "$tmp" 2>/dev/null && mv -f "$tmp" "$f" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+    return 0
+}
+
+_bg_reset_confirm() { BG_CONFIRM_SINCE=0; BG_CONFIRM_SIG=0; BG_CONFIRM_NOTIFIED=0; BG_CONFIRM_ATTEMPT=0; }
+
+_bg_reset_run() {
+    BG_BUSY_SINCE=0; BG_UNREAD_SINCE=0
+    BG_UNREAD_NOTIFIED=0; BG_LONG_NOTIFIED=0; BG_UNREAD_ATTEMPT=0; BG_LONG_ATTEMPT=0
+    _bg_reset_confirm
+}
+
+# 足軽の現在の task_id(取れなければ "不明")。秘匿値は載らぬ値のみ。
+_bg_task_id() {
+    local tf="${SCRIPT_DIR}/queue/tasks/${AGENT_ID}.yaml" t=""
+    if [ -f "$tf" ]; then
+        t=$(grep -m1 -E '^[[:space:]]*task_id:' "$tf" 2>/dev/null | sed -E 's/^[[:space:]]*task_id:[[:space:]]*//; s/^["'"'"']//; s/["'"'"'][[:space:]]*$//; s/[[:space:]]+#.*$//' || true)
+    fi
+    echo "${t:-不明}"
+}
+
+# _bg_notify <種別> <本文> — 0=送れた。送り先は BUSYGUARD_NOTIFY_CMD(試験の写し)、無ければ scripts/ntfy.sh。
+# cmd_231 工程B(軍師指摘1): 戻り値(終了コード)を必ずログに残す。失敗は [NOTIFY-FAIL] で見えるようにし、黙って捨てぬ。
+# ログに載せるのは 種別・足軽名・終了コード・失敗の分類のみ(本文・topic・認証・ntfy.sh の生のエラー文は載せない)。
+# 失敗しても watcher は落とさぬ(戻り値で返すだけ)。再試行は呼び側が BUSYGUARD_RETRY_SEC 間隔で行う。
+_bg_notify() {
+    local kind="$1" msg="$2" rc=0 err="" reason="unclassified"
+    # 標準出力は捨て、標準エラーだけを分類のために受ける(生の文言はログに載せない)
+    if [ -n "$BUSYGUARD_NOTIFY_CMD" ]; then
+        err=$({ timeout 20 "$BUSYGUARD_NOTIFY_CMD" "$msg" >/dev/null; } 2>&1) || rc=$?
+    else
+        err=$({ timeout 20 bash "${SCRIPT_DIR}/scripts/ntfy.sh" "$msg" >/dev/null; } 2>&1) || rc=$?
+    fi
+    if [ "$rc" -eq 0 ]; then
+        echo "[$(date)] [NOTIFY-OK] kind=$kind agent=$AGENT_ID rc=0" >&2
+        return 0
+    fi
+    if [ "$rc" -eq 124 ]; then
+        reason="timeout"
+    else
+        case "$err" in
+            *"secrets.env not found"*) reason="secrets_file_missing" ;;
+            *"NTFY_TOPIC is not set"*) reason="topic_unset" ;;
+            *"curl exit"*) reason="curl_error" ;;
+            *"HTTP status"*) reason="http_error" ;;
+        esac
+    fi
+    echo "[$(date)] [NOTIFY-FAIL] kind=$kind agent=$AGENT_ID rc=$rc reason=$reason — 殿に届いていない。${BUSYGUARD_RETRY_SEC}秒後に再試行する" >&2
+    return "$rc"
+}
+
+# _bg_screen_sig — 確認画面の署名(末尾8行の cksum・数字のみ)。同じ確認画面かどうかの判定用。
+_bg_screen_sig() {
+    local sig
+    sig=$(timeout 2 tmux capture-pane -t "$PANE_TARGET" -p 2>/dev/null | grep -v '^[[:space:]]*$' | tail -8 | cksum | cut -d' ' -f1) || sig=""
+    case "$sig" in ''|*[!0-9]*) sig=1 ;; esac
+    echo "$sig"
+}
+
+# busy_guard_tick <未読件数(不明なら空)>
+# 1サイクルに1回呼ぶ。画面を観測して状態ファイルを更新し、目安を超えていれば殿へ知らせる。
+busy_guard_tick() {
+    local unread="${1:-}"
+    # shogun は殿の操作する pane。見張り役はここへ手を出さぬ(従来どおり)。
+    [ "$AGENT_ID" = "shogun" ] && return 0
+
+    local now cls
+    now=$(_now_epoch)
+    cls=$(wk_screen_class empty)
+
+    _bg_load
+    # 観測が長く途切れていた(見張り役が止まっていた等)なら、古い連続は信用せず数え直す
+    if [ "$BG_LAST_SEEN" -gt 0 ] && [ "$((now - BG_LAST_SEEN))" -gt "$BUSYGUARD_RESUME_GAP_SEC" ]; then
+        _bg_reset_run
+    fi
+
+    case "$cls" in
+        working|confirm|undetermined)  # 待機と言い切れぬ — 連続の対象
+            [ "$BG_BUSY_SINCE" -eq 0 ] && BG_BUSY_SINCE=$now
+            if [ "$unread" = "0" ]; then
+                BG_UNREAD_SINCE=0; BG_UNREAD_NOTIFIED=0; BG_UNREAD_ATTEMPT=0
+            elif [ -n "$unread" ] && [ "$BG_UNREAD_SINCE" -eq 0 ]; then
+                BG_UNREAD_SINCE=$now
+            fi
+            ;;
+        idle)  # 待機 — 連続はここで止まる
+            _bg_reset_run
+            ;;
+        *)  : ;;  # failed — 保持
+    esac
+    BG_LAST_SEEN=$now
+
+    local what="働き中の"
+    case "$cls" in
+        confirm) what="確認画面で止まった" ;;
+        undetermined) what="待機と判じられぬ画面の" ;;
+    esac
+
+    if [ "$BG_BUSY_SINCE" -gt 0 ]; then
+        local repeat_sec=$((BUSYGUARD_REPEAT_MIN * 60))
+        local task_id msg mins busy_mins
+        task_id=$(_bg_task_id)
+
+        # ⓪ 確認画面: 待たずにすぐ1回。同じ画面が続く間は BUSYGUARD_CONFIRM_REPEAT_MIN 分ごとに1回(毎tick送らぬ)
+        if [ "$cls" = "confirm" ]; then
+            local sig
+            sig=$(_bg_screen_sig)
+            if [ "$BG_CONFIRM_SINCE" -eq 0 ] || [ "$BG_CONFIRM_SIG" != "$sig" ]; then
+                # 初めて見た確認画面、または別の確認画面 → 数え直して即時に知らせる
+                BG_CONFIRM_SINCE=$now; BG_CONFIRM_SIG=$sig; BG_CONFIRM_NOTIFIED=0; BG_CONFIRM_ATTEMPT=0
+            fi
+            if { [ "$BG_CONFIRM_NOTIFIED" -eq 0 ] || [ "$((now - BG_CONFIRM_NOTIFIED))" -ge "$((BUSYGUARD_CONFIRM_REPEAT_MIN * 60))" ]; } \
+               && { [ "$BG_CONFIRM_ATTEMPT" -eq 0 ] || [ "$((now - BG_CONFIRM_ATTEMPT))" -ge "$BUSYGUARD_RETRY_SEC" ]; }; then
+                mins=$(( (now - BG_CONFIRM_SINCE) / 60 ))
+                msg="🛑 ${AGENT_ID}が確認画面で止まっている(task=${task_id}、継続${mins}分、未読${unread:-?}件)。キーは一切送っていない。人の手で答えが要る"
+                echo "[$(date)] [BUSY-GUARD] notify(confirm) agent=$AGENT_ID confirm_for=${mins}m task=$task_id" >&2
+                BG_CONFIRM_ATTEMPT=$now
+                if _bg_notify confirm "$msg"; then BG_CONFIRM_NOTIFIED=$now; fi
+            fi
+        else
+            _bg_reset_confirm
+        fi
+
+        # ① 待機と言い切れぬまま未読が残る
+        if [ "$BG_UNREAD_SINCE" -gt 0 ] && [ "$((now - BG_UNREAD_SINCE))" -ge "$((BUSYGUARD_UNREAD_MIN * 60))" ] \
+           && { [ "$BG_UNREAD_NOTIFIED" -eq 0 ] || [ "$((now - BG_UNREAD_NOTIFIED))" -ge "$repeat_sec" ]; } \
+           && { [ "$BG_UNREAD_ATTEMPT" -eq 0 ] || [ "$((now - BG_UNREAD_ATTEMPT))" -ge "$BUSYGUARD_RETRY_SEC" ]; }; then
+            mins=$(( (now - BG_UNREAD_SINCE) / 60 ))
+            busy_mins=$(( (now - BG_BUSY_SINCE) / 60 ))
+            msg="⏳ ${AGENT_ID}が${what}まま未読${unread:-?}件が${mins}分残っている(task=${task_id}、待機でない状態${busy_mins}分)。キーは送っていない"
+            echo "[$(date)] [BUSY-GUARD] notify(unread) agent=$AGENT_ID screen=$cls unread_for=${mins}m busy_for=${busy_mins}m task=$task_id" >&2
+            BG_UNREAD_ATTEMPT=$now
+            if _bg_notify unread "$msg"; then BG_UNREAD_NOTIFIED=$now; fi
+        fi
+
+        # ② 未読の有無を問わず待機と言い切れぬ状態が連続(判別不能だけは未読が無ければ知らせぬ=無害な見慣れぬ画面で騒がぬ)
+        if [ "$cls" != "undetermined" ] \
+           && [ "$((now - BG_BUSY_SINCE))" -ge "$((BUSYGUARD_CONTINUOUS_MIN * 60))" ] \
+           && { [ "$BG_LONG_NOTIFIED" -eq 0 ] || [ "$((now - BG_LONG_NOTIFIED))" -ge "$repeat_sec" ]; } \
+           && { [ "$BG_LONG_ATTEMPT" -eq 0 ] || [ "$((now - BG_LONG_ATTEMPT))" -ge "$BUSYGUARD_RETRY_SEC" ]; }; then
+            mins=$(( (now - BG_BUSY_SINCE) / 60 ))
+            msg="⏳ ${AGENT_ID}が${what}まま${mins}分連続している(task=${task_id}、未読${unread:-?}件)。キーは送っていない"
+            echo "[$(date)] [BUSY-GUARD] notify(continuous) agent=$AGENT_ID screen=$cls busy_for=${mins}m task=$task_id" >&2
+            BG_LONG_ATTEMPT=$now
+            if _bg_notify continuous "$msg"; then BG_LONG_NOTIFIED=$now; fi
+        fi
+    fi
+
+    _bg_save
+    return 0
 }
 
 # ─── Process cycle ───
@@ -1303,6 +1862,8 @@ print(c if c is not None else '')
         FIRST_UNREAD_SEEN=0
         NEW_CONTEXT_SENT=0
         reset_nudge_throttle
+        # cmd_231: 働き中の連続を数える(未読0の周期も観測する)
+        busy_guard_tick 0 || true
         # Ensure idle flag exists (fast-path recovery)
         touch "${IDLE_FLAG_DIR:-/tmp}/shogun_idle_${AGENT_ID}" 2>/dev/null || true
         if ! agent_is_busy; then
@@ -1310,7 +1871,9 @@ print(c if c is not None else '')
             if [ "$AGENT_ID" = "shogun" ] && pane_is_active; then
                 : # Lord may be typing — skip C-u
             else
-                timeout 2 tmux send-keys -t "$PANE_TARGET" C-u 2>/dev/null || true
+                # cmd_231 工程B: 入力欄の打ち残し掃除の C-u も、待機中のプロンプトと言い切れるときだけ
+                wk_begin_seq "clear-input"
+                wk_send_soft C-u || true
             fi
         fi
         return 0
@@ -1398,57 +1961,40 @@ for s in data.get('specials', []):
     local normal_count
     normal_count=$(echo "$info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(json.load(sys.stdin).get('count',0))" 2>/dev/null)
 
+    # cmd_231: 働き中の連続を観測し、目安を超えたら /clear せず殿へ知らせる(下の経路とは独立)
+    busy_guard_tick "$normal_count" || true
+
     # Check if unread messages include task_assigned (for context reset)
     local has_task_assigned
     has_task_assigned=$(echo "$info" | "$SCRIPT_DIR/.venv/bin/python3" -c "import sys,json; print(1 if json.load(sys.stdin).get('has_task_assigned') else 0)" 2>/dev/null)
 
     if [ "$normal_count" -gt 0 ] 2>/dev/null; then
         local now
-        now=$(date +%s)
+        now=$(_now_epoch)
 
         # When the agent is busy/thinking, do NOT escalate. Interrupting with Escape or /clear
         # can terminate the current thought. Also pause the escalation timer while busy so we
         # don't immediately jump to Phase 2/3 once it becomes idle.
         # Exception: shogun — ntfy must be delivered immediately.
-        # Safety net: if busy detection persists for >5 min, assume false-busy (stale flag)
-        # and force-create idle flag to allow nudge delivery.
+        #
+        # cmd_231 / 殿命S-19: 旧「stale busy recovery」(busyが5分続くと idle フラグを強制作成して
+        # 下の nudge/escalation へ落とす)は撤去した。あれは『画面が働き中の足軽』を idle と見なし直し、
+        # 続く Phase 3 で /clear を送って作業を壊した(2026-10-12 22:08・23:26 足軽1)。
+        # 働き中のまま長く続くときは /clear せず、busy_guard_tick(上)が殿へ ntfy で知らせる。
         if agent_is_busy && [[ "$AGENT_ID" != "shogun" ]]; then
             local busy_cli
             busy_cli=$(get_effective_cli_type)
-            # Stale busy safety net: if agent has been "busy" for >5 minutes with
-            # unread messages, force-create idle flag. This recovers from false-busy
-            # deadlock where stop_hook failed to create the flag.
-            #
-            # cmd_126 Part 2 / Fable裁定20260729 Q12: この発火(WARNING行、
-            # grep -c 'stale busy recovery')は絶対回数ではなく
-            #   stale busy recovery発火回数 ÷ [BUSY-DETERMINATION]総数(grep -c)
-            # の比率(配達機会あたりの発火率)で読むこと。かつ解釈順序を固定する
-            # — Q11是正(フラグ不在→pane解析への縦続)が実トラフィックに乗るまでは、
-            # 発火率が下がらなくても「別の穴」ではなく「修正が当該経路に未到達」
-            # と読め。Q8-(4)の読み筋(激減しなければ別の穴)はQ11是正の反映後に
-            # 初めて適用する。それまでの計測はベースライン収集と位置づける。
-            local stale_busy_limit=300  # 5 minutes
-            if [ "${FIRST_UNREAD_SEEN:-0}" -gt 0 ] && [ "$((now - FIRST_UNREAD_SEEN))" -ge "$stale_busy_limit" ]; then
-                echo "[$(date)] WARNING: $AGENT_ID busy for $((now - FIRST_UNREAD_SEEN))s with $normal_count unread — forcing idle flag (stale busy recovery)" >&2
-                touch "${IDLE_FLAG_DIR:-/tmp}/shogun_idle_${AGENT_ID}"
-                # Fall through to normal nudge/escalation below
+            # 段階の時計は働き中のあいだ止める(idleに戻った時点から数え直す)。
+            FIRST_UNREAD_SEEN=$now
+            if [[ "$busy_cli" == "claude" ]]; then
+                # Claude Code: Stop hook will catch unread messages when the agent's
+                # turn ends. No nudge needed at all — just log and skip completely.
+                echo "[$(date)] $normal_count unread for $AGENT_ID but agent is busy (claude) — Stop hook will deliver" >&2
             else
-                if [[ "$busy_cli" == "claude" ]]; then
-                    # Claude Code: Stop hook will catch unread messages when the agent's
-                    # turn ends. No nudge needed at all — just log and skip completely.
-                    # Set FIRST_UNREAD_SEEN so the stale-busy safety net (above) can
-                    # activate if the stop hook never fires.
-                    if [ "${FIRST_UNREAD_SEEN:-0}" -eq 0 ]; then
-                        FIRST_UNREAD_SEEN=$now
-                    fi
-                    echo "[$(date)] $normal_count unread for $AGENT_ID but agent is busy (claude) — Stop hook will deliver" >&2
-                else
-                    # Codex/Copilot/Kimi/OpenCode: No Stop hook. Pause escalation timer while busy.
-                    FIRST_UNREAD_SEEN=$now
-                    echo "[$(date)] $normal_count unread for $AGENT_ID but agent is busy ($busy_cli) — pausing escalation timer" >&2
-                fi
-                return 0
+                # Codex/Copilot/Kimi/OpenCode: No Stop hook. Pause escalation timer while busy.
+                echo "[$(date)] $normal_count unread for $AGENT_ID but agent is busy ($busy_cli) — pausing escalation timer" >&2
             fi
+            return 0
         fi
 
         # ─── Context reset before new task ───
@@ -1457,9 +2003,11 @@ for s in data.get('specials', []):
         # Skip if: (1) already sent this batch, (2) clear_command already handled above,
         #          (3) agent is shogun (human-controlled).
         if [ "$has_task_assigned" = "1" ] && [ "$NEW_CONTEXT_SENT" -eq 0 ] && [ "$clear_seen" -eq 0 ]; then
-            send_context_reset
-            NEW_CONTEXT_SENT=1
-            LAST_ASSIGNMENT_TS=$(date +%s)
+            # cmd_231: 働き中と見えるあいだは見送る(NEW_CONTEXT_SENT を立てず、idleになってから送る)
+            if send_context_reset; then
+                NEW_CONTEXT_SENT=1
+                LAST_ASSIGNMENT_TS=$(date +%s)
+            fi
         fi
 
         # If startup prompt was just sent (Codex), skip follow-up nudge this cycle.
@@ -1535,11 +2083,20 @@ for s in data.get('specials', []):
                     FIRST_UNREAD_SEEN=$now  # Reset timer
                     send_wakeup_with_escape "$normal_count"
                 else
+                    # cmd_231 / 殿命S-19: 働き中と見えるなら /clear しない。何も記帳せず(時計も cooldown も
+                    # 動かさず)次の周期で見直す。長く続けば busy_guard_tick が殿へ知らせる。
+                    if agent_is_busy_for_clear; then
+                        echo "[$(date)] [BUSY-GUARD] ESCALATION Phase 3 withheld for $AGENT_ID (${age}s): agent working — no /clear" >&2
+                        return 0
+                    fi
                     echo "[$(date)] ESCALATION Phase 3: Agent $AGENT_ID unresponsive for ${age}s. Sending /clear." >&2
-                    send_cli_command "/clear"
-                    LAST_CLEAR_TS=$now
-                    FIRST_UNREAD_SEEN=0  # Reset — will re-detect on next cycle
-                    NEW_CONTEXT_SENT=0
+                    # cmd_231 工程B: 画面が待機中のプロンプトと言い切れず見送られた(return 1)ときは、送った扱いにしない
+                    # (時計も cooldown も動かさず、次の周期で見直す。長く続けば busy_guard_tick が殿へ知らせる)。
+                    if send_cli_command "/clear"; then
+                        LAST_CLEAR_TS=$now
+                        FIRST_UNREAD_SEEN=0  # Reset — will re-detect on next cycle
+                        NEW_CONTEXT_SENT=0
+                    fi
                 fi
             else
                 # Cooldown active — fall back to Escape+nudge
@@ -1565,7 +2122,8 @@ for s in data.get('specials', []):
             if [ "$AGENT_ID" = "shogun" ] && pane_is_active; then
                 : # Lord may be typing — skip C-u
             else
-                timeout 2 tmux send-keys -t "$PANE_TARGET" C-u 2>/dev/null || true
+                wk_begin_seq "clear-input"
+                wk_send_soft C-u || true
             fi
         fi
     fi

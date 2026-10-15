@@ -23,7 +23,8 @@
 #   T-BUSY-002: agent_is_busy — idle pane returns 1
 #   T-CODEX-001: send_cli_command — codex /clear → /new conversion
 #   T-CODEX-002: send_cli_command — codex /model → skip
-#   T-OPENCODE-001: send_cli_command — opencode /clear → /new conversion
+#   T-OPENCODE-001: send_cli_command — opencode /clear → /new conversion (pane shows ❯ prompt)
+#   T-OPENCODE-001b: send_cli_command — opencode pane not provably idle (no ❯) → no keys sent
 #   T-OPENCODE-002: send_cli_command — opencode /model → skip
 #   T-CODEX-003: C-u sent when unread=0 and agent is idle
 #   T-CODEX-005: send_cli_command — claude /clear passes through as-is
@@ -450,11 +451,13 @@ MOCK
     echo "$output" | grep -q "not supported on codex"
 }
 
-# --- T-OPENCODE-001: opencode /clear → /new conversion ---
+# --- T-OPENCODE-001: opencode /clear → /new conversion (idle prompt marker ❯ present) ---
+# cmd_231 / S-27: every watcher keystroke is gated on an idle-prompt screen check (wk_gate).
+# The conversion logic is verified on a screen that unambiguously shows the input marker ❯.
 
-@test "T-OPENCODE-001: send_cli_command converts /clear to /new for opencode" {
+@test "T-OPENCODE-001: send_cli_command converts /clear to /new for opencode when the pane shows the ❯ prompt" {
     run bash -c '
-        MOCK_CAPTURE_PANE="first line\nsecond line\nthird line\n"
+        MOCK_CAPTURE_PANE="$(printf "first line\nsecond line\n❯ \n")"
         MOCK_PANE_CLI="opencode"
         source "'"$TEST_HARNESS"'"
         CLI_TYPE="opencode"
@@ -468,6 +471,27 @@ MOCK
     ! grep -q "send-keys.*/clear" "$MOCK_LOG"
     ! grep -q "send-keys.*Escape" "$MOCK_LOG"
     ! grep -q "send-keys.*C-c" "$MOCK_LOG"
+}
+
+# --- T-OPENCODE-001b: opencode pane that cannot be called idle → no keys at all ---
+# OpenCode is a dormant asset: its mock screen has no input marker (❯), so the gate cannot
+# call it idle and withholds every key (design intent, cmd_231 / S-27). Keys must not be sent.
+
+@test "T-OPENCODE-001b: send_cli_command sends no keys to an opencode pane that is not provably idle" {
+    run bash -c '
+        MOCK_CAPTURE_PANE="first line\nsecond line\nthird line\n"
+        MOCK_PANE_CLI="opencode"
+        source "'"$TEST_HARNESS"'"
+        CLI_TYPE="opencode"
+        send_cli_command "/clear"
+    '
+    # Withheld: return 1 so the caller does not treat it as sent and retries once idle.
+    [ "$status" -eq 1 ]
+    echo "$output" | grep -q "KEY-WITHHELD"
+
+    # The screen was inspected, but not a single key (/new, C-u, Enter, anything) was sent.
+    grep -q "capture-pane" "$MOCK_LOG"
+    ! grep -q "send-keys" "$MOCK_LOG"
 }
 
 # --- T-OPENCODE-002: opencode /model → skip with restart-only note ---
