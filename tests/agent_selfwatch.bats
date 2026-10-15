@@ -45,6 +45,7 @@ CLI_TYPE="${TEST_CLI_TYPE:-claude}"
 INBOX="$TEST_INBOX"
 LOCKFILE="${INBOX}.lock"
 SCRIPT_DIR="$PROJECT_ROOT"
+export BUSYGUARD_STATE_DIR="$TEST_TMPDIR/watcher_busy"
 
 tmux() {
     echo "tmux $*" >> "$MOCK_LOG"
