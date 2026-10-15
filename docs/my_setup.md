@@ -67,7 +67,7 @@ Claude Max 5x（$100/月）にアップグレードし、自分のPCスペック
 │
 │ 自然言語で指示・承認のみ
 ▼
-将軍 ── Claude Code（Sonnet 5.5）
+将軍 ── Claude Code（Opus 5.5）
 │　　　戦略判断・タスク分解・統括
 ▼
 家老 ── Claude Code（Sonnet 5.5）
@@ -81,7 +81,7 @@ Claude Max 5x（$100/月）にアップグレードし、自分のPCスペック
 ▼          ▼          ▼          ▼          ▼          ▼          ▼
 足軽1      足軽2      足軽3      足軽4      足軽5      足軽6      足軽7
 Sonnet     Sonnet     Sonnet     Sonnet     Sonnet     Haiku      Haiku
-5.5        5.5        5.5        5.5        5.5        4.5        4.5
+5.5        5.5        5.5        5.5        5.5        5.5        5.5
 （重量）   （重量）   （重量）   （重量）   （重量）   （軽量）   （軽量）
 ```
 
@@ -93,20 +93,9 @@ Sonnet     Sonnet     Sonnet     Sonnet     Sonnet     Haiku      Haiku
 | 家老（Karo） | Claude Code | claude-sonnet-5-5 | タスク分解・足軽への割当・品質判定 |
 | 軍師（Gunshi） | Claude Code | claude-sonnet-5-5 | 品質チェック・ダッシュボード更新 |
 | 足軽1-5（Ashigaru1-5） | Claude Code | claude-sonnet-5-5 | 重量実行タスク（常時稼働） |
-| 足軽6/7（Ashigaru6/7） | Claude Code | claude-haiku-4-5-20251001 | 高速軽量タスク（Haiku枠） |
+| 足軽6/7（Ashigaru6/7） | Claude Code | claude-haiku-5-5（effort: medium） | 高速軽量タスク（Haiku枠） |
 
-> 🔴cmd_133是正: 足軽3/4の行はOpenCode+OpenRouter/Ollama時代のまま放置され、
-> フリート全Claude化（cmd_133でSonnet帯4席化）後も表が実態を追従していなかった。
-> 「表示と実態の乖離」族（cmd_116 S-2のWATCHER_STATUS虚偽表示、cmd_128の
-> dashboard時刻列と同族）として記録する（2026-07-29是正、その後の出陣で実プロセスも
-> Sonnet化済み・2026-08-04時点で`ps`実測確認済み）。
->
-> 注（2026-08-04 cmd_145 Part1a）: 上表の足軽5行（Haiku→Sonnet昇格）も足軽3/4と
-> 同型の経過をたどる。config/settings.yaml反映は本サブタスクで実施済みだが、
-> **次回出陣（`shutsujin_departure.sh`実行・家老が別サブタスクで実施予定）後に
-> 有効**となる設定である。本ページ更新時点（2026-08-04）では、足軽5の実プロセスは
-> まだ`claude-haiku-4-5-20251001`で稼働中（`ps aux`実測確認済み）。次回出陣までは
-> この1行は意図的な前倒し記載である。
+> 布陣の一次資料は `config/settings.yaml`。本表と食い違うときは settings.yaml を正とする。詳細は末尾の「現在の環境の状態」を参照。
 
 ---
 
@@ -114,10 +103,11 @@ Sonnet     Sonnet     Sonnet     Sonnet     Sonnet     Haiku      Haiku
 
 | 項目 | コスト |
 |---|---|
-| Claude Max 5x（将軍・家老・軍師・足軽1/2/5） | $100/月（固定） |
-| OpenRouter（足軽3） | 無料（$10一度購入で1000req/日解放・以降は無料運用） |
-| Ollama（足軽4） | 無料（自PC・GPU推論） |
+| Claude Max 5x（全10体） | $100/月（固定） |
+| Gemini CLI・OpenCode・Ollama | 休眠中（0円） |
 | **合計** | **$100/月** |
+
+> 旧構成では OpenRouter（足軽3）と Ollama（足軽4）を無料枠として併用していた。現在は全員 Claude Code で動かしている。
 
 ---
 
@@ -181,14 +171,16 @@ codd validate → codd implement → codd assemble → codd verify
 | WSL2 | Ubuntu（Dドライブに構築） |
 | GPU | RTX 4060 Ti 8GB |
 | Claude Code | Max 5x $100/月 |
-| Ollama | qwen3.5:9b（GPU推論） |
-| Gemini CLI | v0.44.1 |
-| OpenCode | ashigaru4（Ollama連携LLM実行） |
+| Ollama | qwen3.5:9b（GPU推論。休眠中） |
+| Gemini CLI | v0.44.1（休眠中） |
+| OpenCode | 休眠中（旧構成では ashigaru4 の Ollama 連携に使用） |
 | 既存ツール | VSCode＋GitHub Copilot（併用継続） |
 
 ---
 
 ## 工夫した点・学んだこと
+
+> 本節のうち、Ollama・Gemini CLI・OpenCode を使った足軽の使い分けは旧構成時の学び。現在は全員 Claude Code で動かしている。
 
 **コスト削減の核心はイベント駆動**  
 ポーリング方式だとAPI消費が爆発するが、inotifywait によるイベント駆動にすることで待機中のAPI消費をゼロにできる。
@@ -216,40 +208,63 @@ Claude Code・Gemini CLI・OpenCode はそれぞれ異なるインターフェ�
 
 ---
 
-## 現在の環境の状態（2026-08-05時点・Fable追記）
+## 現在の環境の状態（2026-10-15時点）
 
-> 本節が現況の正。上部の「コスト構成」（OpenRouter/Ollama記載）・「構築環境」（Gemini CLI / OpenCode現役記載）は旧構成の歴史記録であり、現在はフリート全Claude化済み（cmd_070/075）。Ollama・OpenCode一式は休眠温存（削除禁止、opencode修正版リリース時に設定1行で再開可）。
+> 本節が現況の正。上の「元の構成」「構築の経緯」「自分の環境への最適化」「工夫した点」は経緯の記録。布陣と設定の一次資料は `config/settings.yaml`（git 追跡外の手元設定。書式は `settings.yaml.example`）。
+> 2026-10 に上流（yohey-w/multi-agent-shogun）を土台に建て直し、自家製の監視・関門の仕組みの多くを外した。
 
-### 布陣（config/settings.yaml 準拠）
+### 布陣
 
-| エージェント | モデル | 備考 |
+| エージェント | モデル | effort |
 |---|---|---|
-| 将軍 | claude-opus-5-5 (effort: high) | Opus維持は意図的な設計判断 |
-| 家老・軍師 | claude-sonnet-5-5 (effort: high) | cmd_109でeffort明示（暗黙継承事故予防） |
-| 足軽1〜5 | claude-sonnet-5-5 (effort: high) | Sonnet帯5席化（cmd_145 Part1a, 2026-08-04殿裁定） |
-| 足軽6/7 | claude-haiku-4-5-20251001 | 軽量枠 |
+| 将軍 | claude-opus-5-5 | high |
+| 家老・軍師 | claude-sonnet-5-5 | high |
+| 足軽1〜5 | claude-sonnet-5-5 | high |
+| 足軽6/7 | claude-haiku-5-5 | medium（2026-10-15 に Haiku 4.5 から切替） |
 
-- **Sonnet×5＋Haiku×2** が現行ロースター。cmd_133のSonnet帯4席化（足軽3/4昇格）を経て、cmd_145 Part1aで足軽5を追加昇格（席1-5/6-7の連続性維持）。
-- 注意: 足軽5のconfig反映は2026-08-04実施済みだが**次回出陣（shutsujin_departure.sh）後に有効**。追記時点で出陣未実施なら実プロセスはHaikuのまま（`ps aux`で要実測確認）。
+- 起動コマンドは `lib/cli_adapter.sh` の `build_cli_command` が settings.yaml から組み立てる（出陣スクリプト・`scripts/switch_cli.sh` の両方が使う）。
+- Gemini CLI・OpenCode・Ollama は休眠（削除せず温存）。
 
-### 有効なfeature flags（settings.yaml）
+### Claude Code Mods（2026-10 導入）
 
-| flag | 値 | 根拠 |
+観察と表示のみに使う。tool 呼び出し・プロンプト・モデルに渡す文脈は変えない（拒否・承認・代理応答もしない）。各エージェントの起動時に `--plugin-dir` で読み込む。宣言は settings.yaml の `cli.agents.<名>.mods`、本体は `mods/` 配下（git 追跡）。
+
+| Mod | 読み込む先 | 内容 |
 |---|---|---|
-| yaml_guard_enabled | **enforce** | cmd_135（2026-07-29）。Fable裁定Q6の4条件（評価141件・出陣2回跨ぎ・偽would-deny 0・fail-open 0）充足確認後に移行。反復deny警報（cmd_134工程2）併設済み |
-| reporting_mode | **exception** | cmd_136 省力化3点セット。正常完了はdashboard記録のみ、ntfyは失敗・ブロック・caveat付き完了・殿裁定要・警報のみ。常時ntfy対象の適用除外: go-harvesterレビュー / Fable裁定案件 / 緊急実害進行中 |
-| reversibility_check_enabled | **observe** | cmd_145 Part4是正（2026-08-04）で新設。flag不在によりPart4が本番不活性（fail-safe off固定）だった事故の是正。off\|observe二値、未知値は必ずoffへ倒すfail-safe設計 |
+| mods/status | 将軍のみ | プロンプトの上の帯に、進行中の cmd 数・🚨件数・各エージェントの状態を1行で表示。前提どおりに読めないときは 0 ではなく「?」を出す |
+| mods/audit | 全10体 | tool 呼び出しとターンの開始・完了を `logs/audit/YYYY-MM/<エージェント名>.jsonl` に追記（git 追跡外）。記録は tool 名・対象パス・成否のみで、Bash のコマンド文字列は残さない |
+| mods/banner | 全10体 | プロンプトの上に役職名（⚔ 将軍 など）を表示 |
+| mods/toolrow | 全10体 | tool 呼び出しの見出し行を武士風の名に言い換え、元の名を括弧で残す（例: 陣触れ（Bash））。通常の画面では Bash などの呼び出しは畳まれて集計行になるため、詳細表示で見える |
 
-その他: dashboard_staleness段階的再通知（cmd_146③、360分→720分→1440分間隔）。
+- 考え中の動詞の武士風表示は Mod ではなく `.claude/settings.json` の `spinnerVerbs` で行う。
+- 外す手順: settings.yaml の mods 欄から消して起動し直す。
 
-### 現行の運用ポリシー
+### 見張り役（inbox_watcher）
 
-- **省力化3点セット**（cmd_136）: 例外ベースntfy通知 / commit承認のセッション末バッチ化 / 「完了」の定義=機械検証＋QC pass
-- 直近の障害対応セッション（Fable裁定Q1〜Q19）で、busy判定の三値化（idle/busy/unknown・失敗モード時は安全側default）、slim_yaml.pyロード経路のfail-loud化、deadman/watcherのセッションライフサイクル死問題の切り分けなどを実施済み
-- 再発バグ族の命名: 「観測失敗と否定的観測の混同」「表示と実態の乖離」（cmd_116/128/133/145で同族事例を記録）
+- 起こしのキーを送るのは、送る直前に画面を見て「待機中のプロンプト」と判じたときだけ。作業中・確認画面・判別できない画面には送らない（cmd_231）。
+- 働き中の足軽に /clear は送らない。働き中が長く続くときは ntfy で殿に知らせる（settings.yaml の `busy_guard`: 未読30分・連続60分・再通知60分）。
+- 経緯: 旧版は待機の目印ファイルだけを根拠に待機中と判じており、作業中の足軽への打鍵や、確認画面で Enter が「Yes」を選んでしまう事故が起きた（cmd_232 で洗い出し）。
+- 試験のうち tests/e2e は使い捨ての tmux セッションでしか走らない（`scripts/run_e2e_isolated.sh` 経由。cmd_225）。生きた陣のペインへキーを送っていた事故を受けたもの。
 
-### 保留・次回以降の判断待ち
+### 有効な feature flags（settings.yaml）
 
-- 全システム監査: 殿のfeature freeze宣言後に実施（次回セッション以降）
-- Sonnet×5＋Haiku×2ロースターの稼働評価
-- 検討中（影武者記事きっかけ・未着手）: ①承認ゲート分岐基準を「外向き/内向き」から「可逆/不可逆」軸へ引き直し ②「実装前確認」から「実装後検証→通知」への寄せ。いずれも reversibility_check（observe）と write-guard enforce の実績データが揃ってから着手
+| flag | 値 | 内容 |
+|---|---|---|
+| yaml_guard_enabled | **enforce** | queue などの YAML への書き込みを守る（cmd_135） |
+| reporting_mode | **exception** | 正常完了は dashboard 記録のみ。ntfy は失敗・ブロック・caveat 付き完了・殿の裁定要のときのみ（cmd_136） |
+| git_push_block_enabled | **enforce** | PreToolUse で git push を止める。事故防止の層であり、境界は下記の資格情報の分離が担う |
+| parent_cmd_done_gate_enabled | **enforce** | 配下の task に未完了が残る cmd を done にさせない（cmd_164） |
+
+- feature_freeze は無効（2026-08-05 解除）。
+
+### 秘匿値と push の運用
+
+- 秘匿値はリポジトリの外の `secrets.env` に置き、エージェントには読ませない（`permissions.deny`）。文書では鍵名で言及し、値は書かない。
+- push の前に pre-push hook（`scripts/githooks/pre-push`）が秘匿値の混入を照合する。
+- push は殿が手元の端末から、パスフレーズ付きの SSH 鍵で行う。fetch は HTTPS、push 先は SSH。エージェントの手の届く所に GitHub へ書き込める資格情報は置かない（2026-10-11 に旧い資格情報を失効させ、実測で確認）。
+- 殿の承認を要するのは、不可逆な操作（D001〜D008）・push・金銭のみ。それ以外は将軍が決め、`mandate/decisions_journal.md` に記帳する。
+
+### 保留中
+
+- 開発リポジトリへのブランチ push の委任: 設計のみ済み。エージェントに push させる開発を始めるときに判断する。
+- 既知の失敗試験（TC-BLOOM、build_system #1/#78）を 0 件にする整備: 未着手。
