@@ -1,50 +1,29 @@
 task:
-  task_id: gunshi_qc_213
-  parent_cmd: cmd_213
-  type: qc
+  task_id: gunshi_qc_234F
+  parent_cmd: cmd_234
+  type: evaluation
   bloom_level: L5
-  assigned_to: gunshi
-  status: done  # gunshi_qc_213 完了(caveat付きPASS)
-  timestamp: "2026-10-08T16:20:00"
+  status: assigned
+  timestamp: "2026-10-15T21:20:00"
   description: |
-    【cmd_213 統合QC(秘匿値の構成化: 置場 secrets.env・読み手移行・deny・値照合 pre-push hook・規則1行・切替手順書の改訂)】
-    作業場所: WT = /home/nishikawa/projects/multi-agent-shogun/.worktrees/rebuild-2026-10 (HEAD 74b7e44。cmd_213 の commit: 124dfdd〔CLAUDE.md〕・ca65289〔journal S-10〕・28f3ff8〔hook+deny〕・21dc4d9〔読み手〕・74b7e44〔hook の tree mode 是正〕)。
-    🔴QCは読取と検証コマンドの実行のみ。WT・REPO直下の追跡ファイル・稼働データを変更しない。commit/push禁止。tmux稼働セッション(multiagent・shogun)へ送信しない。
-    🔴**push は Bash のトップレベルで打たない**(稼働中の push_block〔PUSH_APPROVED=1 無し→deny〕に止められる=正常)。hook の push 検証は bats の中、または scratch の .sh ファイルの中でダミーの bare リポジトリに対して行う。push_block を迂回しない。
-    🔴**秘匿値の値を画面・報告・ログ・ファイルに出さない**: 照合は `grep -F -f <値だけの一時ファイル(repo外 scratch・600・検証後削除)>` の**件数のみ**。REPO直下 config/settings.yaml の ntfy_topic(=現行の旧値・公開済み)も表示しない。
-    ~/.config/multi-agent-shogun/secrets.env は作らない・読まない。scratch の削除に rm -rf が拒否される場合は、削除不要のまま家老へ「scratch <パス> の削除依頼」と書け(sandbox の拒否を迂回しない)。
-    一次資料: queue/shogun_to_karo.yaml id: cmd_213(acceptance_criteria6項目・command)、queue/reports/cmd213_{a,b,b2}_result.md・cmd213_acceptance_verification.md(足軽4。§11〜12に再検証と事故開示)、
-    reports/cutover_steps.md(足軽5・45手順・16:10再提出版)、reports/cmd212_enumeration.md、queue/reports/cmd212_*(前回QCの指摘 R-1〜R-5)。
+    【cmd_234 最終QC】先行QC(gunshi_qc_234・234B)の続き。残りの未了を埋め、cmd_234 の受入基準 5 項目に対し最終の合否を出せ。
+    受入基準は queue/shogun_to_karo.yaml の cmd_234(in_progress)を読め。
 
-    ■ QC観点(原則11: 意図=「秘匿値の公開リポジトリ漏洩(3度目)を、規則ではなく構成と仕組みで断つ。ただし切替は実行しない」)
-    1. 条件1: 読み手が SHOGUN_SECRETS_FILE(既定 ~/.config/multi-agent-shogun/secrets.env)からのみ topic/認証を読み、settings.yaml・config/ntfy_auth.env を読まない(読込箇所を `/usr/bin/grep -n` で全列挙。shutsujin_departure.sh を含む)。
-       secrets.env 不在/NTFY_TOPIC 空で ntfy.sh が非0・値を出さない(scratch でダミー実走)。WT の settings.yaml.example と新版 settings.yaml(未追跡)に ntfy_topic の**値が無い**。
-       ntfy_listener.sh と ntfy.sh が topic を画面にもログにも出さない(コードを読み、スタブで出力にダミー topic が0件)。旧 config/ntfy_auth.env への fallback が無い(意図どおり)。
-    2. 条件2: `.claude/settings.json` の permissions.deny に置場の Read/cat 系と `git push --no-verify` 系が加わった(20→48)。JSON妥当・CRLF保持。包括パターン `Bash(*.config/multi-agent-shogun*)` が、
-       手順書の殿の手順・正規のエージェント作業を妨げないか(殿の端末は対象外。エージェントが置場のパスを含む Bash を打てない影響)の評価。Read 記法(`Read(~/…)` と `Read(//home/…)` の併記)が公式書式として妥当か(公式ドキュメントで確認できなければ「未検証」と明記)。
-    3. 条件3(pre-push hook): scripts/githooks/pre-push が**git tree 上で 100755**(`git ls-tree HEAD`)。`bats tests/unit/test_pre_push_secret_hook.bats`(25件)を `git clone`(履歴付き)の scratch で再実行(全ok・SKIP0)。
-       hook の設計を読んで評価: (a)値照合の対象(commit message・追加行・ファイル名・author・tag)と範囲決定(`--remotes` 除外=公開済み履歴を責めない)の妥当性と抜け (b)拒否時の出力に値が出ない (c)置場が無いとき push を拒否(fail-closed)の判断
-       (d)`--no-verify` は hook 自体では防げず deny で防ぐ前提の開示 (e)導入方法 `git config core.hooksPath scripts/githooks` が main・各 worktree で効く理由 (f)**ff-only 後に mode が保たれる**こと(clone+ff 模擬)。
-       🔴今回、(f)の欠陥(core.fileMode=false 環境で tree mode 100644 のまま commit され、git が hook を黙って無視する)が実機模擬で発覚し 74b7e44 で是正された。**同種の見逃し**がないか確認: cmd_213 で追加・変更された他のファイルで
-       「実行権限が前提なのに tree mode が 100644」のものが無いか(`git ls-files -s` と `git diff --summary 251d57a HEAD`)。
-    4. 条件4: CLAUDE.md の規則1行が追加され、追記合計 30行以内(上流比 13/0)。文言が「鍵名で言及し値は書かない・照合はファイルから読ませて行う」を含み、値が無い。
-    5. 条件5(手順書): reports/cutover_steps.md を**殿の視点で**評価:
-       (a) topic 更新の工程が「殿が切替時に行う」段取りになっている(将軍追補 15:39): 3-3 で新 topic 生成→置場へエディタ書込み(コマンド行に値を書かない)→値を出さない確認→スマホで新 topic 購読・旧購読解除。
-           settings.yaml の旧 ntfy_topic は触れない旨。旧前提(「生成済み」「本書にはない」「実施済み」)の記述が残っていない。
-       (b) 出陣後の確認 8-8/8-9 が**値を表示せず**新 listener が新 topic を聞いていること・旧 topic に届かないことを確かめる設計か。ps/pgrep -af 目視禁止の明記。
-       (c) ロールバック(9節): 戻した旧コード(daac4ad)は settings.yaml から topic を読む点、退避した旧 settings.yaml には**公開済みの旧 topic**が残る点、旧コードには hook・deny・secrets.env 参照が無い点、`git config --unset core.hooksPath` の工程、置場は残してよい点。
-       (d) R-1(切替前に main へ commit しない=ff-only)・R-2(期待値は直前に実測)・R-3(2-3 のロック残存の読取確認)・R-4(8-5 の複製から settings.yaml 除外)・R-5(PUSH_APPROVED 無しの確認)が反映されているか。前回の SW-1〜SW-8 が引き続き反映。
-       (e) 手順書内のコマンドを**3〜5本**、scratch(REPO複製・queue/inbox は空ディレクトリに差替え)で抜き取り再実行して「模擬済み」の主張を検証(特に 3-1〜3-5・9節の hooksPath 解除・8-9 の判定式)。
-       (f) 手順書に秘匿値が 0 件(REPO settings.yaml の ntfy_topic 値を grep -F -f の件数で。30字以上の識別子走査も)。
-    6. 条件6(値の混入0): cmd_213 の全成果物(reports/cutover_steps.md・queue/reports/cmd213_*・WT の cmd_213 commit 全差分・commit message)に ntfy_topic の値が 0 件。WT の全追跡ファイルで値が出現するファイルを**ファイル名と件数のみ**で列挙
-       (想定: mandate/decisions_journal.md の既存1行〔P-09、origin/main に既出〕のみ)。journal S-10 の追加が値を含まない。
-    7. 退行: cmd_213 前後で bats 新規失敗0・SKIP0(既存失敗は test_build_system #1/#78 のみ)。変更に関係する bats(test_ntfy_*・test_branch_policy_scripts・test_pre_push_secret_hook・test_pretooluse_git_push_block・test_inbox_write・test_dispatch・test_done 他)を数本再実行。
-       ff-only 模擬(REPO 複製〔queue/inbox 差替え〕で `git merge --ff-only rebuild-2026-10`)が通り、未commit差分 ` M queue/tasks/gunshi.yaml` が保持され、REPO側の無視ファイルで上書きされるものが内容同一であること。
-    8. 事故・逸脱の開示の評価(正直に開示されているかと再発防止): (i) 足軽4が検証中に WT logs/ntfy.log の旧 topic 値1行を画面表示した(公開済みの旧値・値は報告に非記録) (ii) 足軽5が scratch の掃除に rm -rf を使った(/tmp 配下の自作物のみ・D002 文言上はプロジェクト外パス・以後使わない)
-       (iii) 足軽2の bats が偽の緑(作業ツリーの 755 に依存)だった件。(i)(ii)の重大度と、再発防止が仕組みで担保されているか(deny・hook・手順書の注意)の所見を。
-    9. cmd_212 の caveat の最終状態と、dashboard 🚨要対応(ntfy_topic 公開)の扱い(旧値は取り消せない・新 topic への更新が切替の工程に入ったこと)。cmd_213 を「done / done_with_caveat」のどちらで閉じるべきか判定せよ
-       (切替が未実施である点、Read 記法が未検証である点、PUSH_APPROVED の運用説明の明示が残る点を踏まえて)。
-    10. 所見(推測)として、切替(工程2-4)で最も事故りやすい点を3つ以内(前回との差分があれば)。
+    ■ 確かめること
+    1. 受入基準1(全 harness が差替済み): tests/unit・tests/ 直下の source/実行する bats を独立に列挙し、全てが BUSYGUARD_STATE_DIR を差し替えているか(A=e56bacd・D1=e8fc262)。
+       先行QCで挙げた限界(判定がファイル単位・tests/e2e は設計上対象外)を踏まえ、見落としが無いかを判定。
+    2. 受入基準2(静的試験): a612cdf+c580625。先行QCの再現どおり HEAD で ok・差替なしで落ちること。
+    3. 受入基準3(全件回帰): 足軽3号の報告(queue/reports/ashigaru3_report.yaml 末尾 subtask_234_C)=873件・871 ok・not ok 2(build_system #1/#78 既知)・SKIP 0、
+       回帰の前後で logs/watcher_busy/ に陣以外の名が現れず。群別の合計が合うか。先行QCで未了だった 3本(test_idle_flag / test_inbox_watcher_nudge / test_send_wakeup)の再走(足軽1号報告 8/34/67 ok)を行い、
+       走らせる前後で logs/watcher_busy/ が変わらぬことも確かめよ。
+    4. 受入基準4: logs/watcher_busy/test_agent.state が消え、陣の9体(ashigaru1-7・gunshi・karo。shogun.state は元より無し)の .state が残っているか。他に消えた物が無いか(git 追跡外ゆえ ls と報告の before/after で)。
+    5. 受入基準5: commit が対象パス明示・push なし(git log origin/main..HEAD と各 commit の stat)。mandate/decisions_journal.md の未commit差分は他者のもの、巻き込まれていないこと。
+    6. 所見の整理: 先行QCの低所見(ashigaru2_report.yaml 59行目 YAML不正・agent_selfwatch 同型 harness は D1 で解消済み・ファイル単位判定の限界)を、最終の重さ(直す/記帳のみ)で一覧に。
 
-    結果は queue/reports/gunshi_report.yaml に PASS/FAIL(caveat付きPASSを含む)・所見・独立再現コマンドとして記帳し、
-    bash scripts/inbox_write.sh karo "gunshi_qc_213完了: PASS/FAIL" report_received gunshi --cmd_id=cmd_213 --task_id=gunshi_qc_213 --qc_result=pass|fail
+    ■ 守ること
+    - 試験・scripts・設定を書き換えぬ(走らせるのは可)。commit せぬ。生きた陣・ペインに触れず、tmux capture-pane 不要。
+    - 変数パスの rm -rf 禁。worktree が要るなら短い固定パスで、使い終えたら固定リテラルで remove/prune して後片付けまで。
+
+    ■ 完了時
+    - queue/reports/gunshi_report.yaml に最終 PASS/FAIL と根拠(基準1-5 各の判定)を書く。
+    - `bash scripts/done.sh task gunshi gunshi_qc_234F` の後、`bash scripts/inbox_write.sh karo "gunshi_qc_234F 完了(最終判定は gunshi_report.yaml)" report_received gunshi`。
