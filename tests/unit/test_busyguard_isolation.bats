@@ -3,7 +3,7 @@
 #   scripts/inbox_watcher.sh は BUSYGUARD_STATE_DIR が未設定だと <SCRIPT_DIR>/logs/watcher_busy(本番の置場)を使う
 #   (scripts/inbox_watcher.sh:238)。試験の harness が SCRIPT_DIR を実repoに固定したまま置場を差し替えぬと、
 #   process_unread などを呼んだ試験が本番の置場へ test_agent.state を書く(原因: queue/reports/cmd231_test_agent_state_origin.md)。
-#   本試験は tests/unit/*.bats を静的に走査し、inbox_watcher.sh を source/実行する bats が
+#   本試験は tests/unit/*.bats と tests/*.bats(直下。e2e は除く)を静的に走査し、inbox_watcher.sh を source/実行する bats が
 #   BUSYGUARD_STATE_DIR を差し替えていなければ落とす。走査は読むだけで、本番の置場にも tests/ にも何も書かない。
 #
 # 「inbox_watcher.sh を使う bats」の判定(コメント行は除く。単なる言及・grep・cp・chmod・bash -n は使うに数えぬ):
@@ -18,8 +18,9 @@
 #   限界: 判定はファイル単位(harness が複数ある bats で一部だけ差し替えても通る)。差替先が使い捨てかも見ない。
 #
 # T-BGI-D1〜D7 : 検出関数の自己証明(一時ディレクトリの偽bats。差替なし→落とす / 差替あり→通す / 言及だけ→通す ほか)
-# T-BGI-R1     : 実repoの tests/unit/*.bats に、差替なしで inbox_watcher.sh を source/実行するものが無い
+# T-BGI-R1     : 実repoの tests/unit/*.bats と tests/*.bats に、差替なしで inbox_watcher.sh を source/実行するものが無い
 # T-BGI-R2     : 検出が空振りしていない(既知の使用者を「使う」と判定し、差替済みの2本は通す)
+# T-BGI-R3     : tests/ 直下の走査が空振りしていない(agent_selfwatch.bats を使用者と判定し、他の直下 bats は誤検出しない)
 
 # ─── 検出関数(第1引数 = 走査するディレクトリ。試験が偽fixtureへ差し替えられる) ───
 
@@ -56,16 +57,18 @@ bgi_has_override() {
     bgi_code "$1" | grep -qE '(^|[^A-Za-z0-9_$])BUSYGUARD_STATE_DIR='
 }
 
-# bgi_unsafe_files DIR : DIR/*.bats(自分自身を除く)のうち、watcher を使うのに差し替えていないものの名を1行ずつ出す
+# bgi_unsafe_files DIR... : 各 DIR/*.bats(自分自身を除く。サブディレクトリは辿らぬ)のうち、watcher を使うのに差し替えていないものの名を1行ずつ出す
 bgi_unsafe_files() {
-    local dir="$1" f self
+    local dir f self
     self="$(basename "$BATS_TEST_FILENAME")"
-    for f in "$dir"/*.bats; do
-        [ -e "$f" ] || continue
-        [ "$(basename "$f")" = "$self" ] && continue
-        if bgi_uses_watcher "$f" && ! bgi_has_override "$f"; then
-            basename "$f"
-        fi
+    for dir in "$@"; do
+        for f in "$dir"/*.bats; do
+            [ -e "$f" ] || continue
+            [ "$(basename "$f")" = "$self" ] && continue
+            if bgi_uses_watcher "$f" && ! bgi_has_override "$f"; then
+                basename "$f"
+            fi
+        done
     done
 }
 
@@ -192,8 +195,9 @@ EOF
 
 # ─── 実repoの走査 ───
 
-@test "T-BGI-R1: tests/unit/*.bats に、BUSYGUARD_STATE_DIR を差し替えず inbox_watcher.sh を source/実行するものが無い" {
-    run bgi_unsafe_files "$BATS_TEST_DIRNAME"
+@test "T-BGI-R1: tests/unit/*.bats と tests/*.bats に、BUSYGUARD_STATE_DIR を差し替えず inbox_watcher.sh を source/実行するものが無い" {
+    # tests/e2e は使い捨て複製($E2E_QUEUE)上で動かす設計ゆえ走査せぬ
+    run bgi_unsafe_files "$BATS_TEST_DIRNAME" "$BATS_TEST_DIRNAME/.."
     [ "$status" -eq 0 ]
     if [ -n "$output" ]; then
         echo "BUSYGUARD_STATE_DIR を使い捨てへ差し替えていない bats(本番の logs/watcher_busy を汚しうる):" >&2
@@ -214,4 +218,12 @@ EOF
     # 単に名を挙げるだけの bats は使用者に数えぬ
     ! bgi_uses_watcher "$BATS_TEST_DIRNAME/test_watcher_supervisor_dedup.bats"
     ! bgi_uses_watcher "$BATS_TEST_DIRNAME/test_agent_registry.bats"
+}
+
+@test "T-BGI-R3: tests/ 直下の走査が空振りしていない(agent_selfwatch.bats を使用者と判定し、他の直下 bats は誤検出しない)" {
+    local top="$BATS_TEST_DIRNAME/.."
+    [ -f "$top/agent_selfwatch.bats" ]
+    bgi_uses_watcher "$top/agent_selfwatch.bats"
+    ! bgi_uses_watcher "$top/test_inbox_write.bats"
+    ! bgi_uses_watcher "$top/test_resume_auto_heal.bats"
 }
