@@ -102,6 +102,7 @@ INBOX="$TEST_INBOX_DIR/test_agent.yaml"
 LOCKFILE="\${INBOX}.lock"
 SCRIPT_DIR="$PROJECT_ROOT"
 export IDLE_FLAG_DIR="$TEST_TMPDIR"
+export BUSYGUARD_STATE_DIR="$TEST_TMPDIR/watcher_busy"
 
 tmux() {
     echo "tmux \$*" >> "$MOCK_LOG"
