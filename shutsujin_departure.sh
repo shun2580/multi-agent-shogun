@@ -575,7 +575,10 @@ PANE_BASE=$(tmux show-options -gv pane-base-index 2>/dev/null || echo 0)
 log_war "⚔️ 家老・足軽・軍師の陣を構築中（9名配備）..."
 
 # 最初のペイン作成
-if ! tmux new-session -d -s multiagent -n "agents" 2>/dev/null; then
+# -x 200 -y 50: デタッチ作成の既定(80x24)のまま3列x3段に割ると足軽/軍師のpaneが約19〜40桁になり、
+# 最下行の "bypass permissions" が切れて出陣時ログイン判定が偽unknownになる(cmd_235)。
+# 殿が attach すれば実画面の大きさに追従するので害はない。
+if ! tmux new-session -d -s multiagent -n "agents" -x 200 -y 50 2>/dev/null; then
     echo ""
     echo "  ╔════════════════════════════════════════════════════════════╗"
     echo "  ║  [ERROR] Failed to create tmux session 'multiagent'      ║"
@@ -920,28 +923,9 @@ NINJA_EOF
     # ═══════════════════════════════════════════════════════════════════
     log_info "🔑 全pane出陣後のログイン状態を確認中..."
 
-    check_pane_login_status() {
-        # 引数: $1=tmux target（例: shogun:main / multiagent:agents.0）
-        # 標準出力: authenticated / unauthenticated / unknown のいずれか
-        local target="$1"
-        local max_retries=5
-        local retry_interval=2
-        local status="unknown"
-        local pane_output
-
-        for ((_try=1; _try<=max_retries; _try++)); do
-            pane_output=$(tmux capture-pane -t "$target" -p 2>/dev/null || echo "")
-            if echo "$pane_output" | grep -q "Not logged in"; then
-                status="unauthenticated"
-                break
-            elif echo "$pane_output" | grep -q "bypass permissions"; then
-                status="authenticated"
-                break
-            fi
-            sleep "$retry_interval"
-        done
-        echo "$status"
-    }
+    # 判定関数 check_pane_login_status は lib/login_check.sh へ切り出し済み (cmd_235)。
+    # shellcheck source=lib/login_check.sh
+    source "$SCRIPT_DIR/lib/login_check.sh"
 
     _login_warn_count=0
 

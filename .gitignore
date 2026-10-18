@@ -65,6 +65,7 @@
 !lib/watcher_lifecycle.sh
 !lib/branch_policy.sh
 !lib/quote_masking.py
+!lib/login_check.sh
 
 # Multi-CLI: Codex auto-load file
 !AGENTS.md
