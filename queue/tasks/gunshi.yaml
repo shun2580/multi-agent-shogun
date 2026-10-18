@@ -1,29 +1,16 @@
 task:
-  task_id: gunshi_qc_234F
-  parent_cmd: cmd_234
+  task_id: gunshi_qc_235G
+  parent_cmd: cmd_235
   type: evaluation
   bloom_level: L5
-  status: assigned
-  timestamp: "2026-10-15T21:20:00"
+  status: done
+  timestamp: "2026-10-19T00:40:00"
   description: |
-    【cmd_234 最終QC】先行QC(gunshi_qc_234・234B)の続き。残りの未了を埋め、cmd_234 の受入基準 5 項目に対し最終の合否を出せ。
-    受入基準は queue/shogun_to_karo.yaml の cmd_234(in_progress)を読め。
-
-    ■ 確かめること
-    1. 受入基準1(全 harness が差替済み): tests/unit・tests/ 直下の source/実行する bats を独立に列挙し、全てが BUSYGUARD_STATE_DIR を差し替えているか(A=e56bacd・D1=e8fc262)。
-       先行QCで挙げた限界(判定がファイル単位・tests/e2e は設計上対象外)を踏まえ、見落としが無いかを判定。
-    2. 受入基準2(静的試験): a612cdf+c580625。先行QCの再現どおり HEAD で ok・差替なしで落ちること。
-    3. 受入基準3(全件回帰): 足軽3号の報告(queue/reports/ashigaru3_report.yaml 末尾 subtask_234_C)=873件・871 ok・not ok 2(build_system #1/#78 既知)・SKIP 0、
-       回帰の前後で logs/watcher_busy/ に陣以外の名が現れず。群別の合計が合うか。先行QCで未了だった 3本(test_idle_flag / test_inbox_watcher_nudge / test_send_wakeup)の再走(足軽1号報告 8/34/67 ok)を行い、
-       走らせる前後で logs/watcher_busy/ が変わらぬことも確かめよ。
-    4. 受入基準4: logs/watcher_busy/test_agent.state が消え、陣の9体(ashigaru1-7・gunshi・karo。shogun.state は元より無し)の .state が残っているか。他に消えた物が無いか(git 追跡外ゆえ ls と報告の before/after で)。
-    5. 受入基準5: commit が対象パス明示・push なし(git log origin/main..HEAD と各 commit の stat)。mandate/decisions_journal.md の未commit差分は他者のもの、巻き込まれていないこと。
-    6. 所見の整理: 先行QCの低所見(ashigaru2_report.yaml 59行目 YAML不正・agent_selfwatch 同型 harness は D1 で解消済み・ファイル単位判定の限界)を、最終の重さ(直す/記帳のみ)で一覧に。
-
-    ■ 守ること
-    - 試験・scripts・設定を書き換えぬ(走らせるのは可)。commit せぬ。生きた陣・ペインに触れず、tmux capture-pane 不要。
-    - 変数パスの rm -rf 禁。worktree が要るなら短い固定パスで、使い終えたら固定リテラルで remove/prune して後片付けまで。
-
-    ■ 完了時
-    - queue/reports/gunshi_report.yaml に最終 PASS/FAIL と根拠(基準1-5 各の判定)を書く。
-    - `bash scripts/done.sh task gunshi gunshi_qc_234F` の後、`bash scripts/inbox_write.sh karo "gunshi_qc_234F 完了(最終判定は gunshi_report.yaml)" report_received gunshi`。
+    【cmd_235 最終QC再判定の先行分(A2 = 1af4a07)】あなたの gunshi_qc_235F(条件付きFAIL=基準5のみ未達)に対する是正が出た。足軽1号の subtask_235_A2 の報告は
+    queue/reports/ashigaru1_report.yaml 末尾。足軽3号が今、1af4a07 で全件回帰を再走中(subtask_235_C2)。あなたは回帰を待たず、既 commit 分から先に見よ。
+    1. 1af4a07 の差分: `git diff f557eac~1 1af4a07 -- .gitignore` が `!lib/login_check.sh` の1行追加のみか(バイト単位で・cat -A で)。他のファイルに触れていないか(`git show --stat 1af4a07`)。
+       commit は .gitignore 1ファイルのみか。push が無いこと。
+    2. `git check-ignore -v` で lib/login_check.sh が追跡可・.e2e_work/x が無視されること。test_run_e2e_isolated_cleanup.bats が全 ok(あなたの独立再走で)。
+    3. 受入基準1〜4・6 の充足の最終確認(隔離 tmux・生きた陣に触れぬ・kill 系なし・push なし)。基準5は C2 の結果が届いてから突き合わせよ(not ok が既知 build_system 2件のみ・SKIP 0 か)。
+    4. 先に 1〜3 の結論と『基準5は C2 の結果待ち』を報告し(inbox_write で karo へ)、C2 が届いたら最終判定(PASS/FAIL)を出せ。
+    生きた陣には触れるな。worktree を使うなら固定パスで作り、済んだら git worktree remove --force と prune で片付けよ。
