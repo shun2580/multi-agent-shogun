@@ -32,7 +32,7 @@
   形式であり、単一ドキュメント前提のパーサで扱わない(出典: scripts/pretooluse_yaml_guard.sh の
   safe_load_all設計、cmd_120関連。gunshi_qc_145_part2aで誤引用(Q1=cmd_111 fail-loud化の話で
   無関係)と指摘され是正)
-- Fable裁定の出典探索範囲: `~/fable_*.md`(裁定書ファイル)だけでなく`queue/inbox/shogun.yaml`
+- Fable裁定の出典探索範囲: `~/archive/fable/fable_*.md`(裁定書ファイル)だけでなく`queue/inbox/shogun.yaml`
   (Fableがinbox経由で直接書き込んだ裁定)も必ず探索範囲に含めること(出典: cmd_145 Part2、Q18裁定
   原本が裁定書6本ではなく`queue/inbox/shogun.yaml` msg_20260729_fable_q18_enforceに存在していた
   実例。探索範囲を裁定書6本に限定した結果Q18裁定を一時的に見落とした)
@@ -357,7 +357,7 @@ cmd_180工程3(横展開点検)による機械列挙・点検結果(点検済み
 
 ## 機械判定は自然言語記号に依存しない(Q47)
 
-条文(Fable裁定Q47・原本逐語、`~/fable_ruling_20260909_q46q49.md`39-41行目):
+条文(Fable裁定Q47・原本逐語、`~/archive/fable/fable_ruling_20260909_q46q49.md`39-41行目):
 
 「機構が状態判定に用いる標識は、その機構が仕様として定義した機械可読マーカー
 （HTMLコメント等）に限る。本文の文言・絵文字・取消線その他の人間向け表記を
@@ -375,19 +375,19 @@ cmd_180工程3(横展開点検)による機械列挙・点検結果(点検済み
 本文文言依存箇所は`queue/shogun_to_karo.yaml` cmd_190依頼事項3の一覧(Q36同族横展開点検・
 is-scope調査結果、`queue/reports/ashigaru5_report.yaml` task_id: subtask_190_B参照)に
 載せたまま据え置く——🔴**是正着手を禁ずる**(殿への通知を駆動しない本文文言依存箇所には
-手を出すな。出典: Fable裁定Q47、`~/fable_ruling_20260909_q46q49.md`47-49行目)。
+手を出すな。出典: Fable裁定Q47、`~/archive/fable/fable_ruling_20260909_q46q49.md`47-49行目)。
 
 ## 人の独立検証への依存・単一障害点の再評価条件(Q48)
 
 Fable裁定Q48: `scope_check.sh`のPreToolUse observe接続を最小の一手として実施
 (Q30(b)接続則の未充足是正であり新機構の建造ではない)。原則9・フリーズは維持
-(出典: Fable裁定Q48、`~/fable_ruling_20260909_q46q49.md`53-66行目)。
+(出典: Fable裁定Q48、`~/archive/fable/fable_ruling_20260909_q46q49.md`53-66行目)。
 
 ### 条件式(b): 軍師検分すり抜け事故の再評価条件(Q48)
 
 「軍師の検分をすり抜けた事故が1件でも観測されたら本裁定(scope_check.sh PreToolUse
 接続に関するQ48裁定)を再評価する」——単一障害点の破れは1回目が実害ゆえ3例目を
-待たない(出典: Fable裁定Q48、`~/fable_ruling_20260909_q46q49.md`65-66行目)。
+待たない(出典: Fable裁定Q48、`~/archive/fable/fable_ruling_20260909_q46q49.md`65-66行目)。
 
 **一次観測点**: `mandate/decisions_journal.md`のINCIDENTエントリ。
 `grep -n "軍師の検分をすり抜け" mandate/decisions_journal.md`を実行し、ヒットが
@@ -408,7 +408,7 @@ INCIDENTエントリ(cmd_186)は軍師が捏造を「捕らえた」成功事例
 表示、settings.yamlから転記・手書き禁止)／`mandate/decisions_journal.md`(遷移の
 記録)の三層で作ること。journalの1行にしか書かれない状態を作らない。
 
-出典: cmd_194・Q50(b)(`~/fable_ruling_20260914_q50q52.md`)。契機は
+出典: cmd_194・Q50(b)(`~/archive/fable/fable_ruling_20260914_q50q52.md`)。契機は
 フィーチャーフリーズ(cmd_138)の解除(2026-08-05・cmd_150【C】)がjournalにのみ
 記帳され、settings.yaml/dashboard.mdへ反映されなかったために生じた約5週間の
 帳簿と運用の乖離(2026-08-05〜2026-09-14)である。

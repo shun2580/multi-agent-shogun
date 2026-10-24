@@ -13,7 +13,7 @@
 **唯一の起動元**とした。これにより将来の起動では二重起動の懸念自体が
 構造的に解消される。
 
-🔴 flockは追加していない。裁定書(`~/fable_ruling_20260916_q53q59.md`
+🔴 flockは追加していない。裁定書(`~/archive/fable/fable_ruling_20260916_q53q59.md`
 Q53節)が「launcherが一つになればTOCTOUの相手が消えるため、既存の
 pgrep冪等(`start_watcher_if_missing()`)で足りる」と明示的に判断した
 ため。

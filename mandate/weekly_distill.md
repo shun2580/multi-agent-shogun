@@ -171,4 +171,4 @@ crontab に登録(毎週日曜 09:00):
 - `mandate/decisions_journal.md` — 裁定・訂正の記録元。新規原則もここへ将軍裁定として直接記帳する
   (旧`mandate/approval_queue.md`は2026-09-16のQ58全面上書きにより退役)
 - `mandate/judgment_model.md` — 蒸留対象・出力先
-- `~/fable_ruling_*.md` — 初期裁定の出典(cmd_145で指示されたもの)
+- `~/archive/fable/fable_ruling_*.md` — 初期裁定の出典(cmd_145で指示されたもの)

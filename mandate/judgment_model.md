@@ -161,7 +161,7 @@ caveatを解除する。
 必ず併せて問う。
 
 - 出典: Q59①(番兵棚卸し基準、queue/shogun_to_karo.yaml 6946行目付近、cmd_198命令文、
-  出典~/fable_ruling_20260916_q53q59.md)、cmd_200論点H末尾(~/fable_ruling_20260922_report18.md、
+  出典~/archive/fable/fable_ruling_20260916_q53q59.md)、cmd_200論点H末尾(~/archive/fable/fable_ruling_20260922_report18.md、
   「観測データが判断に使われたかだけでは、使いようのない信号をkeepしてしまう」)
 
 ---
