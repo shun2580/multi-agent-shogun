@@ -579,7 +579,7 @@ git diff --exit-code instructions/generated/
 > **commit時の対象パス明示**: commitは対象パスを明示して行う
 > (`git add <paths>` → `git commit -- <paths>`)。`git add -A`・
 > `git add .`・`git commit -a`は禁止。
-> commitメッセージは Conventional Commits(`<種類>: <説明>`。種類は英語、説明は日本語。
+> commitメッセージは Conventional Commits(`<種類>: <説明>`。種類も説明も英語。説明は動詞の原形で始め、小文字始まり、末尾ピリオド無し。
 > 正本は CLAUDE.md「commit作法」。upstream向けの変更はupstreamの流儀に従う)。
 
 ### F007（push承認）
