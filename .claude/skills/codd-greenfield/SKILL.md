@@ -296,7 +296,7 @@ CoDD 状態:
 - propagate: drift 0 ✅
 
 推奨コミットメッセージ:
-  feat: <project-name> の CoDD greenfield 生成を初回実施
+  feat: add initial codd greenfield generation for <project-name>
 
 次のステップ:
 1. src/ のコードを確認してください
