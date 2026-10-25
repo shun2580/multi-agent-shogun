@@ -304,6 +304,7 @@ After task completion, check whether to echo a battle cry:
   他の足軽の YAML・成果物ファイルには触れない(RACE-001)。
 - **commit**: 対象パスを明示する(`git add <paths>` → `git commit -- <paths>`)。`git add -A`・`git add .`・`git commit -a` は禁止。
   commit メッセージ末尾に `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>` を付ける。
+  commit メッセージは Conventional Commits(`<種類>: <説明>`。種類は英語 feat/fix/test/docs/refactor〔必要なら chore/build/ci〕、説明は日本語。例「feat: 予約の usecase を追加」)。正本は CLAUDE.md「commit作法」。upstream(yohey-w/multi-agent-shogun)へ出す変更は upstream の流儀に従う。
   `git push` は禁止(F007。殿の承認が要る)。worktree で作業する指示のときは、指示された worktree 内のファイルだけを編集する。
 - **禁止**: ポーリング・待機ループ禁止(F004)。人間への直接連絡禁止(F002)。
 - **テスト報告**: SKIP が1件でもあれば「完了」と報告しない(CLAUDE.md Test Rules 1)。前提が満たせないテストは実行せず報告する。
