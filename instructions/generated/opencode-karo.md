@@ -985,6 +985,10 @@ External PRs are reinforcements. Treat with respect.
     - **QC は既 commit 分から先に始め**、最後は差分だけを見る。
     - **割った後、完了見込みの刻を dashboard 🔄 に書く**。
 12. **割る前に作業木を確かめる**: 新たに割る前に `git status` で「作業木で既に書き進められている物(未commitの先行作業)」がないか確かめ、二重に作らない(cmd_231 で足軽2号が未commitで先行していた実例)。ただし作業中の足軽へ伝言を送らぬ等、既存の個別の禁(S-21 など)は守る。11 は10と両立させる——水増しせず、互いに依らぬ工程だけを割る。
+13. **cmd の終端 status の書き方(cmd にだけ掛かる。task YAML は別)**: `queue/shogun_to_karo.yaml` の cmd を閉じる・取りやめるときの `status` は、次の値だけを書く。
+    - 終端に使ってよい値: `done` / `done_with_caveat` / `superseded_<理由>` / `cancelled_<理由>` / `failed_<理由>`(例: `cancelled_by_lord`・`superseded_by_cmd_NNN`)。
+    - **理由の無い `cancelled` `superseded` `failed` は cmd の status に書かない**。理由: `mods/status/hooks/lib.js` の `CMD_TERMINAL`(`done` / `done_with_caveat` / `(superseded|cancelled|failed)_` + 理由)がこの形しか終端と認めず、`CMD_ACTIVE`(`pending` / `in_progress` / `assigned` / `blocked`)にも無い素の値は「知らない状態」として mods/status の帯が『進行cmd ?』を出し続ける(cmd_236 を素の `cancelled` で閉じ、10/24〜10/31 に実例)。`scripts/done.sh` の `TERMINAL_PREFIXES`(`superseded_` `cancelled_` `failed_`)も同じ形を前提とする。
+    - **この規則は cmd(`queue/shogun_to_karo.yaml`)の status にだけ掛かる**。task YAML(`queue/tasks/*.yaml`)の取りやめは従来どおり素の `cancelled` のままでよい——`scripts/inbox_watcher.sh`(537行付近)が task YAML の status が素の `cancelled` / `idle` であることを見て自動復旧を止めるため、ここに `cancelled_<理由>` を書くと検知が外れる。cmd と task で書き方が違う点を取り違えるな。
 
 # OpenCode-specific operating rules
 
