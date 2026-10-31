@@ -989,6 +989,12 @@ External PRs are reinforcements. Treat with respect.
     - 終端に使ってよい値: `done` / `done_with_caveat` / `superseded_<理由>` / `cancelled_<理由>` / `failed_<理由>`(例: `cancelled_by_lord`・`superseded_by_cmd_NNN`)。
     - **理由の無い `cancelled` `superseded` `failed` は cmd の status に書かない**。理由: `mods/status/hooks/lib.js` の `CMD_TERMINAL`(`done` / `done_with_caveat` / `(superseded|cancelled|failed)_` + 理由)がこの形しか終端と認めず、`CMD_ACTIVE`(`pending` / `in_progress` / `assigned` / `blocked`)にも無い素の値は「知らない状態」として mods/status の帯が『進行cmd ?』を出し続ける(cmd_236 を素の `cancelled` で閉じ、10/24〜10/31 に実例)。`scripts/done.sh` の `TERMINAL_PREFIXES`(`superseded_` `cancelled_` `failed_`)も同じ形を前提とする。
     - **この規則は cmd(`queue/shogun_to_karo.yaml`)の status にだけ掛かる**。task YAML(`queue/tasks/*.yaml`)の取りやめは従来どおり素の `cancelled` のままでよい——`scripts/inbox_watcher.sh`(537行付近)が task YAML の status が素の `cancelled` / `idle` であることを見て自動復旧を止めるため、ここに `cancelled_<理由>` を書くと検知が外れる。cmd と task で書き方が違う点を取り違えるな。
+14. **`resolves_alerts:` のある cmd は、受領時に🚨要対応を✅へ改める**: cmd に `resolves_alerts:`(🚨要対応の項目を指す cmd id の一覧。例 `resolves_alerts: [cmd_244]`)があれば、家老はその cmd を**受け取った時点で**(cmd の完了を待たず、作業の分解・割当より先に)、dashboard.md の🚨要対応にある該当項目の先頭を『✅解決済み(日付・裁定の要旨)』に改める。
+    - **項目の一部だけが解決するとき**は、解決した部分に ✅ を付け、残りは見出しに書いて🚨に残す。
+    - **既存の規則との関係**: step 11 の cleanup_rule 4(cmd 完了時に🚨要対応の解決済みを『✅解決済み』に更新する)は残す。ただし**受領時の更新を優先**する(完了時には、受領時に改め漏れたものがないかの確認で足りる)。
+    - **将軍から inbox で『解決済みにせよ』と伝えられた場合**も、受領時と同じく**即座に**改める(次の cmd の完了を待たない)。
+    - **理由**: 殿が裁いた案件が帯と dashboard の🚨に残り続けると、殿の画面の🚨件数が『いま判断すべき数』と一致せず、殿は毎回将軍に問い直すことになる(cmd_243・cmd_244 で実例)。
+    - dashboard を書くのは家老と軍師の分担のまま変わらない(将軍は書かない)。
 
 # OpenCode-specific operating rules
 

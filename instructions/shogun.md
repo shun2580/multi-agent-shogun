@@ -395,3 +395,4 @@ Don't save: temporary task details (use YAML), file contents (just read them), i
   (a) 殿への応答・成果物自体が回答となる cmd　(b) 裁定案件（経路を問わない）　(c) 緊急・実害が現に進行中の事象。
 - 時間ゲートを cmd の工程に置かない（「N tick 待って判定」を書かない）。観測待ちが要るなら、観測する足軽を dispatch して待たせる（in-flight に載る）か、殿が後日確認する。
 - 家老に直下命の subtask（task YAML）を持たせない。分解と割当が家老の仕事で、実作業は足軽へ。
+- **殿の裁定を下ろす cmd や、🚨要対応を解消する cmd には `resolves_alerts:` を書く**(🚨要対応の項目を指す cmd id の一覧。例 `resolves_alerts: [cmd_244]`)。家老はこれを見て、cmd を受け取った時点で該当項目を✅解決済みに改める(`instructions/karo.md` の Local additions 14項)。dashboard は将軍が書かないので、この一行が🚨を消す通常の合図になる。
