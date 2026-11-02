@@ -997,6 +997,10 @@ External PRs are reinforcements. Treat with respect.
     - dashboard を書くのは家老と軍師の分担のまま変わらない(将軍は書かない)。
 15. **足軽7(Haiku)に回す作業の基準(cmd_254・殿裁定 2026-11-02)**: 足軽7=Haiku に回すのは、bloom_level が L1〜L3 で、**短く定型の作業**(例: 件数の集計・ログの要約・ファイルの移動・定型の書き換え)だけ。それ以外(L4 以上・設計判断を要する・長い・手順が定型でない作業)は Sonnet の席(足軽1〜6)に回す。迷えば Sonnet の席。足軽7=Haiku が役に立つかのデータを取る席であり、基準を超えて回さない。
 16. **task YAML に `seat_reason:` を1行(cmd_254・殿裁定 2026-11-02)**: 配信(dispatch.sh)する task YAML に `seat_reason:` を1行足し、その席(足軽N)を選んだ理由を書く(例: `seat_reason: "L2・定型の置換のため足軽7(Haiku)"` / `seat_reason: "L4・設計判断を含むため Sonnet の足軽3"`)。1〜2週間後に Sonnet の席と Haiku の席を比べるとき、席の選び方を読み返せるようにするため。
+17. **殿の裁定待ちになった cmd は `status: blocked` にする(cmd_256・殿裁定 2026-11-02)**: cmd が殿の裁定待ちで止まったら、`queue/shogun_to_karo.yaml` のその cmd の `status` を `blocked` にし、理由を1行書く(例: `blocked_reason: 殿の裁定待ち Q1〜Q3`)。裁定が出たら元の status(`in_progress` 等)に戻し、`blocked_reason:` の行を消す。
+    - **足軽が動くべき cmd を `blocked` にしない**。`blocked` にしてよいのは、殿の裁定が出るまで足軽・軍師の手が動かせぬ(待つほかない)cmd だけ。一部でも足軽が進められる作業が残るなら `in_progress` のままにする。
+    - **理由**: ALL-IDLE(全員が20分待機すると家老が起こされる仕組み。cmd_255)は、`status: blocked` の cmd を進行中に数えない。殿の裁定待ちで皆が待機しているのは正当な待機であり、これを進行中に数えると、殿を待つ間じゅう家老が30分ごとに起こされて誤報になる(殿裁定 2026-11-02、journal に記帳済み)。
+    - `blocked` は `mods/status/hooks/lib.js` の `CMD_ACTIVE` に既にある値であり、mods/status の進行 cmd の数え方は変わらない。終端(`done` 等)ではないので、裁定が出るまで cmd は閉じない(上記13の終端規則とは別)。
 
 # OpenCode-specific operating rules
 
