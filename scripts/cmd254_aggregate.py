@@ -14,6 +14,9 @@
   python3 scripts/cmd254_aggregate.py --cmds 243-251
   python3 scripts/cmd254_aggregate.py --from 2026-11-03T00:00:00 --to 2026-11-17T00:00:00
   python3 scripts/cmd254_aggregate.py --cmds 255-262 --from ... --to ...   # 両方指定も可
+  # inbox 由来の数値を保存した写しから再計算(監査ログは現物のまま)
+  python3 scripts/cmd254_aggregate.py --cmds 243-251 --from ... --to ... \\
+      --queue-root reports/cmd254_snapshot_2026-11-02
 時刻は JST(+09:00) とみなす(監査ログは +09:00、inbox は時刻のみで JST)。
 """
 import argparse
@@ -180,12 +183,17 @@ def main():
     ap.add_argument('--from', dest='w0', help='対象期間の開始 ISO (省略時: 対象 cmd の最初の task_assigned)')
     ap.add_argument('--to', dest='w1', help='対象期間の終了 ISO (省略時: 対象 cmd の最後の報告)')
     ap.add_argument('--root', default=ROOT)
+    ap.add_argument('--queue-root', default=None,
+                    help='queue/ 配下(inbox・archive・cmds・tasks)の読み元。省略時は --root。'
+                         '写し(reports/cmd254_snapshot_*/)から inbox 由来の数値を再計算するときに指定する'
+                         '(監査ログは --root のまま)')
     ap.add_argument('--title', default='cmd_254 集計')
     args = ap.parse_args()
     root = args.root
+    qroot = args.queue_root or root
 
-    cmdts = load_cmd_timestamps(root)
-    inbox, inbox_meta = load_inbox(root)
+    cmdts = load_cmd_timestamps(qroot)
+    inbox, inbox_meta = load_inbox(qroot)
     w0 = parse_ts(args.w0) if args.w0 else None
     w1 = parse_ts(args.w1) if args.w1 else None
 
@@ -338,7 +346,7 @@ def main():
     P('')
     bl = Counter()
     bl_files = []
-    for f in glob.glob(os.path.join(root, 'queue/tasks/*.yaml')) + glob.glob(os.path.join(root, 'queue/archive/tasks/*.yaml')):
+    for f in glob.glob(os.path.join(qroot, 'queue/tasks/*.yaml')) + glob.glob(os.path.join(qroot, 'queue/archive/tasks/*.yaml')):
         try:
             d = (yaml.safe_load(open(f, encoding='utf-8')) or {}).get('task') or {}
         except Exception:  # noqa: BLE001
@@ -348,7 +356,7 @@ def main():
         t = parse_ts(d['timestamp'])
         if w0 <= t <= w1 and cmd_num(d.get('parent_cmd')) in want:
             bl[d['bloom_level']] += 1
-            bl_files.append(os.path.relpath(f, root))
+            bl_files.append(os.path.relpath(f, qroot))
     if bl:
         P(f'- 期間内の task YAML に残る bloom_level: {dict(sorted(bl.items()))} (元: {", ".join(bl_files)})。'
           '残っているのは各席の『最後の task』だけで、期間内の割当の大半は上書きで失われている。分布の母集団には足りない(取れない)。')
