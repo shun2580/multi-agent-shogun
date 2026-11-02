@@ -20,6 +20,7 @@
 # T-AI-M*  文面            T-AI-L*  ログ(fail-loud) T-AI-G*  家老の見張り役だけが評価する
 # T-AI-O*  足軽ごとの条件(cmd_252)との重なり        T-AI-S*  settings の鍵と既定値
 # T-AI-W*  配線(新しい常駐物が無い)               T-AI-P*  本物のペイン探し
+# T-AI-B*  status=blocked の cmd は進行中に数えない(cmd_256 / 殿裁定『殿の裁定待ちの cmd は進行中に数えない』)
 
 SCRIPT_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
 WATCHER="$SCRIPT_DIR/scripts/inbox_watcher.sh"
@@ -243,9 +244,9 @@ CMD_ACTIVE="cmd_255=in_progress"
     [ "$(grep -c "inbox_watcher" "$WORK/queue/inbox/ashigaru1.yaml" || true)" -eq 0 ]
 }
 
-@test "T-AI-F2: 進行中の定義は lib.js(CMD_ACTIVE)と同じ — pending / in_progress / assigned / blocked のどれでも進行中。他の cmd が終端でも1つあれば足りる" {
+@test "T-AI-F2: 進行中の定義は lib.js(CMD_ACTIVE)から blocked を除いたもの — pending / in_progress / assigned が進行中(blocked は cmd_256 で除外: T-AI-B*)。他の cmd が終端でも1つあれば足りる" {
     local s
-    for s in pending in_progress assigned blocked; do
+    for s in pending in_progress assigned; do
         ai_run "$(steps 0 60 1200)" AI_CMDS="cmd_100=done $CMD_ACTIVE cmd_101=$s"
         echo "status=$s msgs=$(ai_msgs)"
         [ "$(ai_msgs)" -eq 1 ]
@@ -658,4 +659,75 @@ EOF
     ai_run "$(steps 0 300 3600)" AI_REALPANE=1 AI_AGENTS="karo ashigaru7" AI_CMDS="$CMD_ACTIVE"
     [ "$(ai_msgs)" -eq 0 ]
     grep -q "\[ALL-IDLE\].*skip.*reason=peer_unknown.*ashigaru7" "$WORK/driver.log"
+}
+
+# ═══════════════════════════════════════════════════════════════
+# B. status=blocked の cmd は進行中に数えない(cmd_256)
+#    殿の裁定待ちの cmd は、陣が全員待機でも正当な待機。家老を30分ごとに起こし続けてはならぬ。
+#    ただし黙って何もしない分岐は作らぬ — 発火しなかった理由は reason=all_blocked でログに残す(fail-loud)。
+# ═══════════════════════════════════════════════════════════════
+
+@test "T-AI-B1: blocked の cmd だけなら発火しない — 何時間待っても家老の inbox にも ntfy にも出ない(blocked 1件・複数件)" {
+    ai_run "$(steps 0 60 3600)" AI_CMDS="cmd_253=blocked"
+    [ "$(ai_msgs)" -eq 0 ]
+    [ "$(ai_notify_count)" -eq 0 ]
+    ai_run "$(steps 0 60 7200)" AI_CMDS="cmd_253=blocked cmd_254=blocked"
+    [ "$(ai_msgs)" -eq 0 ]
+    [ "$(ai_notify_count)" -eq 0 ]
+}
+
+@test "T-AI-B2: blocked と終端だけ(進行中なし)でも発火しない — all_blocked として止まる" {
+    ai_run "$(steps 0 60 3600)" AI_CMDS="cmd_1=done cmd_2=cancelled_by_lord cmd_253=blocked"
+    [ "$(ai_msgs)" -eq 0 ]
+    [ "$(ai_notify_count)" -eq 0 ]
+    grep -q "\[ALL-IDLE\].*skip.*reason=all_blocked" "$WORK/driver.log"
+}
+
+@test "T-AI-B3: blocked と進行中が混ざれば発火する — 進行中が pending / in_progress / assigned のどれでも1段目が1通(1199sは0通・1200sで1通)" {
+    local s
+    for s in pending in_progress assigned; do
+        ai_run "$(steps 0 60 1199)" AI_CMDS="cmd_253=blocked cmd_300=$s"
+        [ "$(ai_msgs)" -eq 0 ]
+        ai_run "$(steps 0 60 1200)" AI_CMDS="cmd_253=blocked cmd_300=$s"
+        echo "status=$s msgs=$(ai_msgs)"
+        [ "$(ai_msgs)" -eq 1 ]
+    done
+    # blocked が先頭・末尾のどちらにあっても同じ
+    ai_run "$(steps 0 60 1200)" AI_CMDS="cmd_300=in_progress cmd_253=blocked"
+    [ "$(ai_msgs)" -eq 1 ]
+}
+
+@test "T-AI-B4: 混ざったときの文面・ログ・task_id には進行中の cmd だけが載り、blocked の cmd は載らない(数えない)" {
+    ai_run "$(steps 0 60 2400)" AI_CMDS="cmd_253=blocked cmd_300=in_progress cmd_301=blocked"
+    echo "--- karo inbox ---"; cat "$WORK/queue/inbox/karo.yaml"
+    [ "$(ai_msgs)" -eq 1 ]
+    grep -q "task_id: allidle_cmd_300" "$WORK/queue/inbox/karo.yaml"
+    content="$(ai_content)"
+    [[ "$content" == *cmd_300* ]]
+    [[ "$content" != *cmd_253* ]]
+    [[ "$content" != *cmd_301* ]]
+    grep -q "\[ALL-IDLE\].*track.*cmds=cmd_300" "$WORK/driver.log"
+    grep -q "\[ALL-IDLE\].*stage1.*cmds=cmd_300" "$WORK/driver.log"
+    not grep -q "\[ALL-IDLE\].*cmds=[^ ]*cmd_253" "$WORK/driver.log"
+}
+
+@test "T-AI-B5: 発火しなかった理由が毎tickでなく1回だけ、cmd の id 入りでログに残る(reason=all_blocked blocked=…)。進行中なしの no_active_cmd とは区別される" {
+    ai_run "$(steps 0 60 1800)" AI_CMDS="cmd_253=blocked cmd_254=blocked"
+    echo "--- ALL-IDLE ---"; grep "ALL-IDLE" "$WORK/driver.log"
+    grep -q "\[ALL-IDLE\].*skip.*reason=all_blocked.*blocked=cmd_253.*cmd_254" "$WORK/driver.log"
+    [ "$(grep -c "reason=all_blocked" "$WORK/driver.log")" -eq 1 ]
+    not grep -q "reason=no_active_cmd" "$WORK/driver.log"
+    # blocked が1件も無い(全部終端)なら従来どおり no_active_cmd で、all_blocked は出ない
+    ai_run "$(steps 0 60 600)" AI_CMDS="cmd_1=done"
+    grep -q "reason=no_active_cmd" "$WORK/driver.log"
+    not grep -q "reason=all_blocked" "$WORK/driver.log"
+}
+
+@test "T-AI-B6: 裁定が出て blocked が in_progress に戻れば、また数える — blocked の間に積んだ時計は捨てられ、戻した時点から20分で発火する" {
+    ai_run "$(steps 0 60 1800)" AI_CMDS="cmd_253=blocked"
+    [ "$(ai_msgs)" -eq 0 ]
+    ai_run "$(steps 1860 60 3059)" AI_CMDS="cmd_253=in_progress" AI_KEEP=1
+    [ "$(ai_msgs)" -eq 0 ]
+    ai_run "$(steps 3060 60 3060)" AI_CMDS="cmd_253=in_progress" AI_KEEP=1
+    [ "$(ai_msgs)" -eq 1 ]
 }
