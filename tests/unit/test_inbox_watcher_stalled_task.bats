@@ -161,11 +161,19 @@ EOF
 # st_run <offsets> [env...] — 状態ファイルと写しを空にして始める(ST_KEEP=1 なら続き)。ログは $WORK/driver.log
 st_run() {
     local offsets="$1"; shift
+    # 引数の ST_KEEP= / ST_AGENT= は運転台(env)へ渡す値であると同時に、ここでの前準備の判断にも要る
+    local keep="" agent="ashigaru9" a
+    for a in "$@"; do
+        case "$a" in
+            ST_KEEP=*) keep="${a#ST_KEEP=}" ;;
+            ST_AGENT=*) agent="${a#ST_AGENT=}" ;;
+        esac
+    done
     install_watcher "$WATCHER"
-    if [ -z "${ST_KEEP:-}" ]; then
+    if [ -z "$keep" ]; then
         rm -f -- "$WORK"/logs/watcher_busy/*.state
         : > "$WORK/notify.out"
-        printf 'messages: []\n' > "$WORK/queue/inbox/${ST_AGENT:-ashigaru9}.yaml"
+        printf 'messages: []\n' > "$WORK/queue/inbox/${agent}.yaml"
     fi
     write_driver
     run env WORK="$WORK" BASE="$BASE" ST_OFFSETS="$offsets" "$@" bash "$WORK/driver.sh"
@@ -180,7 +188,11 @@ notify_count() { grep -c . "$WORK/notify.out" || true; }
 # 2段目(待機停滞)の通知だけの件数(既存の働き中の知らせ[cmd_231]は数えない)
 stall_notify_count() { grep -c "未完了のまま待機" "$WORK/notify.out" || true; }
 # 1段目(from=inbox_watcher)の件数
-stall_msgs() { grep -c "from: inbox_watcher" "$WORK/queue/inbox/${1:-ashigaru9}.yaml" || true; }
+stall_msgs() {
+    local f="$WORK/queue/inbox/${1:-ashigaru9}.yaml"
+    [ -f "$f" ] || { echo 0; return 0; }
+    grep -c "from: inbox_watcher" "$f" || true
+}
 recv() { cat "$WORK/recv.log"; }
 
 # ═══════════════════════════════════════════════════════════════

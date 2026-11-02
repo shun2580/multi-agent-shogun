@@ -268,6 +268,16 @@ if printf 'x\n' | grep -qiE -- "$BUSYGUARD_CONFIRM_RE" 2>/dev/null; [ $? -eq 2 ]
     BUSYGUARD_CONFIRM_RE=$_BUSYGUARD_CONFIRM_RE_DEFAULT
 fi
 BUSYGUARD_CONFIRM_REPEAT_MIN=$(_bg_posint "${BUSYGUARD_CONFIRM_REPEAT_MIN:-$(_read_busy_guard_setting confirm_repeat_notify_minutes 30)}" 30)
+
+# ─── Stalled-task wake-up config (cmd_252 / 殿命 2026-11-02) ───
+# task を持ったまま待機が続く agent(例: 裏の長い処理を待つと言ったまま誰にも起こされない足軽)を2段で起こす。
+#   stalled_task_minutes          task が assigned/in_progress のまま、待機(画面idle+idleフラグ)が続く分数 → 1段目(本人へ inbox)(既定20)
+#   stalled_first_repeat_minutes  同じ task への1段目を再送する最短間隔(既定30)
+#   stalled_ntfy_after_minutes    1段目の後さらに待機のままなら殿へ ntfy する分数(既定20。続く間の再通知は repeat_notify_minutes)
+# 誤記(正の整数でない)は既定へ戻る。env での上書き: BUSYGUARD_STALLED_MIN / _FIRST_REPEAT_MIN / _NTFY_AFTER_MIN
+BUSYGUARD_STALLED_MIN=$(_bg_posint "${BUSYGUARD_STALLED_MIN:-$(_read_busy_guard_setting stalled_task_minutes 20)}" 20)
+BUSYGUARD_STALLED_FIRST_REPEAT_MIN=$(_bg_posint "${BUSYGUARD_STALLED_FIRST_REPEAT_MIN:-$(_read_busy_guard_setting stalled_first_repeat_minutes 30)}" 30)
+BUSYGUARD_STALLED_NTFY_AFTER_MIN=$(_bg_posint "${BUSYGUARD_STALLED_NTFY_AFTER_MIN:-$(_read_busy_guard_setting stalled_ntfy_after_minutes 20)}" 20)
 WK_PROMPT_WINDOW=${WK_PROMPT_WINDOW:-7}      # 入力欄を探す範囲(末尾から数えた空行を除く行数)
 WK_PENDING_WINDOW=${WK_PENDING_WINDOW:-10}   # 文字を打ちかけの入力欄(折り返しで下へ伸びる)を探す範囲
 WK_ABOVE_LINES=${WK_ABOVE_LINES:-4}          # 入力欄の上で作業中の目印を探す行数
@@ -677,11 +687,14 @@ try:
     normal_count = len(unread) - len(specials)
     normal_msgs = [m for m in unread if m.get("type") not in special_types]
     has_task_assigned = any(m.get("type") == "task_assigned" for m in normal_msgs)
+    # cmd_252: 見張り役自身が出した『待機停滞の1段目』(info / from=inbox_watcher)の未読数
+    stall_notice_count = sum(1 for m in normal_msgs if m.get("type") == "info" and m.get("from") == "inbox_watcher")
     latest = messages[-1] if messages else {}
     latest_content = latest.get("content", "")
     payload = {
         "count": normal_count,
         "has_task_assigned": has_task_assigned,
+        "stall_notice_count": stall_notice_count,
         "specials": [{"type": m.get("type", ""), "content": m.get("content", "")} for m in specials],
         "latest_content": latest_content,
         "latest_cmd_id": latest.get("cmd_id") or "",
@@ -1634,6 +1647,8 @@ _bg_load() {
     BG_BUSY_SINCE=0; BG_UNREAD_SINCE=0; BG_LAST_SEEN=0
     BG_UNREAD_NOTIFIED=0; BG_LONG_NOTIFIED=0; BG_UNREAD_ATTEMPT=0; BG_LONG_ATTEMPT=0
     BG_CONFIRM_SINCE=0; BG_CONFIRM_SIG=0; BG_CONFIRM_NOTIFIED=0; BG_CONFIRM_ATTEMPT=0
+    BG_ST_SINCE=0; BG_ST_SIG=0; BG_ST_SENT=0; BG_ST_SENT_SIG=0; BG_ST_RUN_FIRST=0
+    BG_ST_NTFY_SENT=0; BG_ST_ATTEMPT=0; BG_ST_NTFY_ATTEMPT=0; BG_ST_STATE=0
     local f k v
     f=$(_bg_state_file)
     [ -f "$f" ] || return 0
@@ -1651,6 +1666,15 @@ _bg_load() {
             confirm_sig) BG_CONFIRM_SIG=$v ;;
             confirm_notified) BG_CONFIRM_NOTIFIED=$v ;;
             confirm_attempt) BG_CONFIRM_ATTEMPT=$v ;;
+            stall_since) BG_ST_SINCE=$v ;;
+            stall_sig) BG_ST_SIG=$v ;;
+            stall_sent) BG_ST_SENT=$v ;;
+            stall_sent_sig) BG_ST_SENT_SIG=$v ;;
+            stall_run_first) BG_ST_RUN_FIRST=$v ;;
+            stall_ntfy_sent) BG_ST_NTFY_SENT=$v ;;
+            stall_attempt) BG_ST_ATTEMPT=$v ;;
+            stall_ntfy_attempt) BG_ST_NTFY_ATTEMPT=$v ;;
+            stall_state) BG_ST_STATE=$v ;;
         esac
     done < "$f"
     return 0
@@ -1673,6 +1697,15 @@ _bg_save() {
         echo "confirm_sig=$BG_CONFIRM_SIG"
         echo "confirm_notified=$BG_CONFIRM_NOTIFIED"
         echo "confirm_attempt=$BG_CONFIRM_ATTEMPT"
+        echo "stall_since=$BG_ST_SINCE"
+        echo "stall_sig=$BG_ST_SIG"
+        echo "stall_sent=$BG_ST_SENT"
+        echo "stall_sent_sig=$BG_ST_SENT_SIG"
+        echo "stall_run_first=$BG_ST_RUN_FIRST"
+        echo "stall_ntfy_sent=$BG_ST_NTFY_SENT"
+        echo "stall_attempt=$BG_ST_ATTEMPT"
+        echo "stall_ntfy_attempt=$BG_ST_NTFY_ATTEMPT"
+        echo "stall_state=$BG_ST_STATE"
     } > "$tmp" 2>/dev/null && mv -f "$tmp" "$f" 2>/dev/null || rm -f "$tmp" 2>/dev/null
     return 0
 }
@@ -1732,12 +1765,184 @@ _bg_screen_sig() {
     echo "$sig"
 }
 
+# ─── Stalled-task wake-up (cmd_252) ───
+# task YAML が assigned / in_progress のまま、agent が待機(画面idle + idleフラグ)で居続けるのを見張り、2段で起こす。
+#   1段目: 本人へ scripts/inbox_write.sh(from=inbox_watcher, type=info)。キーは直接打たず、既存の inbox の経路
+#          (nudge → 待機中のプロンプトと言い切れるときだけ送る KEY-GATE)に乗せる。同じ task へは stalled_first_repeat_minutes に1回まで。
+#   2段目: 1段目の後さらに stalled_ntfy_after_minutes 待機のままなら、既存の reporting(scripts/ntfy.sh)で殿へ ntfy。
+# 『待機』の判定は新しく作らず、既存の2つを併せて使う:
+#   - 画面: busy_guard_tick が取る wk_screen_class(idle のときだけ)  - idleフラグ: ${IDLE_FLAG_DIR:-/tmp}/shogun_idle_<agent>
+#   フラグだけでは足りない(watcher 自身が未読0の周期ごとに置き直すので、働き中でも立っている)ため、画面が idle であることも要る。
+# 対象: shogun 以外。task YAML(queue/tasks/<agent>.yaml)を持たない agent は対象外(家老・軍師が持たぬ場合)。
+# 黙って何もしない分岐を作らぬ: 判定の結果(追跡開始・見送りの理由・間引き・送信・失敗)は [STALLED-TASK] でログに残す。
+#   見送り・間引きは理由が変わったときだけ(毎tickは出さない)。状態は busy_guard の状態ファイルに同居(stall_* の鍵)。
+_st_active_status() { case "${1:-}" in assigned|in_progress) return 0 ;; *) return 1 ;; esac; }
+
+# _st_log_state <状態の鍵> <本文...> — 鍵が前回と変わったときだけログに出す
+_st_log_state() {
+    local key="$1" sig
+    shift
+    sig=$(printf '%s' "$key" | cksum | cut -d' ' -f1)
+    if [ "${BG_ST_STATE:-0}" != "$sig" ]; then
+        BG_ST_STATE=$sig
+        echo "[$(date)] [STALLED-TASK] $*" >&2
+    fi
+    return 0
+}
+
+# 待機の時計(と、その時計に紐づく送信の記録)を捨てる。1段目の最終送信時刻(間引き用・task ごと)は残す。
+_st_reset_run() {
+    BG_ST_SINCE=0; BG_ST_SIG=0; BG_ST_RUN_FIRST=0
+    BG_ST_NTFY_SENT=0; BG_ST_ATTEMPT=0; BG_ST_NTFY_ATTEMPT=0
+}
+
+# _st_read_task — ST_TASK_FILE_OK(1=読めた/0=無い/2=読めない)・ST_TASK_ID(安全な文字のみ)・ST_TASK_STATUS を埋める
+_st_read_task() {
+    local tf="${SCRIPT_DIR}/queue/tasks/${AGENT_ID}.yaml" out
+    ST_TASK_FILE_OK=0; ST_TASK_ID=""; ST_TASK_STATUS=""
+    [ -f "$tf" ] || return 0
+    out=$("$SCRIPT_DIR/.venv/bin/python3" -c "
+import sys, yaml
+try:
+    with open(sys.argv[1], encoding='utf-8') as f:
+        d = yaml.safe_load(f) or {}
+    t = d.get('task') or {}
+    print(str(t.get('task_id') or '').strip())
+    print(str(t.get('status') or '').strip())
+except Exception:
+    print('__ERR__')
+" "$tf" 2>/dev/null) || out="__ERR__"
+    # 読めない(YAMLの誤り・task が空)は fail-loud の対象(呼び側が task_unreadable をログに残す)
+    if [ -z "$out" ] || [ "$(printf '%s\n' "$out" | sed -n '1p')" = "__ERR__" ]; then
+        ST_TASK_FILE_OK=2
+        return 0
+    fi
+    ST_TASK_FILE_OK=1
+    ST_TASK_ID=$(printf '%s\n' "$out" | sed -n '1p' | tr -cd 'A-Za-z0-9_.-' | cut -c1-64)
+    ST_TASK_STATUS=$(printf '%s\n' "$out" | sed -n '2p' | tr -cd 'A-Za-z0-9_-' | cut -c1-32)
+    [ -n "$ST_TASK_ID" ] || ST_TASK_ID="不明"
+    return 0
+}
+
+# _st_send_stage1 <task_id> — 1段目。0=送れた。キーは打たず inbox_write.sh を通す(戻り値と失敗はログに残す)。
+_st_send_stage1() {
+    local tid="$1" rc=0
+    timeout 20 bash "${SCRIPT_DIR}/scripts/inbox_write.sh" "$AGENT_ID" \
+        "task ${tid} が未完了のまま待機している。裏の処理の状態を確かめて続けよ" info inbox_watcher \
+        --task_id="$tid" >/dev/null 2>&1 || rc=$?
+    return "$rc"
+}
+
+# _st_tick <画面の分類> <いま(epoch秒)> — busy_guard_tick から1サイクルに1回
+_st_tick() {
+    local cls="$1" now="$2"
+    local reason st tid sig elapsed mins since_sent msg
+    # 画面を取れなかった: 時計を始めも止めもしない(保持)
+    case "$cls" in
+        idle) ;;
+        failed)
+            _st_log_state "screen_failed" "skip agent=$AGENT_ID reason=screen_failed — 画面を取れず待機か判じられぬ。時計は保持する"
+            return 0 ;;
+        *)
+            _st_reset_run
+            _st_log_state "not_idle_screen:$cls" "skip agent=$AGENT_ID reason=not_idle_screen screen=$cls — 待機でない(働き中/確認画面/判別不能)。待機の時計は捨てた"
+            return 0 ;;
+    esac
+    if [ ! -f "${IDLE_FLAG_DIR:-/tmp}/shogun_idle_${AGENT_ID}" ]; then
+        _st_reset_run
+        _st_log_state "no_idle_flag" "skip agent=$AGENT_ID reason=no_idle_flag — 画面はidleだがidleフラグが無い。待機の時計は捨てた"
+        return 0
+    fi
+    _st_read_task
+    if [ "$ST_TASK_FILE_OK" = 0 ]; then
+        _st_reset_run
+        _st_log_state "no_task" "skip agent=$AGENT_ID reason=no_task — queue/tasks/${AGENT_ID}.yaml が無い(task を持たぬ agent は対象外)"
+        return 0
+    fi
+    if [ "$ST_TASK_FILE_OK" = 2 ]; then
+        _st_reset_run
+        _st_log_state "task_unreadable" "skip agent=$AGENT_ID reason=task_unreadable — queue/tasks/${AGENT_ID}.yaml を読めぬ。待機の時計は捨てた"
+        return 0
+    fi
+    st="${ST_TASK_STATUS:-empty}"
+    if ! _st_active_status "$st"; then
+        _st_reset_run
+        _st_log_state "status_$st" "skip agent=$AGENT_ID reason=status_$st task=$ST_TASK_ID — task が未完了でない(assigned/in_progress のみ対象)。待機の時計は捨てた"
+        return 0
+    fi
+
+    tid="$ST_TASK_ID"
+    sig=$(printf '%s' "$tid" | cksum | cut -d' ' -f1)
+    # task が替わったら時計は数え直す
+    if [ "$BG_ST_SINCE" -gt 0 ] && [ "$BG_ST_SIG" != "$sig" ]; then
+        _st_reset_run
+    fi
+    if [ "$BG_ST_SINCE" -eq 0 ]; then
+        BG_ST_SINCE=$now; BG_ST_SIG=$sig
+        BG_ST_STATE=0
+        _st_log_state "track:$tid" "track agent=$AGENT_ID task=$tid status=$st — 待機の追跡を始めた(${BUSYGUARD_STALLED_MIN}分で1段目)"
+    fi
+    elapsed=$((now - BG_ST_SINCE))
+    mins=$((elapsed / 60))
+
+    # 1段目: 本人へ inbox
+    if [ "$elapsed" -ge "$((BUSYGUARD_STALLED_MIN * 60))" ]; then
+        if [ "$BG_ST_SENT" -gt 0 ] && [ "$BG_ST_SENT_SIG" = "$sig" ] \
+           && [ "$((now - BG_ST_SENT))" -lt "$((BUSYGUARD_STALLED_FIRST_REPEAT_MIN * 60))" ]; then
+            since_sent=$(( (now - BG_ST_SENT) / 60 ))
+            _st_log_state "throttled:$tid" "stage1-throttled agent=$AGENT_ID task=$tid stalled_for=${mins}m last_sent=${since_sent}m前 — 同じ task への1段目は${BUSYGUARD_STALLED_FIRST_REPEAT_MIN}分に1回まで"
+        elif [ "$BG_ST_ATTEMPT" -eq 0 ] || [ "$((now - BG_ST_ATTEMPT))" -ge "$BUSYGUARD_RETRY_SEC" ]; then
+            BG_ST_ATTEMPT=$now
+            if _st_send_stage1 "$tid"; then
+                BG_ST_SENT=$now; BG_ST_SENT_SIG=$sig
+                [ "$BG_ST_RUN_FIRST" -eq 0 ] && BG_ST_RUN_FIRST=$now
+                echo "[$(date)] [STALLED-TASK] stage1 agent=$AGENT_ID task=$tid stalled_for=${mins}m — inbox_write.sh で本人へ送った(from=inbox_watcher type=info)" >&2
+            else
+                echo "[$(date)] [STALLED-TASK] stage1-FAIL agent=$AGENT_ID task=$tid stalled_for=${mins}m — inbox_write.sh が失敗した。${BUSYGUARD_RETRY_SEC}秒後に再試行する" >&2
+            fi
+        fi
+    fi
+
+    # 2段目: 1段目の後さらに待機のままなら殿へ ntfy(続く間は repeat_notify_minutes ごと)
+    if [ "$BG_ST_RUN_FIRST" -gt 0 ] \
+       && [ "$((now - BG_ST_RUN_FIRST))" -ge "$((BUSYGUARD_STALLED_NTFY_AFTER_MIN * 60))" ] \
+       && { [ "$BG_ST_NTFY_SENT" -eq 0 ] || [ "$((now - BG_ST_NTFY_SENT))" -ge "$((BUSYGUARD_REPEAT_MIN * 60))" ]; } \
+       && { [ "$BG_ST_NTFY_ATTEMPT" -eq 0 ] || [ "$((now - BG_ST_NTFY_ATTEMPT))" -ge "$BUSYGUARD_RETRY_SEC" ]; }; then
+        msg="💤 ${AGENT_ID}が task ${tid} 未完了のまま待機している(${mins}分。本人へ inbox で促したが動かぬ)。裏の処理の状態を確かめてほしい"
+        echo "[$(date)] [STALLED-TASK] stage2 agent=$AGENT_ID task=$tid stalled_for=${mins}m — 殿へ ntfy する" >&2
+        BG_ST_NTFY_ATTEMPT=$now
+        if _bg_notify stalled "$msg"; then BG_ST_NTFY_SENT=$now; fi
+    fi
+    return 0
+}
+
+# _st_only_stall_notices <get_unread_info の JSON> — 未読がすべて 1段目(from=inbox_watcher の info)なら 1 を出す
+_st_only_stall_notices() {
+    printf '%s' "$1" | "$SCRIPT_DIR/.venv/bin/python3" -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    n = d.get('count') or 0
+    print(1 if n > 0 and d.get('stall_notice_count', 0) == n else 0)
+except Exception:
+    print(0)
+" 2>/dev/null || echo 0
+}
+
+
 # busy_guard_tick <未読件数(不明なら空)>
 # 1サイクルに1回呼ぶ。画面を観測して状態ファイルを更新し、目安を超えていれば殿へ知らせる。
 busy_guard_tick() {
     local unread="${1:-}"
     # shogun は殿の操作する pane。見張り役はここへ手を出さぬ(従来どおり)。
-    [ "$AGENT_ID" = "shogun" ] && return 0
+    # cmd_252: 待機停滞の起こしも shogun は対象外(1回だけログに残す)
+    if [ "$AGENT_ID" = "shogun" ]; then
+        if [ "${_ST_SHOGUN_LOGGED:-0}" != 1 ]; then
+            _ST_SHOGUN_LOGGED=1
+            echo "[$(date)] [STALLED-TASK] skip agent=shogun reason=shogun_excluded — 将軍は殿の操作する pane。待機停滞の起こしの対象外" >&2
+        fi
+        return 0
+    fi
 
     local now cls
     now=$(_now_epoch)
@@ -1747,6 +1952,7 @@ busy_guard_tick() {
     # 観測が長く途切れていた(見張り役が止まっていた等)なら、古い連続は信用せず数え直す
     if [ "$BG_LAST_SEEN" -gt 0 ] && [ "$((now - BG_LAST_SEEN))" -gt "$BUSYGUARD_RESUME_GAP_SEC" ]; then
         _bg_reset_run
+        _st_reset_run
     fi
 
     case "$cls" in
@@ -1764,6 +1970,9 @@ busy_guard_tick() {
         *)  : ;;  # failed — 保持
     esac
     BG_LAST_SEEN=$now
+
+    # cmd_252: task を持ったまま待機が続く agent の2段の起こし(状態は同じ状態ファイルに同居)
+    _st_tick "$cls" "$now" || true
 
     local what="働き中の"
     case "$cls" in
@@ -2069,6 +2278,15 @@ for s in data.get('specials', []):
             send_wakeup_with_escape "$normal_count"
         else
             # Phase 3 (4+ min): /clear (throttled to once per 5 min)
+            # cmd_252: 未読が見張り役自身の『待機停滞の1段目』だけなら /clear しない。1段目は待機中の agent を
+            # 起こすための促しで、読まれなかった(=動かぬ)のを理由に会話を消すのは意図に反する。再度 nudge するだけにし、
+            # それでも動かぬときは2段目(殿への ntfy)が知らせる。
+            if [ "$(_st_only_stall_notices "$info")" = "1" ]; then
+                echo "[$(date)] [STALLED-TASK] phase3-withheld agent=$AGENT_ID unread=$normal_count age=${age}s — 未読は待機停滞の1段目のみ。/clear は送らず nudge し直す" >&2
+                FIRST_UNREAD_SEEN=$now
+                send_wakeup "$normal_count"
+                return 0
+            fi
             if [ "$LAST_CLEAR_TS" -lt "$((now - ESCALATE_COOLDOWN))" ]; then
                 local effective_cli
                 effective_cli=$(get_effective_cli_type)

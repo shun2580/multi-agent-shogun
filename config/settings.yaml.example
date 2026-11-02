@@ -34,6 +34,10 @@ busy_guard:  # cmd_231: 働き中の足軽へ /clear は送らぬ。働き中が
   continuous_notify_minutes: 60  # 未読の有無を問わず働き中が連続する分数 → 知らせ
   repeat_notify_minutes: 60  # 知らせた後、続く間の再通知間隔
   confirm_repeat_notify_minutes: 30  # cmd_231 工程B: 確認画面で止まった足軽は待たず即時に1回知らせ、同じ画面が続く間はこの分ごとに1回
+  # cmd_252: task を持ったまま待機が続く agent の2段の起こし(1段目=本人へ inbox、2段目=殿へ ntfy)。無ければこの既定で動く。
+  stalled_task_minutes: 20  # task が assigned/in_progress のまま、待機(画面idle+idleフラグ)が続く分数 → 1段目
+  stalled_first_repeat_minutes: 30  # 同じ task への1段目を再送する最短間隔
+  stalled_ntfy_after_minutes: 20  # 1段目の後さらに待機のままなら殿へ ntfy する分数(続く間の再通知は repeat_notify_minutes)
   # 確認画面の検出文言(ERE・大小無視)。Claude Code の画面文言が変わったらここで差し替える。無ければ既定で動く。
   # ※ 既定値は模擬画面での確認のみ(実機未確認)。誤記(ERE として不正)は既定へ戻る。
   # confirm_screen_regex: 'Esc to cancel|Do you want to |\(y/n\)|\[Y/n\]|\[y/N\]|[0-9]+\.[[:space:]]+(Yes|No)([[:space:]]|,|$)|Press Enter to|Enter to confirm'
