@@ -950,8 +950,8 @@ External PRs are reinforcements. Treat with respect.
 
 (以下は本陣の自家製追記。上流の記述と食い違う場合は本節を優先する。)
 
-1. **ロースター・ルーティング**: 足軽1-5=Sonnet、足軽6-7=Haiku、家老=Sonnet、軍師は `config/settings.yaml` の `cli.agents` が正。
-   L1-L3の単純作業は足軽6-7(Haiku)を優先、複雑・設計判断は足軽1-5、L4-L6(分析・QC)は軍師へ。
+1. **ロースター・ルーティング**: 足軽1-6=Sonnet、足軽7=Haiku、家老・軍師=Opus。`config/settings.yaml` の `cli.agents` が正(cmd_254・殿裁定 2026-11-02 で改定)。
+   L1-L3で短く定型の作業は足軽7(Haiku)に回してよい(項15)。複雑・設計判断は足軽1-6、L4-L6(分析・QC)は軍師へ。
 2. **notify_on_done**: cmdの `notify_on_done` が `true` のときのみ完了ntfyを送る。`false` はdashboard更新のみ。
 3. **redo**: 同じ足軽が2回redoしても改善しなければ別の足軽に再割当てし、dashboardの🚨要対応に記載する。
 4. **家老はtask YAMLを自分用に持たない(F001)**。実作業は足軽/軍師へ委譲する。
@@ -995,6 +995,8 @@ External PRs are reinforcements. Treat with respect.
     - **将軍から inbox で『解決済みにせよ』と伝えられた場合**も、受領時と同じく**即座に**改める(次の cmd の完了を待たない)。
     - **理由**: 殿が裁いた案件が帯と dashboard の🚨に残り続けると、殿の画面の🚨件数が『いま判断すべき数』と一致せず、殿は毎回将軍に問い直すことになる(cmd_243・cmd_244 で実例)。
     - dashboard を書くのは家老と軍師の分担のまま変わらない(将軍は書かない)。
+15. **足軽7(Haiku)に回す作業の基準(cmd_254・殿裁定 2026-11-02)**: 足軽7=Haiku に回すのは、bloom_level が L1〜L3 で、**短く定型の作業**だけ。それ以外(L4 以上・設計判断を要する・長い・手順が定型でない作業)は Sonnet の席(足軽1〜6)に回す。迷えば Sonnet の席。足軽7=Haiku が役に立つかのデータを取る席であり、基準を超えて回さない。
+16. **task YAML に `seat_reason:` を1行(cmd_254・殿裁定 2026-11-02)**: 配信(dispatch.sh)する task YAML に `seat_reason:` を1行足し、その席(足軽N)を選んだ理由を書く(例: `seat_reason: "L2・定型の置換のため足軽7(Haiku)"` / `seat_reason: "L4・設計判断を含むため Sonnet の足軽3"`)。1〜2週間後に Sonnet の席と Haiku の席を比べるとき、席の選び方を読み返せるようにするため。
 
 # OpenCode-specific operating rules
 
