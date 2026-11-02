@@ -311,6 +311,50 @@ recv() { cat "$WORK/recv.log"; }
     grep -q "40分" "$WORK/notify.out"
 }
 
+@test "T-ST-T7: 殿の修正①『読んだら出さない』 — 1段目が20分後に read: true なら2段目の ntfy は出ず、待機が続けば1段目が30分間隔で繰り返される" {
+    # 1200s に1段目 → 1500s に本人が既読にする → 2400s(1段目から20分)になっても ntfy は出ない
+    st_run "$(steps 0 60 1500)" ST_SCHED="0:1"
+    [ "$(stall_msgs)" -eq 1 ]
+    sed -i 's/read: false/read: true/' "$WORK/queue/inbox/ashigaru9.yaml"
+    st_run "$(steps 1560 60 2999)" ST_SCHED="0:1" ST_KEEP=1
+    echo "--- notify.out ---"; cat "$WORK/notify.out"
+    [ "$(stall_notify_count)" -eq 0 ]
+    [ "$(stall_msgs)" -eq 1 ]
+    grep -q "\[STALLED-TASK\].*stage2-skipped.*agent=ashigaru9.*reason=stage1_read" "$WORK/driver.log"
+    # 待機が続くので、1段目は最後の送信(1200s)から30分後(3000s)に繰り返される
+    st_run "$(steps 3000 60 3000)" ST_SCHED="0:1" ST_KEEP=1
+    [ "$(stall_msgs)" -eq 2 ]
+    [ "$(stall_notify_count)" -eq 0 ]
+}
+
+@test "T-ST-T8: 殿の修正①『未読なら出す』 — 繰り返された1段目も未読のまま20分たてば ntfy が出る(既読にした分は数えず、最新の1段目の既読で判定)" {
+    st_run "$(steps 0 60 1500)" ST_SCHED="0:1"
+    sed -i 's/read: false/read: true/' "$WORK/queue/inbox/ashigaru9.yaml"
+    # 3000s に2通目(未読)。その20分後(4200s)まで未読 → ntfy が1回
+    st_run "$(steps 1560 60 4199)" ST_SCHED="0:1" ST_KEEP=1
+    [ "$(stall_msgs)" -eq 2 ]
+    [ "$(stall_notify_count)" -eq 0 ]
+    st_run "$(steps 4200 60 4200)" ST_SCHED="0:1" ST_KEEP=1
+    echo "--- notify.out ---"; cat "$WORK/notify.out"
+    [ "$(stall_notify_count)" -eq 1 ]
+    grep -q "subtask_999_A" "$WORK/notify.out"
+}
+
+@test "T-ST-M1: 殿の修正② 1段目の文面に、動いていれば何も始めず手番を終えてよい・二重に走らせない・終わっていれば続きを、および既読にしてから終える、が入っている" {
+    st_run "$(steps 0 60 1200)" ST_SCHED="0:1"
+    local f="$WORK/queue/inbox/ashigaru9.yaml" c
+    # YAML の折り返しに左右されぬよう、content を取り出して比べる
+    c="$("$SCRIPT_DIR/.venv/bin/python3" -c "
+import yaml,sys
+d=yaml.safe_load(open(sys.argv[1],encoding='utf-8'))
+print([m for m in d['messages'] if m['from']=='inbox_watcher'][0]['content'])
+" "$f")"
+    echo "$c"
+    [[ "$c" == *"task subtask_999_A が未完了のまま待機している。裏の処理の状態を確かめて続けよ"* ]]
+    [[ "$c" == *"裏の処理がまだ動いているなら、何も始めずにそのまま手番を終えてよい。計測や作業をやり直さない(二重に走らせない)。終わっていれば結果を読んで続きを進めよ"* ]]
+    [[ "$c" == *"この通知を既読(read: true)にしてから手番を終えよ"* ]]
+}
+
 @test "T-ST-T4: 1段目の後に働き出したなら(待機が途切れたなら)2段目の ntfy は出ない" {
     st_run "$(steps 0 60 3000)" ST_SCHED="0:1 1500:0 1560:1"
     echo "--- notify.out ---"; cat "$WORK/notify.out"
