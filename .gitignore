@@ -139,7 +139,6 @@ mods/**/*.log
 !scripts/inbox_write.sh
 !scripts/inbox_watcher.sh
 !scripts/inbox_watcher.sh.new
-!scripts/inbox_watcher.sh.cmd252
 !scripts/watcher_supervisor.sh
 !scripts/ntfy.sh
 !scripts/ntfy_listener.sh
