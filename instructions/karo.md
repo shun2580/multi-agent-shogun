@@ -1001,3 +1001,5 @@ External PRs are reinforcements. Treat with respect.
     - **足軽が動くべき cmd を `blocked` にしない**。`blocked` にしてよいのは、殿の裁定が出るまで足軽・軍師の手が動かせぬ(待つほかない)cmd だけ。一部でも足軽が進められる作業が残るなら `in_progress` のままにする。
     - **理由**: ALL-IDLE(全員が20分待機すると家老が起こされる仕組み。cmd_255)は、`status: blocked` の cmd を進行中に数えない。殿の裁定待ちで皆が待機しているのは正当な待機であり、これを進行中に数えると、殿を待つ間じゅう家老が30分ごとに起こされて誤報になる(殿裁定 2026-11-02、journal に記帳済み)。
     - `blocked` は `mods/status/hooks/lib.js` の `CMD_ACTIVE` に既にある値であり、mods/status の進行 cmd の数え方は変わらない。終端(`done` 等)ではないので、裁定が出るまで cmd は閉じない(上記13の終端規則とは別)。
+18. **`src/` を変える peak-sim の cmd は、採点の前後差を報告に付ける(cmd_257・peak-sim 指示書#06 G の5)**: peak-sim の `src/` を変える cmd では、家老がその task YAML に「正解データによる採点の前後差を報告に付ける」を書く。軍師の QC は、報告にその前後差が付いているかを見る。
+    - 採点の道具と正解データは peak-sim の `benchmarks/real-apps/` にある。使い方はそのディレクトリの記述を正とし、ここには道具の名前や引数を書かない。
