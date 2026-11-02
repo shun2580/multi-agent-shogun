@@ -278,6 +278,19 @@ BUSYGUARD_CONFIRM_REPEAT_MIN=$(_bg_posint "${BUSYGUARD_CONFIRM_REPEAT_MIN:-$(_re
 BUSYGUARD_STALLED_MIN=$(_bg_posint "${BUSYGUARD_STALLED_MIN:-$(_read_busy_guard_setting stalled_task_minutes 20)}" 20)
 BUSYGUARD_STALLED_FIRST_REPEAT_MIN=$(_bg_posint "${BUSYGUARD_STALLED_FIRST_REPEAT_MIN:-$(_read_busy_guard_setting stalled_first_repeat_minutes 30)}" 30)
 BUSYGUARD_STALLED_NTFY_AFTER_MIN=$(_bg_posint "${BUSYGUARD_STALLED_NTFY_AFTER_MIN:-$(_read_busy_guard_setting stalled_ntfy_after_minutes 20)}" 20)
+
+# ─── All-idle wake-up config (cmd_255 / 殿命 2026-11-02) ───
+# 進行中の cmd が1つ以上あるのに、家老・軍師・足軽1〜7の全員が待機(画面idle+idleフラグ)のまま続くのを、
+# 家老の見張り役だけが2段で起こす。1段目=家老へ inbox(殿の一文入り)、2段目=1段目が未読のままなら殿へ ntfy。
+#   all_idle_minutes             全員待機が続く分数 → 1段目(既定20)
+#   all_idle_repeat_minutes      同じ cmd への1段目を再送する最短間隔(既定30)
+#   all_idle_ntfy_after_minutes  1段目の後さらに未読のままなら殿へ ntfy する分数(既定20。続く間の再通知は repeat_notify_minutes)
+# 誤記(正の整数でない)は既定へ戻る。env での上書き: BUSYGUARD_ALLIDLE_MIN / _REPEAT_MIN / _NTFY_AFTER_MIN
+# 『全員』の名簿は BUSYGUARD_ALLIDLE_AGENTS(試験用の口。既定は下記の9体。将軍は殿の pane ゆえ含めぬ)。
+BUSYGUARD_ALLIDLE_MIN=$(_bg_posint "${BUSYGUARD_ALLIDLE_MIN:-$(_read_busy_guard_setting all_idle_minutes 20)}" 20)
+BUSYGUARD_ALLIDLE_REPEAT_MIN=$(_bg_posint "${BUSYGUARD_ALLIDLE_REPEAT_MIN:-$(_read_busy_guard_setting all_idle_repeat_minutes 30)}" 30)
+BUSYGUARD_ALLIDLE_NTFY_AFTER_MIN=$(_bg_posint "${BUSYGUARD_ALLIDLE_NTFY_AFTER_MIN:-$(_read_busy_guard_setting all_idle_ntfy_after_minutes 20)}" 20)
+BUSYGUARD_ALLIDLE_AGENTS=${BUSYGUARD_ALLIDLE_AGENTS:-"karo gunshi ashigaru1 ashigaru2 ashigaru3 ashigaru4 ashigaru5 ashigaru6 ashigaru7"}
 WK_PROMPT_WINDOW=${WK_PROMPT_WINDOW:-7}      # 入力欄を探す範囲(末尾から数えた空行を除く行数)
 WK_PENDING_WINDOW=${WK_PENDING_WINDOW:-10}   # 文字を打ちかけの入力欄(折り返しで下へ伸びる)を探す範囲
 WK_ABOVE_LINES=${WK_ABOVE_LINES:-4}          # 入力欄の上で作業中の目印を探す行数
@@ -1649,6 +1662,8 @@ _bg_load() {
     BG_CONFIRM_SINCE=0; BG_CONFIRM_SIG=0; BG_CONFIRM_NOTIFIED=0; BG_CONFIRM_ATTEMPT=0
     BG_ST_SINCE=0; BG_ST_SIG=0; BG_ST_SENT=0; BG_ST_SENT_SIG=0; BG_ST_RUN_FIRST=0
     BG_ST_NTFY_SENT=0; BG_ST_ATTEMPT=0; BG_ST_NTFY_ATTEMPT=0; BG_ST_STATE=0
+    BG_AI_SINCE=0; BG_AI_SENT=0; BG_AI_SENT_SIG=0; BG_AI_RUN_FIRST=0
+    BG_AI_NTFY_SENT=0; BG_AI_ATTEMPT=0; BG_AI_NTFY_ATTEMPT=0; BG_AI_STATE=0
     local f k v
     f=$(_bg_state_file)
     [ -f "$f" ] || return 0
@@ -1675,6 +1690,14 @@ _bg_load() {
             stall_attempt) BG_ST_ATTEMPT=$v ;;
             stall_ntfy_attempt) BG_ST_NTFY_ATTEMPT=$v ;;
             stall_state) BG_ST_STATE=$v ;;
+            ai_since) BG_AI_SINCE=$v ;;
+            ai_sent) BG_AI_SENT=$v ;;
+            ai_sent_sig) BG_AI_SENT_SIG=$v ;;
+            ai_run_first) BG_AI_RUN_FIRST=$v ;;
+            ai_ntfy_sent) BG_AI_NTFY_SENT=$v ;;
+            ai_attempt) BG_AI_ATTEMPT=$v ;;
+            ai_ntfy_attempt) BG_AI_NTFY_ATTEMPT=$v ;;
+            ai_state) BG_AI_STATE=$v ;;
         esac
     done < "$f"
     return 0
@@ -1706,6 +1729,14 @@ _bg_save() {
         echo "stall_attempt=$BG_ST_ATTEMPT"
         echo "stall_ntfy_attempt=$BG_ST_NTFY_ATTEMPT"
         echo "stall_state=$BG_ST_STATE"
+        echo "ai_since=$BG_AI_SINCE"
+        echo "ai_sent=$BG_AI_SENT"
+        echo "ai_sent_sig=$BG_AI_SENT_SIG"
+        echo "ai_run_first=$BG_AI_RUN_FIRST"
+        echo "ai_ntfy_sent=$BG_AI_NTFY_SENT"
+        echo "ai_attempt=$BG_AI_ATTEMPT"
+        echo "ai_ntfy_attempt=$BG_AI_NTFY_ATTEMPT"
+        echo "ai_state=$BG_AI_STATE"
     } > "$tmp" 2>/dev/null && mv -f "$tmp" "$f" 2>/dev/null || rm -f "$tmp" 2>/dev/null
     return 0
 }
@@ -1939,6 +1970,325 @@ _st_tick() {
     return 0
 }
 
+# ─── All-idle wake-up (cmd_255) ───
+# 進行中の cmd があるのに全員が待機のまま時間を失う(例: 報告漏れで done にされた足軽を誰も拾えず約1時間止まった cmd_253)のを、
+# 家老の見張り役だけが2段で起こす。足軽ごとの停滞(cmd_252)は『task を持つ本人』を起こすが、これは『陣全体の沈黙』を起こす。
+#   条件(すべて): ①自分(家老)の画面が idle かつ idleフラグあり ②BUSYGUARD_ALLIDLE_AGENTS の他の全員も 画面idle かつ idleフラグあり
+#                 ③進行中の cmd が1つ以上 — かつ ①〜③が all_idle_minutes 続く
+#   進行中の定義は新しく作らず既存に合わせる: 終端 = scripts/done.sh の TERMINAL_STATUSES/TERMINAL_PREFIXES
+#     (= mods/status/hooks/lib.js の CMD_TERMINAL を含む)、進行中 = lib.js の CMD_ACTIVE(pending/in_progress/assigned/blocked)。
+#     どちらでもない値は進行中に数えず、ログに unknown_status として残す。
+#   1段目: 家老へ scripts/inbox_write.sh(from=inbox_watcher・type=info・task_id=allidle_<cmd>。キーは直接打たない)。
+#          同じ進行 cmd の組へは all_idle_repeat_minutes に1回まで。
+#   2段目: 1段目が all_idle_ntfy_after_minutes 未読(read: false)のままのときだけ、既存の reporting(scripts/ntfy.sh)で殿へ ntfy。
+#          既読なら出さず計時を戻す(cmd_252 の修正①と同じ)。
+#   足軽ごとの条件との重なり: 他の agent(軍師・足軽)に assigned/in_progress の task があれば、その agent への1段目(cmd_252)を優先し、
+#          家老へは『その agent への1段目の最終送信 + stalled_ntfy_after_minutes』= その agent の2段目の時刻まで送らぬ。
+#          ただし全員待機が (all_idle_minutes + stalled_ntfy_after_minutes) 続いたら、足軽側が送れていなくても送る(上限。永久に待たぬ)。
+#   評価するのは AGENT_ID=karo の見張り役だけ。新しい常駐プロセス・cron は作らず、busy_guard_tick の1周期に乗るだけ。
+#   黙って何もしない分岐を作らぬ: 判定の結果は [ALL-IDLE] でログに残す。見送り・間引きは理由が変わったときだけ(毎tickは出さない)。
+#   状態は busy_guard の状態ファイルに同居(ai_* の鍵。家老の分だけ使う)。
+_ai_log_state() {
+    local key="$1" sig
+    shift
+    sig=$(printf '%s' "$key" | cksum | cut -d' ' -f1)
+    if [ "${BG_AI_STATE:-0}" != "$sig" ]; then
+        BG_AI_STATE=$sig
+        echo "[$(date)] [ALL-IDLE] $*" >&2
+    fi
+    return 0
+}
+
+# 全員待機の時計(と、その時計に紐づく送信の記録)を捨てる。1段目の最終送信時刻(間引き用・cmd の組ごと)は残す。
+_ai_reset_run() {
+    BG_AI_SINCE=0; BG_AI_RUN_FIRST=0
+    BG_AI_NTFY_SENT=0; BG_AI_ATTEMPT=0; BG_AI_NTFY_ATTEMPT=0
+}
+
+# _ai_peer_screen <agent> — 他の agent の画面の分類を標準出力へ: idle / working / confirm / undetermined / failed / nopane
+# ペインは同じ tmux サーバの @agent_id で探す(見つからねば nopane)。分類は自分の画面と同じ _wk_classify(PANE_TARGET を一時的に差し替える)。
+# 呼び側がサブシェル($(...))で呼ぶので、PANE_TARGET も WK_* も本体には漏れない。キーは一切送らぬ(読むだけ)。
+_ai_peer_screen() {
+    local agent="$1" pane=""
+    pane=$(timeout 2 tmux list-panes -a -F '#{pane_id} #{@agent_id}' 2>/dev/null | awk -v a="$agent" '$2 == a { print $1; exit }') || pane=""
+    if [ -z "$pane" ]; then echo nopane; return 0; fi
+    PANE_TARGET="$pane"
+    _wk_classify empty
+    echo "$WK_CLASS_RESULT"
+}
+
+# _ai_check_peers — 他の全員が待機かを AI_PEERS_RESULT(idle / busy / unknown)・AI_PEERS_DETAIL に。
+# 安い順(idleフラグ → 画面)に見て、1人でも待機でなければ即 busy(残りは見ない)。画面を取れぬ・ペインが無い者がいて、
+# かつ働き中の者がいなければ unknown(呼び側は時計を保持する)。
+_ai_check_peers() {
+    AI_PEERS_RESULT=idle; AI_PEERS_DETAIL=""
+    local a cls unknown=""
+    for a in $BUSYGUARD_ALLIDLE_AGENTS; do
+        [ "$a" = "$AGENT_ID" ] && continue
+        if [ ! -f "${IDLE_FLAG_DIR:-/tmp}/shogun_idle_${a}" ]; then
+            AI_PEERS_RESULT=busy; AI_PEERS_DETAIL="peer=$a detail=no_idle_flag"
+            return 0
+        fi
+    done
+    for a in $BUSYGUARD_ALLIDLE_AGENTS; do
+        [ "$a" = "$AGENT_ID" ] && continue
+        cls=$(_ai_peer_screen "$a")
+        case "$cls" in
+            idle) ;;
+            failed|nopane) [ -n "$unknown" ] || unknown="peer=$a detail=screen_$cls" ;;
+            *) AI_PEERS_RESULT=busy; AI_PEERS_DETAIL="peer=$a detail=screen_$cls"; return 0 ;;
+        esac
+    done
+    if [ -n "$unknown" ]; then AI_PEERS_RESULT=unknown; AI_PEERS_DETAIL="$unknown"; fi
+    return 0
+}
+
+# _ai_read_cmds — queue/shogun_to_karo.yaml の cmd の status から進行中を数える。
+#   AI_CMDS_OK: 1=読めた 0=ファイルが無い 2=読めない  AI_CMDS_ACTIVE: 進行中の id(ファイルの順・空白区切り)  AI_CMDS_UNKNOWN: 想定外の status の id:値
+# 結果はファイルの mtime-size で覚え、変わらぬ間は読み直さぬ(大きなファイルを毎tick解析せぬ)。
+_ai_read_cmds() {
+    local f="${SCRIPT_DIR}/queue/shogun_to_karo.yaml" msig out
+    if [ ! -f "$f" ]; then
+        AI_CMDS_OK=0; AI_CMDS_ACTIVE=""; AI_CMDS_UNKNOWN=""; AI_CMDS_SIG=""
+        return 0
+    fi
+    msig=$(stat -c '%Y-%s' "$f" 2>/dev/null || echo "")
+    if [ -n "$msig" ] && [ "${AI_CMDS_SIG:-}" = "$msig" ]; then return 0; fi
+    out=$("$SCRIPT_DIR/.venv/bin/python3" -c "
+import re, sys, yaml
+TERM = {'done', 'done_with_caveat', 'superseded', 'cancelled', 'failed'}   # scripts/done.sh TERMINAL_STATUSES
+PREF = ('superseded_', 'cancelled_', 'failed_')                            # scripts/done.sh TERMINAL_PREFIXES / lib.js CMD_TERMINAL
+ACTIVE = {'pending', 'in_progress', 'assigned', 'blocked'}                 # mods/status/hooks/lib.js CMD_ACTIVE
+try:
+    loader = getattr(yaml, 'CSafeLoader', yaml.SafeLoader)
+    with open(sys.argv[1], encoding='utf-8') as f:
+        d = yaml.load(f, Loader=loader)
+    cmds = d['commands']
+    if not isinstance(cmds, list):
+        raise ValueError('commands is not a list')
+    act, unk = [], []
+    for e in cmds:
+        i = re.sub(r'[^A-Za-z0-9_.-]', '', str(e['id']))[:64]
+        s = re.sub(r'[^A-Za-z0-9_.-]', '', str(e.get('status', '')))[:64]
+        if s in TERM or s.startswith(PREF):
+            continue
+        if s in ACTIVE:
+            act.append(i)
+        else:
+            unk.append(i + ':' + (s or 'none'))
+    print('OK')
+    print(' '.join(act))
+    print(' '.join(unk))
+except Exception:
+    print('ERR')
+" "$f" 2>/dev/null) || out="ERR"
+    if [ "$(printf '%s\n' "$out" | sed -n '1p')" != "OK" ]; then
+        AI_CMDS_OK=2; AI_CMDS_ACTIVE=""; AI_CMDS_UNKNOWN=""; AI_CMDS_SIG=""
+        return 0
+    fi
+    AI_CMDS_OK=1
+    AI_CMDS_ACTIVE=$(printf '%s\n' "$out" | sed -n '2p')
+    AI_CMDS_UNKNOWN=$(printf '%s\n' "$out" | sed -n '3p')
+    AI_CMDS_SIG=$msig
+    return 0
+}
+
+# _ai_ids_disp <空白区切りの id> — 文面・ログ用。「・」区切り、5件を超えたら『ほかN件』
+_ai_ids_disp() {
+    local n=0 id out="" extra=0
+    for id in $1; do
+        n=$((n + 1))
+        if [ "$n" -le 5 ]; then out="${out:+${out}・}${id}"; else extra=$((extra + 1)); fi
+    done
+    [ "$extra" -gt 0 ] && out="${out}・ほか${extra}件"
+    printf '%s' "$out"
+}
+
+# _ai_send_stage1 <進行 cmd の id(空白区切り)> <待機の分数> — 1段目。0=送れた。キーは打たず inbox_write.sh を通す。
+# 文面の初めは殿の一文(cmd_255)。末尾の『既読にしてから手番を終えよ』は cmd_252 と同じ(既読で2段目の ntfy を止めるため)。
+_ai_send_stage1() {
+    local ids="$1" mins="$2" primary rc=0 disp
+    primary=${ids%% *}
+    disp=$(_ai_ids_disp "$ids")
+    timeout 20 bash "${SCRIPT_DIR}/scripts/inbox_write.sh" "$AGENT_ID" \
+        "${disp} が進行中なのに、全員が ${mins} 分待機している。各足軽の task の status・report・裏の処理の出力を確かめ、報告漏れ・通知漏れがあれば拾って次へ進めよ。裏の処理がまだ動いているなら、何も始めずに手番を終えてよい(やり直さない)。殿の裁定待ちなら、そのまま手番を終えてよい。この通知を既読(read: true)にしてから手番を終えよ。" info inbox_watcher \
+        --cmd_id="$primary" --task_id="allidle_${primary}" >/dev/null 2>&1 || rc=$?
+    return "$rc"
+}
+
+# _ai_stage1_state — 家老の inbox の、最新の全員待機の1段目(from=inbox_watcher・type=info・task_id が allidle_ で始まる)の既読状態:
+# unread / read / none。既存の read フラグで判定する。読めない・見つからないときは none。
+_ai_stage1_state() {
+    INBOX_PATH="$INBOX" "$SCRIPT_DIR/.venv/bin/python3" -c "
+import os, yaml
+try:
+    with open(os.environ['INBOX_PATH'], encoding='utf-8') as f:
+        d = yaml.safe_load(f) or {}
+    ms = [m for m in (d.get('messages') or [])
+          if m.get('from') == 'inbox_watcher' and m.get('type') == 'info' and str(m.get('task_id') or '').startswith('allidle_')]
+    print('none' if not ms else ('read' if ms[-1].get('read', False) else 'unread'))
+except Exception:
+    print('none')
+" 2>/dev/null || echo none
+}
+
+# _ai_defer_until <上限の時刻(epoch)> — 足軽ごとの条件(cmd_252)を優先するための、家老への1段目を送ってよい最早の時刻を
+# AI_DEFER_UNTIL(epoch。上限を超えぬ)・AI_DEFER_AGENT(待つ相手)に。
+# 他の agent(BUSYGUARD_ALLIDLE_AGENTS)の task YAML が assigned/in_progress なら、その agent の状態ファイルの stall_sent(同じ task への
+# 1段目の最終送信)+ stalled_ntfy_after_minutes = その agent の2段目の時刻。まだ送れていなければ上限まで待つ。
+_ai_defer_until() {
+    local cap="$1" a tf out st tid sig sf sent sent_sig gate max=0 who=""
+    for a in $BUSYGUARD_ALLIDLE_AGENTS; do
+        [ "$a" = "$AGENT_ID" ] && continue
+        tf="${SCRIPT_DIR}/queue/tasks/${a}.yaml"
+        [ -f "$tf" ] || continue
+        out=$("$SCRIPT_DIR/.venv/bin/python3" -c "
+import sys, yaml
+try:
+    with open(sys.argv[1], encoding='utf-8') as f:
+        d = yaml.safe_load(f) or {}
+    t = d.get('task') or {}
+    print(str(t.get('status') or '').strip())
+    print(str(t.get('task_id') or '').strip())
+except Exception:
+    print('__ERR__')
+" "$tf" 2>/dev/null) || out="__ERR__"
+        st=$(printf '%s\n' "$out" | sed -n '1p' | tr -cd 'A-Za-z0-9_-' | cut -c1-32)
+        _st_active_status "$st" || continue
+        tid=$(printf '%s\n' "$out" | sed -n '2p' | tr -cd 'A-Za-z0-9_.-' | cut -c1-64)
+        [ -n "$tid" ] || tid="不明"
+        sig=$(printf '%s' "$tid" | cksum | cut -d' ' -f1)
+        sf="${BUSYGUARD_STATE_DIR}/${a}.state"
+        sent=0; sent_sig=0
+        if [ -f "$sf" ]; then
+            sent=$(grep -m1 '^stall_sent=' "$sf" 2>/dev/null | cut -d= -f2) || sent=0
+            sent_sig=$(grep -m1 '^stall_sent_sig=' "$sf" 2>/dev/null | cut -d= -f2) || sent_sig=0
+            case "$sent" in ''|*[!0-9]*) sent=0 ;; esac
+            case "$sent_sig" in ''|*[!0-9]*) sent_sig=0 ;; esac
+        fi
+        if [ "$sent" -gt 0 ] && [ "$sent_sig" = "$sig" ]; then
+            gate=$((sent + BUSYGUARD_STALLED_NTFY_AFTER_MIN * 60))
+        else
+            gate=$cap   # その agent への1段目がまだ。上限まで待つ
+        fi
+        if [ "$gate" -gt "$max" ]; then max=$gate; who=$a; fi
+    done
+    [ "$max" -gt "$cap" ] && max=$cap
+    AI_DEFER_UNTIL=$max; AI_DEFER_AGENT=$who
+    return 0
+}
+
+# _ai_tick <画面の分類> <いま(epoch秒)> — busy_guard_tick から1サイクルに1回(家老の見張り役だけが評価する)
+_ai_tick() {
+    local cls="$1" now="$2"
+    local ids disp sig elapsed mins since_sent cap s1 msg
+    if [ "$AGENT_ID" != "karo" ]; then
+        if [ "${_AI_NOTKARO_LOGGED:-0}" != 1 ]; then
+            _AI_NOTKARO_LOGGED=1
+            echo "[$(date)] [ALL-IDLE] skip agent=$AGENT_ID reason=not_karo_watcher — 全員待機の起こしは家老の見張り役だけが評価する" >&2
+        fi
+        return 0
+    fi
+
+    # ①自分(家老)が待機か。画面を取れなかったときは時計を始めも止めもしない(保持)
+    case "$cls" in
+        idle) ;;
+        failed)
+            _ai_log_state "self_screen_failed" "skip agent=$AGENT_ID reason=self_screen_failed — 自分の画面を取れず待機か判じられぬ。時計は保持する"
+            return 0 ;;
+        *)
+            _ai_reset_run
+            _ai_log_state "self_not_idle:$cls" "skip agent=$AGENT_ID reason=self_not_idle screen=$cls — 家老が待機でない。全員待機の時計は捨てた"
+            return 0 ;;
+    esac
+    if [ ! -f "${IDLE_FLAG_DIR:-/tmp}/shogun_idle_${AGENT_ID}" ]; then
+        _ai_reset_run
+        _ai_log_state "self_no_idle_flag" "skip agent=$AGENT_ID reason=self_no_idle_flag — 家老の画面はidleだがidleフラグが無い。全員待機の時計は捨てた"
+        return 0
+    fi
+
+    # ②他の全員が待機か
+    _ai_check_peers
+    case "$AI_PEERS_RESULT" in
+        busy)
+            _ai_reset_run
+            _ai_log_state "peer_not_idle:$AI_PEERS_DETAIL" "skip agent=$AGENT_ID reason=peer_not_idle $AI_PEERS_DETAIL — 全員は待機でない。全員待機の時計は捨てた"
+            return 0 ;;
+        unknown)
+            _ai_log_state "peer_unknown:$AI_PEERS_DETAIL" "skip agent=$AGENT_ID reason=peer_unknown $AI_PEERS_DETAIL — 待機か判じられぬ者がいる(画面を取れぬ/ペインが無い)。時計は保持する(進行中でも発火しない)"
+            return 0 ;;
+    esac
+
+    # ③進行中の cmd
+    _ai_read_cmds
+    case "$AI_CMDS_OK" in
+        0)
+            _ai_log_state "cmds_missing" "skip agent=$AGENT_ID reason=cmds_missing — queue/shogun_to_karo.yaml が無い。進行中か判じられぬ。時計は保持する"
+            return 0 ;;
+        2)
+            _ai_log_state "cmds_unreadable" "skip agent=$AGENT_ID reason=cmds_unreadable — queue/shogun_to_karo.yaml を読めぬ(YAMLの誤り)。進行中とはみなさず、時計は保持する"
+            return 0 ;;
+    esac
+    ids="$AI_CMDS_ACTIVE"
+    if [ -z "$ids" ]; then
+        _ai_reset_run
+        _ai_log_state "no_active_cmd:${AI_CMDS_UNKNOWN}" "skip agent=$AGENT_ID reason=no_active_cmd${AI_CMDS_UNKNOWN:+ unknown_status=$AI_CMDS_UNKNOWN} — 進行中の cmd が無い。全員待機の時計は捨てた"
+        return 0
+    fi
+    disp=$(_ai_ids_disp "$ids")
+    sig=$(printf '%s' "$ids" | cksum | cut -d' ' -f1)
+
+    if [ "$BG_AI_SINCE" -eq 0 ]; then
+        BG_AI_SINCE=$now
+        BG_AI_STATE=0
+        _ai_log_state "track:$ids" "track agent=$AGENT_ID cmds=$disp${AI_CMDS_UNKNOWN:+ unknown_status=$AI_CMDS_UNKNOWN} — 全員待機の追跡を始めた(${BUSYGUARD_ALLIDLE_MIN}分で家老へ1段目)"
+    fi
+    elapsed=$((now - BG_AI_SINCE))
+    mins=$((elapsed / 60))
+
+    # 1段目: 家老へ inbox
+    if [ "$elapsed" -ge "$((BUSYGUARD_ALLIDLE_MIN * 60))" ]; then
+        if [ "$BG_AI_SENT" -gt 0 ] && [ "$BG_AI_SENT_SIG" = "$sig" ] \
+           && [ "$((now - BG_AI_SENT))" -lt "$((BUSYGUARD_ALLIDLE_REPEAT_MIN * 60))" ]; then
+            since_sent=$(( (now - BG_AI_SENT) / 60 ))
+            _ai_log_state "throttled:$ids" "stage1-throttled agent=$AGENT_ID cmds=$disp idle_for=${mins}m last_sent=${since_sent}m前 — 同じ cmd への1段目は${BUSYGUARD_ALLIDLE_REPEAT_MIN}分に1回まで"
+        else
+            cap=$((BG_AI_SINCE + (BUSYGUARD_ALLIDLE_MIN + BUSYGUARD_STALLED_NTFY_AFTER_MIN) * 60))
+            _ai_defer_until "$cap"
+            if [ "$now" -lt "$AI_DEFER_UNTIL" ]; then
+                _ai_log_state "deferred:$AI_DEFER_AGENT" "deferred agent=$AGENT_ID cmds=$disp idle_for=${mins}m wait_for_agent=$AI_DEFER_AGENT until=$(( (AI_DEFER_UNTIL - BG_AI_SINCE) / 60 ))m — 足軽ごとの停滞(cmd_252)の1段目を優先し、その2段目の時刻まで家老へは送らぬ(上限は全員待機$(( (cap - BG_AI_SINCE) / 60 ))分)"
+            elif [ "$BG_AI_ATTEMPT" -eq 0 ] || [ "$((now - BG_AI_ATTEMPT))" -ge "$BUSYGUARD_RETRY_SEC" ]; then
+                BG_AI_ATTEMPT=$now
+                if _ai_send_stage1 "$ids" "$mins"; then
+                    BG_AI_SENT=$now; BG_AI_SENT_SIG=$sig
+                    [ "$BG_AI_RUN_FIRST" -eq 0 ] && BG_AI_RUN_FIRST=$now
+                    echo "[$(date)] [ALL-IDLE] stage1 agent=$AGENT_ID cmds=$disp idle_for=${mins}m — inbox_write.sh で家老へ送った(from=inbox_watcher type=info)" >&2
+                else
+                    echo "[$(date)] [ALL-IDLE] stage1-FAIL agent=$AGENT_ID cmds=$disp idle_for=${mins}m — inbox_write.sh が失敗した。${BUSYGUARD_RETRY_SEC}秒後に再試行する" >&2
+                fi
+            fi
+        fi
+    fi
+
+    # 2段目: 1段目の後さらに待機のままで、かつ1段目の inbox が未読のままなら殿へ ntfy(続く間は repeat_notify_minutes ごと)。
+    # 既読(read: true)なら出さず計時を戻す(cmd_252 の修正①と同じ。確かめて待機に戻った家老に知らせると誤報になる)。
+    if [ "$BG_AI_RUN_FIRST" -gt 0 ] \
+       && [ "$((now - BG_AI_RUN_FIRST))" -ge "$((BUSYGUARD_ALLIDLE_NTFY_AFTER_MIN * 60))" ]; then
+        s1=$(_ai_stage1_state)
+        if [ "$s1" = "read" ]; then
+            echo "[$(date)] [ALL-IDLE] stage2-skipped agent=$AGENT_ID cmds=$disp idle_for=${mins}m reason=stage1_read — 1段目は既読。ntfy は出さず計時を戻す(全員待機が続けば1段目を${BUSYGUARD_ALLIDLE_REPEAT_MIN}分間隔で繰り返す)" >&2
+            BG_AI_RUN_FIRST=0; BG_AI_NTFY_SENT=0; BG_AI_NTFY_ATTEMPT=0
+        elif { [ "$BG_AI_NTFY_SENT" -eq 0 ] || [ "$((now - BG_AI_NTFY_SENT))" -ge "$((BUSYGUARD_REPEAT_MIN * 60))" ]; } \
+             && { [ "$BG_AI_NTFY_ATTEMPT" -eq 0 ] || [ "$((now - BG_AI_NTFY_ATTEMPT))" -ge "$BUSYGUARD_RETRY_SEC" ]; }; then
+            msg="💤 ${disp} が進行中なのに、全員が${mins}分待機している(家老へ送った inbox が未読のまま動かぬ)。止まっている所を確かめてほしい"
+            echo "[$(date)] [ALL-IDLE] stage2 agent=$AGENT_ID cmds=$disp idle_for=${mins}m stage1=$s1 — 殿へ ntfy する" >&2
+            BG_AI_NTFY_ATTEMPT=$now
+            if _bg_notify allidle "$msg"; then BG_AI_NTFY_SENT=$now; fi
+        fi
+    fi
+    return 0
+}
+
 # _st_only_stall_notices <get_unread_info の JSON> — 未読がすべて 1段目(from=inbox_watcher の info)なら 1 を出す
 _st_only_stall_notices() {
     printf '%s' "$1" | "$SCRIPT_DIR/.venv/bin/python3" -c "
@@ -1976,6 +2326,7 @@ busy_guard_tick() {
     if [ "$BG_LAST_SEEN" -gt 0 ] && [ "$((now - BG_LAST_SEEN))" -gt "$BUSYGUARD_RESUME_GAP_SEC" ]; then
         _bg_reset_run
         _st_reset_run
+        _ai_reset_run
     fi
 
     case "$cls" in
@@ -1996,6 +2347,8 @@ busy_guard_tick() {
 
     # cmd_252: task を持ったまま待機が続く agent の2段の起こし(状態は同じ状態ファイルに同居)
     _st_tick "$cls" "$now" || true
+    # cmd_255: 進行中の cmd があるのに全員が待機のまま続く陣全体の沈黙を、家老の見張り役だけが2段で起こす
+    _ai_tick "$cls" "$now" || true
 
     local what="働き中の"
     case "$cls" in

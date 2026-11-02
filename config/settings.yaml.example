@@ -41,6 +41,10 @@ busy_guard:  # cmd_231: 働き中の足軽へ /clear は送らぬ。働き中が
   # 確認画面の検出文言(ERE・大小無視)。Claude Code の画面文言が変わったらここで差し替える。無ければ既定で動く。
   # ※ 既定値は模擬画面での確認のみ(実機未確認)。誤記(ERE として不正)は既定へ戻る。
   # confirm_screen_regex: 'Esc to cancel|Do you want to |\(y/n\)|\[Y/n\]|\[y/N\]|[0-9]+\.[[:space:]]+(Yes|No)([[:space:]]|,|$)|Press Enter to|Enter to confirm'
+  # cmd_255: 進行中の cmd があるのに、家老・軍師・足軽1〜7の全員が待機のまま続くときの2段の起こし(家老の見張り役だけが評価。1段目=家老へ inbox、2段目=殿へ ntfy)。無ければこの既定で動く。
+  all_idle_minutes: 20  # 全員待機(画面idle+idleフラグ)が続く分数 → 家老へ1段目
+  all_idle_repeat_minutes: 30  # 同じ cmd への1段目を再送する最短間隔
+  all_idle_ntfy_after_minutes: 20  # 1段目が未読(read: false)のままさらにこの分数たてば殿へ ntfy(既読なら出さない)
 cli:
   agents:
     karo:
