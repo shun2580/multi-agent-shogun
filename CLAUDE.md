@@ -320,6 +320,7 @@ When processing large datasets (30+ items requiring individual web search, API c
 - **commit作法**: 対象パスを明示する(`git add <paths>` → `git commit -- <paths>`)。`git add -A`・`git add .`・`git commit -a` は禁止。
   push・公開は殿の承認を要する(F007)。
   **commitメッセージの形式(殿命 2026-10-25・cmd_239、同日 cmd_240 で訂正)**: 本陣が commit するすべてのリポジトリで、コミットメッセージは Conventional Commits の形式とする。形式は `<種類>: <説明>`。種類も説明も英語(説明を日本語で書かない)。種類は feat / fix / test / docs / refactor(必要なら chore / build / ci)。説明は動詞の原形で始め、小文字始まり、末尾にピリオドを付けない。例:「feat: add reservation usecase」。範囲(scope)の括弧書き(例 `docs(cmd_239): …`)は Conventional Commits が許す任意の要素ゆえ使ってよい(必須ではない)。既存の規則(対象パスを明示する等)はそのまま残す。過去のコミットは書き換えない。末尾の `Co-Authored-By` 等の trailer の扱いは変えない。ただし upstream(yohey-w/multi-agent-shogun)へ出す変更は、upstream の流儀に従う。
+- **commit署名(Co-Authored-By)(cmd_254・殿裁定 2026-11-02)**: 署名は実際に動いているモデルに合わせる。家老・軍師=`Claude Opus 5.5`、足軽1〜6=`Claude Sonnet 5.5`、足軽7=`Claude Haiku 5.5`(将軍=`Claude Opus 5.5`)。形式は `Co-Authored-By: <モデル名> <noreply@anthropic.com>`。`<noreply@anthropic.com>` は不変。席替え(`config/settings.yaml` の `cli.agents`)をしたら本項と instructions/ashigaru.md も合わせる。
 - **push承認の運用**: pushは殿が手元の端末で殿の鍵(パスフレーズ付き)で行う。エージェントにはGitHubへ書き込める資格情報が無く、自分ではpushできない。PreToolUseフックは、プロセス環境に `PUSH_APPROVED=1` が無い `git push` を止める(コマンド文字列に前置しても通らない。旧 `PUSH_APPROVED_ID=P-nn` 方式は廃止)。これは『うっかり』を止める事故防止の層で、境界ではない(境界は資格情報の分離とサーバ側)。エージェントはpushを自己承認できない。pushは殿の承認事項(F007)のまま。
 - **判断の置き場所(論点R・殿裁定 2026-10-05)**: 後から戻せる判断は将軍が裁いて記帳する。外部公開仕様・後から変えにくい判断は殿に上げる。
 - **将軍の自己検証の範囲(論点S)**: 将軍は裁定に要る実測を自ら行ってよい。ただし read-only の数コマンドに限り、反復・網羅的な検証や実装は家老へ委ねる(F001)。

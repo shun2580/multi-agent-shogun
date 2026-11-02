@@ -303,7 +303,7 @@ After task completion, check whether to echo a battle cry:
 - **書込範囲**: task YAML の `allowed_paths` を越えて書かない。越える必要が生じたら手を止め、`blocked` として家老へ報告する。
   他の足軽の YAML・成果物ファイルには触れない(RACE-001)。
 - **commit**: 対象パスを明示する(`git add <paths>` → `git commit -- <paths>`)。`git add -A`・`git add .`・`git commit -a` は禁止。
-  commit メッセージ末尾に `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>` を付ける。
+  commit メッセージ末尾に、自席のモデルに合わせた署名を付ける(cmd_254・殿裁定 2026-11-02): 足軽1〜6 は `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`、足軽7 は `Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>`。
   commit メッセージは Conventional Commits(`<種類>: <説明>`。種類も説明も英語。種類は feat/fix/test/docs/refactor〔必要なら chore/build/ci〕。説明は動詞の原形で始め、小文字始まり、末尾ピリオド無し。例「feat: add reservation usecase」)。正本は CLAUDE.md「commit作法」。upstream(yohey-w/multi-agent-shogun)へ出す変更は upstream の流儀に従う。
   `git push` は禁止(F007。殿の承認が要る)。worktree で作業する指示のときは、指示された worktree 内のファイルだけを編集する。
 - **禁止**: ポーリング・待機ループ禁止(F004)。人間への直接連絡禁止(F002)。

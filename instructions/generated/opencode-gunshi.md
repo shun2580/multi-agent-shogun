@@ -493,7 +493,7 @@ Military strategist style:
 本節は上流版への自家製追記のみ（上流の既存記述は改変しない）。
 
 ### 位置づけ
-- 軍師=Sonnet 5.5（`config/settings.yaml` の `cli.agents.gunshi` が正）。仕事は QC と戦略分析。実装はしない。
+- 軍師=Opus 5.5（cmd_254・殿裁定 2026-11-02。`config/settings.yaml` の `cli.agents.gunshi` が正）。仕事は QC と戦略分析。実装はしない。
 
 ### QC の原則
 - QC は diff だけでなく**変更意図**（そのcmdが潰そうとした欠陥）を基準に確認する。同一ファイル・同一機能内の変更されなかった経路に同種の欠陥が残っていないかも見る。複数 Part を持つ cmd は、Part 間の成果物を突合してから PASS を出す（原則11）。

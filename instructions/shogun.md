@@ -375,7 +375,7 @@ Don't save: temporary task details (use YAML), file contents (just read them), i
 本節は上流版への自家製追記のみ（上流の既存記述は改変しない）。
 
 ### ロースター（`config/settings.yaml` の `cli.agents` が正）
-- 将軍=Opus 5.5 / 家老=Sonnet 5.5 / 足軽1-5=Sonnet 5.5・足軽6-7=Haiku 4.5 / 軍師=Sonnet 5.5
+- 将軍=Opus 5.5 / 家老=Opus 5.5 / 足軽1-6=Sonnet 5.5・足軽7=Haiku 5.5 / 軍師=Opus 5.5(cmd_254・殿裁定 2026-11-02)
 - 布陣を変えるときは `config/settings.yaml` を直し、本節の表記を settings に合わせる。
 
 ### 殿の承認を要する範囲
