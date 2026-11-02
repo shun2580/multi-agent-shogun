@@ -1976,8 +1976,10 @@ _st_tick() {
 #   条件(すべて): ①自分(家老)の画面が idle かつ idleフラグあり ②BUSYGUARD_ALLIDLE_AGENTS の他の全員も 画面idle かつ idleフラグあり
 #                 ③進行中の cmd が1つ以上 — かつ ①〜③が all_idle_minutes 続く
 #   進行中の定義は新しく作らず既存に合わせる: 終端 = scripts/done.sh の TERMINAL_STATUSES/TERMINAL_PREFIXES
-#     (= mods/status/hooks/lib.js の CMD_TERMINAL を含む)、進行中 = lib.js の CMD_ACTIVE(pending/in_progress/assigned/blocked)。
-#     どちらでもない値は進行中に数えず、ログに unknown_status として残す。
+#     (= mods/status/hooks/lib.js の CMD_TERMINAL を含む)、進行中 = lib.js の CMD_ACTIVE のうち blocked を除く(pending/in_progress/assigned)。
+#     status=blocked の cmd は進行中に数えない(cmd_256 / 殿裁定『殿の裁定待ちの cmd は進行中に数えない』。ここだけの判定で、
+#     mods/status の数え方・CMD_TERMINAL・done.sh は変えない)。blocked しか無いときは reason=all_blocked でログに残す(fail-loud)。
+#     どれでもない値は進行中に数えず、ログに unknown_status として残す。
 #   1段目: 家老へ scripts/inbox_write.sh(from=inbox_watcher・type=info・task_id=allidle_<cmd>。キーは直接打たない)。
 #          同じ進行 cmd の組へは all_idle_repeat_minutes に1回まで。
 #   2段目: 1段目が all_idle_ntfy_after_minutes 未読(read: false)のままのときだけ、既存の reporting(scripts/ntfy.sh)で殿へ ntfy。
@@ -2044,12 +2046,13 @@ _ai_check_peers() {
 }
 
 # _ai_read_cmds — queue/shogun_to_karo.yaml の cmd の status から進行中を数える。
-#   AI_CMDS_OK: 1=読めた 0=ファイルが無い 2=読めない  AI_CMDS_ACTIVE: 進行中の id(ファイルの順・空白区切り)  AI_CMDS_UNKNOWN: 想定外の status の id:値
+#   AI_CMDS_OK: 1=読めた 0=ファイルが無い 2=読めない  AI_CMDS_ACTIVE: 進行中の id(ファイルの順・空白区切り・blocked は含めない)
+#   AI_CMDS_BLOCKED: status=blocked の id(数えない・ログ用)  AI_CMDS_UNKNOWN: 想定外の status の id:値
 # 結果はファイルの mtime-size で覚え、変わらぬ間は読み直さぬ(大きなファイルを毎tick解析せぬ)。
 _ai_read_cmds() {
     local f="${SCRIPT_DIR}/queue/shogun_to_karo.yaml" msig out
     if [ ! -f "$f" ]; then
-        AI_CMDS_OK=0; AI_CMDS_ACTIVE=""; AI_CMDS_UNKNOWN=""; AI_CMDS_SIG=""
+        AI_CMDS_OK=0; AI_CMDS_ACTIVE=""; AI_CMDS_BLOCKED=""; AI_CMDS_UNKNOWN=""; AI_CMDS_SIG=""
         return 0
     fi
     msig=$(stat -c '%Y-%s' "$f" 2>/dev/null || echo "")
@@ -2058,7 +2061,8 @@ _ai_read_cmds() {
 import re, sys, yaml
 TERM = {'done', 'done_with_caveat', 'superseded', 'cancelled', 'failed'}   # scripts/done.sh TERMINAL_STATUSES
 PREF = ('superseded_', 'cancelled_', 'failed_')                            # scripts/done.sh TERMINAL_PREFIXES / lib.js CMD_TERMINAL
-ACTIVE = {'pending', 'in_progress', 'assigned', 'blocked'}                 # mods/status/hooks/lib.js CMD_ACTIVE
+ACTIVE = {'pending', 'in_progress', 'assigned'}                            # mods/status/hooks/lib.js CMD_ACTIVE から blocked を除く(cmd_256)
+BLOCKED = 'blocked'                                                        # 殿の裁定待ち。進行中に数えない
 try:
     loader = getattr(yaml, 'CSafeLoader', yaml.SafeLoader)
     with open(sys.argv[1], encoding='utf-8') as f:
@@ -2066,7 +2070,7 @@ try:
     cmds = d['commands']
     if not isinstance(cmds, list):
         raise ValueError('commands is not a list')
-    act, unk = [], []
+    act, blk, unk = [], [], []
     for e in cmds:
         i = re.sub(r'[^A-Za-z0-9_.-]', '', str(e['id']))[:64]
         s = re.sub(r'[^A-Za-z0-9_.-]', '', str(e.get('status', '')))[:64]
@@ -2074,21 +2078,25 @@ try:
             continue
         if s in ACTIVE:
             act.append(i)
+        elif s == BLOCKED:
+            blk.append(i)
         else:
             unk.append(i + ':' + (s or 'none'))
     print('OK')
     print(' '.join(act))
     print(' '.join(unk))
+    print(' '.join(blk))
 except Exception:
     print('ERR')
 " "$f" 2>/dev/null) || out="ERR"
     if [ "$(printf '%s\n' "$out" | sed -n '1p')" != "OK" ]; then
-        AI_CMDS_OK=2; AI_CMDS_ACTIVE=""; AI_CMDS_UNKNOWN=""; AI_CMDS_SIG=""
+        AI_CMDS_OK=2; AI_CMDS_ACTIVE=""; AI_CMDS_BLOCKED=""; AI_CMDS_UNKNOWN=""; AI_CMDS_SIG=""
         return 0
     fi
     AI_CMDS_OK=1
     AI_CMDS_ACTIVE=$(printf '%s\n' "$out" | sed -n '2p')
     AI_CMDS_UNKNOWN=$(printf '%s\n' "$out" | sed -n '3p')
+    AI_CMDS_BLOCKED=$(printf '%s\n' "$out" | sed -n '4p')
     AI_CMDS_SIG=$msig
     return 0
 }
@@ -2230,6 +2238,11 @@ _ai_tick() {
             return 0 ;;
     esac
     ids="$AI_CMDS_ACTIVE"
+    if [ -z "$ids" ] && [ -n "${AI_CMDS_BLOCKED:-}" ]; then
+        _ai_reset_run
+        _ai_log_state "all_blocked:${AI_CMDS_BLOCKED}:${AI_CMDS_UNKNOWN}" "skip agent=$AGENT_ID reason=all_blocked blocked=$(_ai_ids_disp "$AI_CMDS_BLOCKED")${AI_CMDS_UNKNOWN:+ unknown_status=$AI_CMDS_UNKNOWN} — 進行中の cmd が無く blocked(殿の裁定待ち)だけ。blocked は進行中に数えない。全員待機の時計は捨てた"
+        return 0
+    fi
     if [ -z "$ids" ]; then
         _ai_reset_run
         _ai_log_state "no_active_cmd:${AI_CMDS_UNKNOWN}" "skip agent=$AGENT_ID reason=no_active_cmd${AI_CMDS_UNKNOWN:+ unknown_status=$AI_CMDS_UNKNOWN} — 進行中の cmd が無い。全員待機の時計は捨てた"
