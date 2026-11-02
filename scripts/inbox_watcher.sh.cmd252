@@ -1828,15 +1828,31 @@ except Exception:
 _st_send_stage1() {
     local tid="$1" rc=0
     timeout 20 bash "${SCRIPT_DIR}/scripts/inbox_write.sh" "$AGENT_ID" \
-        "task ${tid} が未完了のまま待機している。裏の処理の状態を確かめて続けよ" info inbox_watcher \
+        "task ${tid} が未完了のまま待機している。裏の処理の状態を確かめて続けよ。裏の処理がまだ動いているなら、何も始めずにそのまま手番を終えてよい。計測や作業をやり直さない(二重に走らせない)。終わっていれば結果を読んで続きを進めよ。この通知を既読(read: true)にしてから手番を終えよ。" info inbox_watcher \
         --task_id="$tid" >/dev/null 2>&1 || rc=$?
     return "$rc"
+}
+
+# _st_stage1_state <task_id> — この task への最新の1段目(from=inbox_watcher の info)の既読状態: unread / read / none
+# 既存の read フラグ(inbox の read:)で判定する。読めない・見つからないときは none(呼び側が理由つきで扱う)。
+_st_stage1_state() {
+    INBOX_PATH="$INBOX" ST_TID="$1" "$SCRIPT_DIR/.venv/bin/python3" -c "
+import os, yaml
+try:
+    with open(os.environ['INBOX_PATH'], encoding='utf-8') as f:
+        d = yaml.safe_load(f) or {}
+    ms = [m for m in (d.get('messages') or [])
+          if m.get('from') == 'inbox_watcher' and m.get('type') == 'info' and m.get('task_id') == os.environ['ST_TID']]
+    print('none' if not ms else ('read' if ms[-1].get('read', False) else 'unread'))
+except Exception:
+    print('none')
+" 2>/dev/null || echo none
 }
 
 # _st_tick <画面の分類> <いま(epoch秒)> — busy_guard_tick から1サイクルに1回
 _st_tick() {
     local cls="$1" now="$2"
-    local reason st tid sig elapsed mins since_sent msg
+    local reason st tid sig elapsed mins since_sent msg s1
     # 画面を取れなかった: 時計を始めも止めもしない(保持)
     case "$cls" in
         idle) ;;
@@ -1903,15 +1919,22 @@ _st_tick() {
         fi
     fi
 
-    # 2段目: 1段目の後さらに待機のままなら殿へ ntfy(続く間は repeat_notify_minutes ごと)
+    # 2段目: 1段目の後さらに待機のままで、かつ1段目の inbox が未読のままなら殿へ ntfy(続く間は repeat_notify_minutes ごと)。
+    # 殿の修正(2026-11-02 10:02): 本人が読んだ(read: true)なら ntfy は出さず計時を戻す。長い計測を正当に待つ足軽は、
+    # 確かめて待機に戻るので、読んだのに知らせると殿の携帯に誤報が届く。待機が続けば1段目は間引き間隔で繰り返される。
     if [ "$BG_ST_RUN_FIRST" -gt 0 ] \
-       && [ "$((now - BG_ST_RUN_FIRST))" -ge "$((BUSYGUARD_STALLED_NTFY_AFTER_MIN * 60))" ] \
-       && { [ "$BG_ST_NTFY_SENT" -eq 0 ] || [ "$((now - BG_ST_NTFY_SENT))" -ge "$((BUSYGUARD_REPEAT_MIN * 60))" ]; } \
-       && { [ "$BG_ST_NTFY_ATTEMPT" -eq 0 ] || [ "$((now - BG_ST_NTFY_ATTEMPT))" -ge "$BUSYGUARD_RETRY_SEC" ]; }; then
-        msg="💤 ${AGENT_ID}が task ${tid} 未完了のまま待機している(${mins}分。本人へ inbox で促したが動かぬ)。裏の処理の状態を確かめてほしい"
-        echo "[$(date)] [STALLED-TASK] stage2 agent=$AGENT_ID task=$tid stalled_for=${mins}m — 殿へ ntfy する" >&2
-        BG_ST_NTFY_ATTEMPT=$now
-        if _bg_notify stalled "$msg"; then BG_ST_NTFY_SENT=$now; fi
+       && [ "$((now - BG_ST_RUN_FIRST))" -ge "$((BUSYGUARD_STALLED_NTFY_AFTER_MIN * 60))" ]; then
+        s1=$(_st_stage1_state "$tid")
+        if [ "$s1" = "read" ]; then
+            echo "[$(date)] [STALLED-TASK] stage2-skipped agent=$AGENT_ID task=$tid stalled_for=${mins}m reason=stage1_read — 1段目は既読。ntfy は出さず計時を戻す(待機が続けば1段目を${BUSYGUARD_STALLED_FIRST_REPEAT_MIN}分間隔で繰り返す)" >&2
+            BG_ST_RUN_FIRST=0; BG_ST_NTFY_SENT=0; BG_ST_NTFY_ATTEMPT=0
+        elif { [ "$BG_ST_NTFY_SENT" -eq 0 ] || [ "$((now - BG_ST_NTFY_SENT))" -ge "$((BUSYGUARD_REPEAT_MIN * 60))" ]; } \
+             && { [ "$BG_ST_NTFY_ATTEMPT" -eq 0 ] || [ "$((now - BG_ST_NTFY_ATTEMPT))" -ge "$BUSYGUARD_RETRY_SEC" ]; }; then
+            msg="💤 ${AGENT_ID}が task ${tid} 未完了のまま待機している(${mins}分。本人へ送った inbox が未読のまま動かぬ)。裏の処理の状態を確かめてほしい"
+            echo "[$(date)] [STALLED-TASK] stage2 agent=$AGENT_ID task=$tid stalled_for=${mins}m stage1=$s1 — 殿へ ntfy する" >&2
+            BG_ST_NTFY_ATTEMPT=$now
+            if _bg_notify stalled "$msg"; then BG_ST_NTFY_SENT=$now; fi
+        fi
     fi
     return 0
 }
