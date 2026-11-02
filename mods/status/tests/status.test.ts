@@ -97,6 +97,10 @@ test('task state: done and completed both read as finished', async () => {
   expect(parseTaskState(task('idle')).state).toBe('休')
 })
 
+test('task state: a bare cancelled task reads as 止, not ?', async () => {
+  expect(parseTaskState(task('cancelled'))).toEqual({ ok: true, status: 'cancelled', state: '止' })
+})
+
 test('task state: unreadable shapes are ?', async () => {
   expect(parseTaskState('').ok).toBe(false)
   expect(parseTaskState('other:\n  status: done\n').ok).toBe(false)

@@ -33,6 +33,7 @@ const TASK_STATE = {
   done: '済',
   completed: '済',
   failed: '失',
+  cancelled: '止',
 }
 
 // A scalar after "key:" - strip a trailing " # comment" and surrounding quotes. null when it is not a plain one-line scalar.
