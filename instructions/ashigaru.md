@@ -312,7 +312,8 @@ After task completion, check whether to echo a battle cry:
 - **ロースター**: 足軽1-5=Sonnet、足軽6-7=Haiku。正は `config/settings.yaml` の `cli.agents`。
 - **長い処理を裏で動かすときは、終了時に自分宛ての通知が届く形で起動する**(cmd_252)。数分以上の測定・ビルド・走行を裏(run_in_background 等)で動かすなら、
   処理の終了時に自分の inbox へ知らせる形にする。黙って待つ形にしない。ポーリング禁止(F004)ゆえ、終了通知が来ないと誰にも起こされず止まる(cmd_251 で約6時間詰まった実例)。
-  例(`ashigaruN` は自分の id): `( 長い処理 ; bash scripts/inbox_write.sh ashigaruN "処理完了 exit=$?" info bgjob )` を run_in_background で起動する。
+  例(`ashigaruN` は自分の id、`<陣のルート>` はこの陣のリポジトリの絶対パス): `( 長い処理 ; bash <陣のルート>/scripts/inbox_write.sh ashigaruN "処理完了 exit=$?" info bgjob )` を run_in_background で起動する。
+  inbox_write.sh は相対パス(`scripts/…`)でなく**絶対パス**で呼ぶ。長い処理が別リポジトリへ cd して走る形だと、相対パスは exit 127 で通知が出ず、元の詰まりに戻る。
   `from` は本人以外にする(裏の処理は `bgjob`)。自分の id を `from` にすると self-send として REJECT され届かない。
   `type` は `info` にする。`report_received` は使わない(`from` が足軽だと task YAML の自動の閉じ[cmd_222]が走りうる)。
   通知が届いたら結果(exit コードと出力)を確かめて作業を続ける。この記述は稼働中の足軽には次の起動から効く。
