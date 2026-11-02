@@ -62,6 +62,17 @@ setup() {
     [ "$output" = "0" ]
 }
 
+@test "guide-src: ashigaru.md says to end the turn without restarting when the background job is still running (mark the nudge read)" {
+    grep -E "裏で動かす" -A14 "$SRC" | grep -q "まだ動いている"
+    grep -E "裏で動かす" -A14 "$SRC" | grep -q "手番を終え"
+    grep -E "裏で動かす" -A14 "$SRC" | grep -q "やり直さない"
+    grep -E "裏で動かす" -A14 "$SRC" | grep -q "read: true"
+}
+
+@test "guide-gen: generated file also carries the still-running rule" {
+    grep -q "やり直さない" "$GEN"
+}
+
 @test "guide-gen: generated file also carries the absolute-path form" {
     grep -q '<陣のルート>/scripts/inbox_write.sh ashigaru[0-9N]* "処理完了 exit=\$?" info bgjob' "$GEN"
 }

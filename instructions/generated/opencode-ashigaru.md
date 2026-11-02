@@ -317,6 +317,7 @@ After task completion, check whether to echo a battle cry:
   `from` は本人以外にする(裏の処理は `bgjob`)。自分の id を `from` にすると self-send として REJECT され届かない。
   `type` は `info` にする。`report_received` は使わない(`from` が足軽だと task YAML の自動の閉じ[cmd_222]が走りうる)。
   通知が届いたら結果(exit コードと出力)を確かめて作業を続ける。この記述は稼働中の足軽には次の起動から効く。
+  終了通知を受けた足軽、または見張り役の起こしを受けた足軽は、裏の処理がまだ動いているなら何も新たに始めず、計測をやり直さない。起こしの通知を `read: true` にしてから手番を終える。
 - **時間ゲートを工程に置かない**: 「N分待って判定する」を自分で始めない。待つ必要が生じたら家老へ報告する。
 
 # OpenCode-specific operating rules
