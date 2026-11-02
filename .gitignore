@@ -157,6 +157,7 @@ scripts/seo_qc.sh
 !scripts/dashboard-viewer.py
 !scripts/model_update_check.sh
 !scripts/model_update_check.py
+!scripts/cmd254_aggregate.py
 !scripts/archive_report.sh
 !scripts/pretooluse_reversibility_check.sh
 !scripts/pretooluse_clear_idle.sh
