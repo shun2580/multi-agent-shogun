@@ -70,19 +70,19 @@ Claude Max 5x（$100/月）にアップグレードし、自分のPCスペック
 将軍 ── Claude Code（Opus 5.5）
 │　　　戦略判断・タスク分解・統括
 ▼
-家老 ── Claude Code（Sonnet 5.5）
+家老 ── Claude Code（Opus 5.5）
 │　　　タスク分解・足軽への割当・品質判定
 │
 ▼
-軍師 ── Claude Code（Sonnet 5.5）
+軍師 ── Claude Code（Opus 5.5）
 │　　　品質チェック・ダッシュボード更新
 │
 ├──────────┬──────────┬──────────┬──────────┬──────────┬──────────┐
 ▼          ▼          ▼          ▼          ▼          ▼          ▼
 足軽1      足軽2      足軽3      足軽4      足軽5      足軽6      足軽7
-Sonnet     Sonnet     Sonnet     Sonnet     Sonnet     Haiku      Haiku
+Sonnet     Sonnet     Sonnet     Sonnet     Sonnet     Sonnet     Haiku
 5.5        5.5        5.5        5.5        5.5        5.5        5.5
-（重量）   （重量）   （重量）   （重量）   （重量）   （軽量）   （軽量）
+（重量）   （重量）   （重量）   （重量）   （重量）   （重量）   （軽量）
 ```
 
 ### エージェント一覧
@@ -90,10 +90,10 @@ Sonnet     Sonnet     Sonnet     Sonnet     Sonnet     Haiku      Haiku
 | エージェント | CLI | モデル | 役割 |
 |---|---|---|---|
 | 将軍（Shogun） | Claude Code | claude-opus-5-5 | 戦略決定・家老へのcmd下達 |
-| 家老（Karo） | Claude Code | claude-sonnet-5-5 | タスク分解・足軽への割当・品質判定 |
-| 軍師（Gunshi） | Claude Code | claude-sonnet-5-5 | 品質チェック・ダッシュボード更新 |
-| 足軽1-5（Ashigaru1-5） | Claude Code | claude-sonnet-5-5 | 重量実行タスク（常時稼働） |
-| 足軽6/7（Ashigaru6/7） | Claude Code | claude-haiku-5-5（effort: medium） | 高速軽量タスク（Haiku枠） |
+| 家老（Karo） | Claude Code | claude-opus-5-5 | タスク分解・足軽への割当・品質判定 |
+| 軍師（Gunshi） | Claude Code | claude-opus-5-5 | 品質チェック・ダッシュボード更新 |
+| 足軽1-6（Ashigaru1-6） | Claude Code | claude-sonnet-5-5 | 重量実行タスク（常時稼働） |
+| 足軽7（Ashigaru7） | Claude Code | claude-haiku-5-5（effort: medium） | L1〜L3の短く定型の作業（Haiku枠。基準は karo.md の項15） |
 
 > 布陣の一次資料は `config/settings.yaml`。本表と食い違うときは settings.yaml を正とする。詳細は末尾の「現在の環境の状態」を参照。
 
@@ -218,9 +218,9 @@ Claude Code・Gemini CLI・OpenCode はそれぞれ異なるインターフェ�
 | エージェント | モデル | effort |
 |---|---|---|
 | 将軍 | claude-opus-5-5 | high |
-| 家老・軍師 | claude-sonnet-5-5 | high |
-| 足軽1〜5 | claude-sonnet-5-5 | high |
-| 足軽6/7 | claude-haiku-5-5 | medium（2026-10-15 に Haiku 4.5 から切替） |
+| 家老・軍師 | claude-opus-5-5 | high（2026-11-02 に Sonnet 5.5 から変更。cmd_254） |
+| 足軽1〜6 | claude-sonnet-5-5 | high（足軽6は2026-11-02 に Haiku 5.5/medium から変更。cmd_254） |
+| 足軽7 | claude-haiku-5-5 | medium（2026-10-15 に Haiku 4.5 から切替） |
 
 - 起動コマンドは `lib/cli_adapter.sh` の `build_cli_command` が settings.yaml から組み立てる（出陣スクリプト・`scripts/switch_cli.sh` の両方が使う）。
 - Gemini CLI・OpenCode・Ollama は休眠（削除せず温存）。
