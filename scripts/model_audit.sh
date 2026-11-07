@@ -19,9 +19,11 @@
 #   effort が読めて期待と違えば不一致に数える(甘い側に倒さぬ)。
 #
 # エージェント→セッションの対応(jsonl に agent id は残らないため推定する):
-#   logs/audit/<月>/<agent>.jsonl(mods/audit)の直近の tool.call のうち file_path を持つもの
-#   (tool 名・file_path・時刻±WINDOW 秒)が、セッション jsonl の tool_use と一致した件数を、
-#   セッション×エージェントごとに数える。
+#   logs/audit/<月>/<agent>.jsonl(mods/audit)の tool.call のうち file_path を持つもの
+#   (tool 名・file_path・時刻±WINDOW 秒)を、--days の窓(現在-DAYS日 以降)の内の全件、
+#   セッション jsonl の tool_use と突き合わせ、一致した件数をセッション×エージェントごとに数える。
+#   (以前は『直近40件』だったが、Bash を主に使う者は直近40件が数日に散って一致が下限に届かず、
+#    本物の陣でいつも『対応取れず』になった。窓の外の古い記録は数えぬ。)
 #   1) セッションは、一致数が最も多いエージェント1体に帰属させる。ただし1位でも一致が MIN_MATCHES(2)件未満の
 #      セッションは誰にも帰属させない。同数1位なら誰にも帰属させない。
 #      (他人のセッションに偶然1件だけ一致しても、本人の一致の方が多ければ取り違えぬ。本人がそのセッションで
@@ -64,6 +66,7 @@ while [ $# -gt 0 ]; do
 done
 
 exec python3 -I - "$SETTINGS" "$PROJECTS_DIR" "$AUDIT_DIR" "$DAYS" "$WINDOW" <<'PYEOF'
+import bisect
 import datetime
 import glob
 import json
@@ -76,7 +79,6 @@ import yaml
 settings_path, projects_dir, audit_dir, days_s, window_s = sys.argv[1:6]
 DAYS = float(days_s)
 WINDOW = float(window_s)
-RECENT = 40  # 直近何件の file_path つき tool.call で突き合わせるか
 # セッションを誰かに帰属させるのに要る最小の一致数。1件だけの偶然の一致で他人のセッションを取り違えて
 # 誤って「一致」と出すより、判定できぬ(終了コード 3)と出す方が甘い側に倒れぬ(S-44 ②)。
 MIN_MATCHES = 2
@@ -192,30 +194,45 @@ for p in glob.glob(os.path.join(projects_dir, "*", "*.jsonl")):
     uses, last = scan_session(p)
     sessions[p] = {"uses": uses, "last": last}
 
-# --- audit ログ: エージェントごとの直近の file_path つき tool.call ---
+# --- audit ログ: エージェントごとの、--days の窓の内の file_path つき tool.call 全件 ---
+# 上限は設けぬ(RECENT 退役)。突き合わせは (tool, file_path) ごとの時刻の整列済み配列への二分探索ゆえ、
+# 件数が増えても遅くならぬ。窓の外(cutoff より古い)記録は数えず、月ファイルも最終更新が cutoff より前なら読まぬ。
 def audit_records(aid):
     files = sorted(glob.glob(os.path.join(audit_dir, "*", aid + ".jsonl")))
     recs = []
-    for fpath in reversed(files):  # 新しい月から
-        month = []
+    for fpath in files:
+        try:
+            if os.path.getmtime(fpath) < cutoff:
+                continue  # この月ファイルは窓の内に1件も書かれていない
+        except OSError:
+            continue
         for d in iter_jsonl(fpath):
             if d.get("event") == "tool.call" and d.get("file_path") and d.get("sub") is not True:
                 e = to_epoch(d.get("ts"))
-                if e is not None:
-                    month.append((e, d.get("tool"), d.get("file_path")))
-        recs = month + recs
-        if len(recs) >= RECENT:
-            break
-    return recs[-RECENT:], bool(files)
+                if e is not None and e >= cutoff:
+                    recs.append((e, d.get("tool"), d.get("file_path")))
+    return recs, bool(files)
 
 
-def match_count(recs, uses):
+def index_uses(uses):
+    """セッションの tool_use を (tool, file_path) → 時刻の整列済み配列にする。"""
+    idx = {}
+    for u, un, ufp in uses:
+        idx.setdefault((un, ufp), []).append(u)
+    for v in idx.values():
+        v.sort()
+    return idx
+
+
+def match_count(recs, idx):
     n = 0
     for t, tool, fp in recs:
-        for u, un, ufp in uses:
-            if un == tool and ufp == fp and abs(u - t) <= WINDOW:
-                n += 1
-                break
+        times = idx.get((tool, fp))
+        if not times:
+            continue
+        k = bisect.bisect_left(times, t - WINDOW)
+        if k < len(times) and times[k] <= t + WINDOW:
+            n += 1
     return n
 
 
@@ -234,7 +251,7 @@ for aid in expected:
         reason[aid] = "記録なし(audit ログ無し)"
     elif not recs:
         assigned[aid] = None
-        reason[aid] = "対応取れず(audit に file_path つき記録が無い)"
+        reason[aid] = "対応取れず(--days の窓の内に audit の file_path つき記録が無い)"
     else:
         agent_recs[aid] = recs
 
@@ -245,8 +262,9 @@ for p, s in sessions.items():
     if not s["last"]:
         continue
     c = {}
+    idx = index_uses(s["uses"])
     for aid, recs in agent_recs.items():
-        n = match_count(recs, s["uses"])
+        n = match_count(recs, idx)
         if n >= 1:
             c[aid] = n
     if not c:

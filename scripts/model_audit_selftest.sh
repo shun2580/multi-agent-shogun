@@ -2,7 +2,8 @@
 # model_audit_selftest.sh - scripts/model_audit.sh の試験(cmd_264 ■1)。
 # 一致・不一致・記録なし・サブエージェント混在・別名表記の5ケース(+対応不明1ケース)と、
 # 対応づけの5ケース(他人への偶然の1件一致で取り違えぬ・同数1位は対応取れず・同数で取りこぼした新しい方があれば対応取れず・
-# 本人の一致0で他人の偶然の1件一致は他人に帰属させぬ・一致1件だけ(下限2件未満)は対応取れず)を、
+# 本人の一致0で他人の偶然の1件一致は他人に帰属させぬ・一致1件だけ(下限2件未満)は対応取れず・
+# --days の窓の外の古い audit 記録は数えぬ(窓の内なら数える)・窓の内の全件で突き合わせる(直近40件で切らぬ))を、
 # mktemp -d の一時ディレクトリに作った jsonl で固定する。本物のセッション記録・audit ログには触れない。
 # 使い方: bash scripts/model_audit_selftest.sh   (全件通れば終了コード 0)
 set -u
@@ -246,6 +247,61 @@ if audit_out "$WORK/c11" | grep '^karo ' | grep -q '対応取れず'; then
   PASS=$((PASS + 1)); echo "PASS: 11b karo の行が対応取れず(一致とは出ない)"
 else
   FAIL=$((FAIL + 1)); echo "FAIL: 11b 一致1件で帰属した疑い"; audit_out "$WORK/c11" | sed 's/^/    out: /'
+fi
+
+# 12. 窓: --days の窓の外の古い audit 記録は数えぬ。karo の audit 2件(k1,k2)に一致するセッションがあっても、
+#     記録が窓(--days 3)より古ければ、窓の内に記録が無いので『対応取れず』・終了コード 3。
+#     12b: 同じ組を窓の内の時刻にすれば一致し 0(窓の内は数える)。
+#     ts は現在からの相対で作る(--days が現在基準のため)。
+iso_ago() { date -u -d "$1 seconds ago" +%Y-%m-%dT%H:%M:%S.000Z; }
+run_days3() {
+  bash "$AUDIT_SH" --settings "$1/settings.yaml" --projects-dir "$1/projects" --audit-dir "$1/audit" --days 3 2>/dev/null
+}
+mk2 "$WORK/c12"
+OLD1="$(iso_ago $((10 * 86400)))"; OLD2="$(iso_ago $((10 * 86400 - 10)))"
+aud "$WORK/c12" karo "$OLD1" /x/k1
+aud "$WORK/c12" karo "$OLD2" /x/k2
+aud "$WORK/c12" gunshi "$(iso_ago 600)" /x/g1
+tu "$WORK/c12/projects/p/karo_sess.jsonl" claude-opus-5-5 "$OLD1" /x/k1
+tu "$WORK/c12/projects/p/karo_sess.jsonl" claude-opus-5-5 "$OLD2" /x/k2
+ev "$WORK/c12/projects/p/karo_sess.jsonl" claude-opus-5-5 "$(iso_ago 300)"
+out12="$(run_days3 "$WORK/c12")"; rc12=$?
+if [ "$rc12" = "3" ] && printf '%s\n' "$out12" | grep '^karo ' | grep -q '対応取れず'; then
+  PASS=$((PASS + 1)); echo "PASS: 12 窓の外の古い audit 記録は数えぬ(karo=対応取れず, exit 3)"
+else
+  FAIL=$((FAIL + 1)); echo "FAIL: 12 窓の外の記録を数えた疑い (exit $rc12)"; printf '%s\n' "$out12" | sed 's/^/    out: /'
+fi
+mk_case "$WORK/c12b" claude-opus-5-5 high "" 0   # settings の枠だけ使う
+rm -rf -- "$WORK/c12b/audit" && mkdir -p "$WORK/c12b/audit/2026-11"
+N1="$(iso_ago 7200)"; N2="$(iso_ago 7190)"
+printf '%s\n' "{\"ts\":\"$N1\",\"agent\":\"karo\",\"event\":\"tool.call\",\"tool\":\"Read\",\"ok\":true,\"file_path\":\"/x/k1\"}" > "$WORK/c12b/audit/2026-11/karo.jsonl"
+printf '%s\n' "{\"ts\":\"$N2\",\"agent\":\"karo\",\"event\":\"tool.call\",\"tool\":\"Read\",\"ok\":true,\"file_path\":\"/x/k2\"}" >> "$WORK/c12b/audit/2026-11/karo.jsonl"
+tu "$WORK/c12b/projects/p/karo_sess.jsonl" claude-opus-5-5 "$N1" /x/k1
+tu "$WORK/c12b/projects/p/karo_sess.jsonl" claude-opus-5-5 "$N2" /x/k2
+ev "$WORK/c12b/projects/p/karo_sess.jsonl" claude-opus-5-5 "$(iso_ago 300)"
+out12b="$(run_days3 "$WORK/c12b")"; rc12b=$?
+if [ "$rc12b" = "0" ] && printf '%s\n' "$out12b" | grep -q '全員一致'; then
+  PASS=$((PASS + 1)); echo "PASS: 12b 窓の内の記録は数える(一致, exit 0)"
+else
+  FAIL=$((FAIL + 1)); echo "FAIL: 12b 窓の内の記録を数えぬ (exit $rc12b)"; printf '%s\n' "$out12b" | sed 's/^/    out: /'
+fi
+
+# 13. 窓の内の全件で突き合わせる(直近40件で切らぬ): karo の audit は、古い順に k1,k2(セッションと一致)のあと
+#     無関係な記録(/x/pad<i>)を50件。直近40件で切る旧実装ならこの50件に押し出されて一致0=対応取れず。全件なら 2 件一致し 0。
+mk_case "$WORK/c13" claude-opus-5-5 high "" 0
+rm -rf -- "$WORK/c13/audit" && mkdir -p "$WORK/c13/audit/2026-11"
+P1="$(iso_ago 7200)"; P2="$(iso_ago 7190)"
+aud "$WORK/c13" karo "$P1" /x/k1
+aud "$WORK/c13" karo "$P2" /x/k2
+for i in $(seq 1 50); do aud "$WORK/c13" karo "$(iso_ago $((3000 - i)))" "/x/pad$i"; done
+tu "$WORK/c13/projects/p/karo_sess.jsonl" claude-opus-5-5 "$P1" /x/k1
+tu "$WORK/c13/projects/p/karo_sess.jsonl" claude-opus-5-5 "$P2" /x/k2
+ev "$WORK/c13/projects/p/karo_sess.jsonl" claude-opus-5-5 "$(iso_ago 300)"
+out13="$(run_days3 "$WORK/c13")"; rc13=$?
+if [ "$rc13" = "0" ] && printf '%s\n' "$out13" | grep -q '全員一致'; then
+  PASS=$((PASS + 1)); echo "PASS: 13 窓の内の全件で突き合わせる(直近40件で切らぬ, exit 0)"
+else
+  FAIL=$((FAIL + 1)); echo "FAIL: 13 件数の上限で切った疑い (exit $rc13)"; printf '%s\n' "$out13" | sed 's/^/    out: /'
 fi
 
 echo "---"
