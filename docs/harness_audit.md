@@ -4,10 +4,10 @@ cmd_264 ■3。2026-11-08 時点の実ファイルを読んで作った。推測
 
 ## 1. 数え方（何を1行とするか）
 
-- **1行 = 実ファイル1本**。`scripts/` 直下の 31 本、`scripts/githooks/pre-push` 1 本。
+- **1行 = 実ファイル1本**。`scripts/` 直下の 33 本、`scripts/githooks/pre-push` 1 本。
 - 実ファイルを持たない機構は、機構ごとに1行: `.claude/settings.json` の `permissions.deny`（48 パターン）を1行、`mods/` の4本を各1行。
 - 1ファイルの中に**独立した off スイッチを持つ別機構**があれば、副行を足す（`pretooluse_yaml_guard.sh` の中の parent_cmd_done_gate）。
-- 合計 **38 行** = 31 + 1 + 1 + 4 + 1。
+- 合計 **40 行** = 33 + 1 + 1 + 4 + 1。
 - フラグ（スイッチ）は 3章に別表。行ではなく、行への対応として数える。
 - 範囲外（数えていない）: リポジトリ直下の `shutsujin_departure.sh`・`first_setup.sh`・`setup.sh`、`lib/*.sh`、`tests/`。`lib/quote_masking.py` は git_push_block が使う共有部品で、独立の機構ではない。
 
@@ -57,7 +57,7 @@ cmd_264 ■3。2026-11-08 時点の実ファイルを読んで作った。推測
 | C8 | `scripts/pre_deploy_verify.sh`（配備先が主ブランチでなければ abort） | 人間（**呼び元がリポジトリ内に無い**） | ○ | ✗ | ✗ | ✗ | いいえ（abort） | ない | `tests/unit/test_branch_policy_scripts.bats` | pre_deploy_verify.sh:34-48。呼び元の grep 結果 = 試験と自身のみ。**3列とも ✗** |
 | C9 | `scripts/branch_drift_check.sh`（主ブランチ以外の長命ブランチを警告） | 決定的（設計=cron）だが**現状未配線** | ○ | ✗ | ✗ | ✗ | いいえ（`monitored_repos` が空なら SystemExit） | ない（cron を入れない=止まっている） | `tests/unit/test_branch_policy_scripts.bats` | branch_drift_check.sh:71（`[DRIFT]` を出すだけ）, lib/branch_policy.sh:70-82 / `crontab -l` に項目なし・`logs/branch_drift_check.log` なし・`settings.yaml`/`.example` に `branch_policy:` なし。**3列とも ✗** |
 
-### 2.3 — 判定を持たない道具・注入・観測 = 23 行
+### 2.3 — 判定を持たない道具・注入・観測 = 25 行
 
 関門 `—` につき3列は `—`。
 
@@ -86,19 +86,21 @@ cmd_264 ■3。2026-11-08 時点の実ファイルを読んで作った。推測
 | T21 | `scripts/model_update_check.py`（新モデル版の検知・通知のみ） | 人間（T20 経由） | — | 同上 | ない | 自動適用はしない旨が冒頭に明記 |
 | T22 | `scripts/cmd254_aggregate.py`（cmd_254 の前後比較集計・読取専用） | 人間 | — | ない | ない | — |
 | T23 | `scripts/dashboard-viewer.py`（dashboard.md のブラウザ表示） | 人間 | — | ない | ない | — |
+| T24 | `scripts/model_audit.sh`（各エージェントが実際に動いているモデルを、セッション記録の実測値で settings.yaml と突き合わせる。読取専用・cmd_264 ■1・5ea456d） | 人間（殿が手で実行。hook・watcher・settings.json に配線しない） | —（読むだけ。判定不能は終了コード 3 で返し 0 扱いにしない。不一致は 1） | ない | `scripts/model_audit_selftest.sh`（T25） | model_audit.sh:2-4・:30-35（終了コード）/ 呼び元: `docs/my_setup.md:262`（運用コマンドの記述のみ。スクリプトからの呼び出しなし） |
+| T25 | `scripts/model_audit_selftest.sh`（T24 の試験。`mktemp -d` の jsonl で固定し trap で片付ける） | 人間 | — | ない | ない（試験そのもの） | model_audit_selftest.sh:2-12 |
 
 ### 行数の検算
 
-行は G 6 + C 9 + T 23 = **38**。
+行は G 6 + C 9 + T 25 = **40**。
 
 | 内訳 | 行 | 数 |
 |---|---|---|
-| `scripts/` 直下の実ファイル | G1・G3・G4、C1-C9、T1・T2・T7-T23 | 3 + 9 + 19 = **31**（`ls scripts/*.sh scripts/*.py` = 31） |
+| `scripts/` 直下の実ファイル | G1・G3・G4、C1-C9、T1・T2・T7-T25 | 3 + 9 + 21 = **33**（`ls scripts/*.sh scripts/*.py` = 33） |
 | `scripts/githooks/pre-push` | G5 | 1 |
 | `permissions.deny` | G6 | 1 |
 | `mods/` | T3-T6 | 4 |
 | 副行（G1 のファイルの中の別機構） | G2 | 1 |
-| 合計 | | 31 + 1 + 1 + 4 + 1 = **38** |
+| 合計 | | 33 + 1 + 1 + 4 + 1 = **40** |
 
 ## 3. フラグ（スイッチ）一覧
 
