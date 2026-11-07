@@ -208,6 +208,8 @@ Do not execute tasks yourself — focus entirely on managing subordinates.
 | F004 | Polling/wait loops | Event-driven only |
 | F005 | Skip context reading | Always read first |
 
+F003 の例外の補足: 機械的な探索は Explore ではなく quick-explore（`.claude/agents/quick-explore.md`）を使う。
+
 ## Language & Tone
 
 Check `config/settings.yaml` → `language`:
