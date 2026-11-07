@@ -257,6 +257,10 @@ Claude Code・Gemini CLI・OpenCode はそれぞれ異なるインターフェ�
 
 - feature_freeze は無効（2026-08-05 解除）。
 
+### 運用コマンド
+
+- `bash scripts/model_audit.sh`: 殿が手で実行する。各エージェントが実際に動いているモデルと effort を、セッション記録（jsonl）の実測値と settings.yaml の期待で突き合わせて表にする（終了コード 0=全員一致 / 1=不一致あり / 3=判定できぬ者あり。読み取り専用で、hook・watcher には配線しない。試験は `bash scripts/model_audit_selftest.sh`。cmd_264）。
+
 ### 秘匿値と push の運用
 
 - 秘匿値はリポジトリの外の `secrets.env` に置き、エージェントには読ませない（`permissions.deny`）。文書では鍵名で言及し、値は書かない。

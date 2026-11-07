@@ -170,6 +170,8 @@ scripts/seo_qc.sh
 !scripts/dispatch.sh
 !scripts/done.sh
 !scripts/run_e2e_isolated.sh
+!scripts/model_audit.sh
+!scripts/model_audit_selftest.sh
 
 # Queue directories
 !queue/
