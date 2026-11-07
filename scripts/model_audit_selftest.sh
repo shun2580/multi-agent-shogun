@@ -3,7 +3,8 @@
 # 一致・不一致・記録なし・サブエージェント混在・別名表記の5ケース(+対応不明1ケース)と、
 # 対応づけの5ケース(他人への偶然の1件一致で取り違えぬ・同数1位は対応取れず・同数で取りこぼした新しい方があれば対応取れず・
 # 本人の一致0で他人の偶然の1件一致は他人に帰属させぬ・一致1件だけ(下限2件未満)は対応取れず・
-# --days の窓の外の古い audit 記録は数えぬ(窓の内なら数える)・窓の内の全件で突き合わせる(直近40件で切らぬ))を、
+# --days の窓の外の古い audit 記録は数えぬ(窓の内なら数える)・窓の内の全件で突き合わせる(直近40件で切らぬ)・
+# 本人の新しいセッションが下限未満で帰属せぬとき古いセッションで『一致』と偽らぬ)を、
 # mktemp -d の一時ディレクトリに作った jsonl で固定する。本物のセッション記録・audit ログには触れない。
 # 使い方: bash scripts/model_audit_selftest.sh   (全件通れば終了コード 0)
 set -u
@@ -215,6 +216,8 @@ fi
 #     → 他人に帰属させぬ。karo の本当のセッション karo_sess(一致3・sonnet=不一致)は古い。
 #     gunshi の新しいセッション gunshi_sess は Bash のみ+karo の audit の1件(k1)に偶然一致(opus)。
 #     下限が無ければ gunshi_sess が karo に帰属し、誤って karo が「一致」と出る。
+#     (14 の直し以降: gunshi_sess は karo の一致が1件・下限未満で誰にも帰属せぬ新しいセッションゆえ、
+#      karo は古い karo_sess で『不一致』とも判じず『対応取れず』・exit 3。gunshi_sess を奪わぬ点は変わらぬ)
 mk2 "$WORK/c10"
 aud "$WORK/c10" karo 2026-11-01T01:00:00.000Z /x/k1
 aud "$WORK/c10" karo 2026-11-01T01:10:00.000Z /x/k2
@@ -228,12 +231,12 @@ tu "$WORK/c10/projects/p/gunshi_sess.jsonl" claude-opus-5-5 2026-11-01T01:00:01.
 printf '%s\n' "{\"type\":\"assistant\",\"timestamp\":\"2026-11-01T02:00:01.000Z\",\"effort\":\"high\",\"message\":{\"model\":\"claude-opus-5-5\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"ls\"}}],\"usage\":{\"output_tokens\":1}}}" \
   >> "$WORK/c10/projects/p/gunshi_sess.jsonl"
 ev "$WORK/c10/projects/p/gunshi_sess.jsonl" claude-opus-5-5 2026-11-01T02:30:00.000Z
-run_case "10 本人の一致0・他人の偶然の1件一致は他人に帰属させぬ" "$WORK/c10" 1 "不一致 1 件" "MISMATCH karo: .*実測=claude-sonnet-5-5"
+run_case "10 本人の一致0・他人の偶然の1件一致は他人に帰属させぬ" "$WORK/c10" 3 "判定できぬ者 2 人" ""
 out10="$(audit_out "$WORK/c10")"
-if printf '%s\n' "$out10" | grep '^karo ' | grep -q 'karo_sess.jsonl' \
-   && ! printf '%s\n' "$out10" | grep '^karo ' | grep -q 'gunshi_sess.jsonl' \
+if ! printf '%s\n' "$out10" | grep '^karo ' | grep -q 'gunshi_sess.jsonl' \
+   && printf '%s\n' "$out10" | grep '^karo ' | grep -q '対応取れず' \
    && printf '%s\n' "$out10" | grep '^gunshi ' | grep -q '対応取れず'; then
-  PASS=$((PASS + 1)); echo "PASS: 10b karo=karo_sess(gunshi_sess を奪わぬ) / gunshi=対応取れず"
+  PASS=$((PASS + 1)); echo "PASS: 10b karo は gunshi_sess を奪わず対応取れず / gunshi=対応取れず"
 else
   FAIL=$((FAIL + 1)); echo "FAIL: 10b 帰属が違う"; printf '%s\n' "$out10" | sed 's/^/    out: /'
 fi
@@ -302,6 +305,30 @@ if [ "$rc13" = "0" ] && printf '%s\n' "$out13" | grep -q '全員一致'; then
   PASS=$((PASS + 1)); echo "PASS: 13 窓の内の全件で突き合わせる(直近40件で切らぬ, exit 0)"
 else
   FAIL=$((FAIL + 1)); echo "FAIL: 13 件数の上限で切った疑い (exit $rc13)"; printf '%s\n' "$out13" | sed 's/^/    out: /'
+fi
+
+# 14. 本人の新しいセッションの一致が下限未満(1件)で誰にも帰属せぬとき、古いセッションを採って『一致』と偽らぬ。
+#     karo: 古い karo_old(一致2・opus=期待どおり)と、新しい karo_new(一致1・sonnet=別のモデル)。
+#     新しい方は下限未満で帰属せぬが、古い方を採れば今は sonnet なのに『一致』・exit 0 と出てしまう。
+#     → 『対応取れず』・exit 3(一致とは出ない)。
+mk_case "$WORK/c14" claude-opus-5-5 high "" 0
+rm -rf -- "$WORK/c14/audit" && mkdir -p "$WORK/c14/audit/2026-11"
+Q1="$(iso_ago 7200)"; Q2="$(iso_ago 7190)"; Q3="$(iso_ago 3000)"
+aud "$WORK/c14" karo "$Q1" /x/k1
+aud "$WORK/c14" karo "$Q2" /x/k2
+aud "$WORK/c14" karo "$Q3" /x/k3
+tu "$WORK/c14/projects/p/karo_old.jsonl" claude-opus-5-5 "$Q1" /x/k1
+tu "$WORK/c14/projects/p/karo_old.jsonl" claude-opus-5-5 "$Q2" /x/k2
+ev "$WORK/c14/projects/p/karo_old.jsonl" claude-opus-5-5 "$(iso_ago 6000)"
+tu "$WORK/c14/projects/p/karo_new.jsonl" claude-sonnet-5-5 "$Q3" /x/k3
+ev "$WORK/c14/projects/p/karo_new.jsonl" claude-sonnet-5-5 "$(iso_ago 300)"
+out14="$(run_days3 "$WORK/c14")"; rc14=$?
+if [ "$rc14" = "3" ] && printf '%s\n' "$out14" | grep '^karo ' | grep -q '対応取れず' \
+   && ! printf '%s\n' "$out14" | grep '^karo ' | grep -q '一致  *karo_old' \
+   && ! printf '%s\n' "$out14" | grep -q '全員一致'; then
+  PASS=$((PASS + 1)); echo "PASS: 14 新しい下限未満のセッションがあれば古い方で一致と偽らぬ(karo=対応取れず, exit 3)"
+else
+  FAIL=$((FAIL + 1)); echo "FAIL: 14 古いセッションで一致と判じた疑い (exit $rc14)"; printf '%s\n' "$out14" | sed 's/^/    out: /'
 fi
 
 echo "---"

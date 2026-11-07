@@ -33,6 +33,8 @@
 #      (/clear 後の新しいセッションも、本人の一致が最多ゆえ拾える)。
 #   帰属するセッションが無い・自分が同数で取りこぼしたセッションの方が新しい場合は、推測で埋めず
 #   「対応取れず」として名前を出す。
+#   本人の一致が1件以上あるのに下限未満で誰にも帰属しなかったセッションが、採るセッションより新しいときも
+#   古い方を採らず「対応取れず」(今のセッションを確かめられぬまま、古いセッションで『一致』と偽らぬため)。
 #
 # サブエージェント: <セッション>/subagents/*.jsonl は別の行(<agent>/sub:<ファイル名>)で出し、
 #   親の判定・終了コードには混ぜない。
@@ -257,6 +259,7 @@ for aid in expected:
 
 owner = {}  # session path -> agent (単独1位) / None (同数1位)
 tied_with = {}  # session path -> 同数1位のエージェント一覧
+subthreshold = {}  # session path -> 下限未満で誰にも帰属しなかったセッションに1件以上一致したエージェント一覧
 counts = {}  # session path -> {agent: 一致数}
 for p, s in sessions.items():
     if not s["last"]:
@@ -272,6 +275,7 @@ for p, s in sessions.items():
     counts[p] = c
     top = max(c.values())
     if top < MIN_MATCHES:
+        subthreshold[p] = sorted(c)
         continue  # 下限未満: 偶然の一致かもしれぬゆえ誰にも帰属させぬ
     leaders = sorted(a for a, n in c.items() if n == top)
     if len(leaders) == 1:
@@ -284,6 +288,13 @@ for aid in agent_recs:
     mine = [(to_epoch(sessions[p]["last"]["ts"]) or 0, p) for p, o in owner.items() if o == aid]
     # 自分が同数で取りこぼしたセッション(1位が下限以上で、自分も同数1位のもの)
     lost = [(to_epoch(sessions[p]["last"]["ts"]) or 0, p) for p, ids in tied_with.items() if aid in ids]
+    # 自分の一致が1件以上あるのに下限未満で誰にも帰属しなかったセッション
+    weak = [(to_epoch(sessions[p]["last"]["ts"]) or 0, p) for p, ids in subthreshold.items() if aid in ids]
+    best_weak = max(weak) if weak else None
+    if mine and best_weak and best_weak[0] > max(mine)[0] and not (lost and max(lost)[0] > max(mine)[0]):
+        assigned[aid] = None
+        reason[aid] = "対応取れず(より新しいセッションに一致が下限 %d 件未満で、今のモデルを確かめられぬ)" % MIN_MATCHES
+        continue
     if not mine and not lost:
         assigned[aid] = None
         reason[aid] = "対応取れず(audit と一致するセッション無し、他者の方が一致数が多い、または一致が %d 件未満)" % MIN_MATCHES
