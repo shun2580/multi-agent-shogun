@@ -204,6 +204,7 @@ logs/
 !docs/my_setup.md
 !docs/loop_engineering_design.md
 !docs/watcher_switchover.md
+!docs/harness_audit.md
 
 # Screenshots (masked — no secrets)
 !images/
