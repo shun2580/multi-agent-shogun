@@ -26,6 +26,10 @@
 !.claude/
 !.claude/settings.json
 
+# Claude Code subagents (read-only quick-explore)
+!.claude/agents/
+!.claude/agents/quick-explore.md
+
 # Claude Code skills (codd: greenfield and evolve)
 !.claude/skills/codd-greenfield/**
 !.claude/skills/codd-evolve/**
