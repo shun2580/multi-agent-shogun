@@ -20,9 +20,15 @@
 #
 # エージェント→セッションの対応(jsonl に agent id は残らないため推定する):
 #   logs/audit/<月>/<agent>.jsonl(mods/audit)の直近の tool.call のうち file_path を持つもの
-#   (tool 名・file_path・時刻±WINDOW 秒)が、セッション jsonl の tool_use と一致したセッションを候補にし、
-#   候補のうち最後の記録が最も新しいものを「最新セッション」とする。
-#   一致が無い・2体が同じセッションに当たる場合は「対応取れず」として名前を出す(推測で埋めない)。
+#   (tool 名・file_path・時刻±WINDOW 秒)が、セッション jsonl の tool_use と一致した件数を、
+#   セッション×エージェントごとに数える。
+#   1) セッションは、一致数が最も多いエージェント1体に帰属させる(1件以上のみ)。同数1位なら誰にも帰属させない。
+#      (他人のセッションに偶然1件だけ一致しても、本人の一致の方が多ければ取り違えぬ。同じ報告ファイルを
+#       同時に読んだ家老と軍師のような場合も、一致数で分かれる)
+#   2) 各エージェントは、自分に帰属したセッションのうち最後の記録が最も新しいものを「最新セッション」とする
+#      (/clear 後の新しいセッションも、本人の一致が最多ゆえ拾える)。
+#   帰属するセッションが無い・自分が同数で取りこぼしたセッションの方が新しい場合は、推測で埋めず
+#   「対応取れず」として名前を出す。
 #
 # サブエージェント: <セッション>/subagents/*.jsonl は別の行(<agent>/sub:<ファイル名>)で出し、
 #   親の判定・終了コードには混ぜない。
@@ -208,40 +214,62 @@ def match_count(recs, uses):
     return n
 
 
+# 帰属の2段:
+#  1) セッションごとに、一致数が最も多いエージェント1体に帰属させる(一致数 1 以上のみ)。
+#     同数1位が複数ならそのセッションは誰にも帰属させない(「同数」として覚えておく)。
+#  2) 各エージェントは、自分に帰属したセッションのうち最後の記録が最も新しいものを採る。
+#     ただし、自分が(同数で)取りこぼしたセッションの方が新しければ、推測で古い方を採らず「対応取れず」。
 assigned = {}  # agent -> session path or None
 reason = {}
+agent_recs = {}
 for aid in expected:
     recs, has_log = audit_records(aid)
     if not has_log:
         assigned[aid] = None
         reason[aid] = "記録なし(audit ログ無し)"
-        continue
-    if not recs:
+    elif not recs:
         assigned[aid] = None
         reason[aid] = "対応取れず(audit に file_path つき記録が無い)"
-        continue
-    cands = []
-    for p, s in sessions.items():
-        n = match_count(recs, s["uses"])
-        if n >= 1 and s["last"]:
-            cands.append((to_epoch(s["last"]["ts"]) or 0, p, n))
-    if not cands:
-        assigned[aid] = None
-        reason[aid] = "対応取れず(audit と一致するセッション無し)"
-        continue
-    cands.sort(reverse=True)
-    assigned[aid] = cands[0][1]
+    else:
+        agent_recs[aid] = recs
 
-# 2体が同じセッションに当たったら、どちらも推測で採らない
-by_session = {}
-for aid, p in assigned.items():
-    if p:
-        by_session.setdefault(p, []).append(aid)
-for p, ids in by_session.items():
-    if len(ids) > 1:
-        for aid in ids:
-            assigned[aid] = None
-            reason[aid] = "対応取れず(%s が同じセッションに当たった)" % "/".join(sorted(ids))
+owner = {}  # session path -> agent (単独1位) / None (同数1位)
+tied_with = {}  # session path -> 同数1位のエージェント一覧
+counts = {}  # session path -> {agent: 一致数}
+for p, s in sessions.items():
+    if not s["last"]:
+        continue
+    c = {}
+    for aid, recs in agent_recs.items():
+        n = match_count(recs, s["uses"])
+        if n >= 1:
+            c[aid] = n
+    if not c:
+        continue
+    counts[p] = c
+    top = max(c.values())
+    leaders = sorted(a for a, n in c.items() if n == top)
+    if len(leaders) == 1:
+        owner[p] = leaders[0]
+    else:
+        owner[p] = None
+        tied_with[p] = leaders
+
+for aid in agent_recs:
+    mine = [(to_epoch(sessions[p]["last"]["ts"]) or 0, p) for p, o in owner.items() if o == aid]
+    # 自分が同数で取りこぼしたセッション(自分の一致が 1 以上で、1位が同数のもの)
+    lost = [(to_epoch(sessions[p]["last"]["ts"]) or 0, p) for p, ids in tied_with.items() if aid in ids]
+    if not mine and not lost:
+        assigned[aid] = None
+        reason[aid] = "対応取れず(audit と一致するセッション無し、または他者の方が一致数が多い)"
+        continue
+    best_mine = max(mine) if mine else None
+    best_lost = max(lost) if lost else None
+    if best_lost and (not best_mine or best_lost[0] > best_mine[0]):
+        assigned[aid] = None
+        reason[aid] = "対応取れず(%s が同数の一致で区別できぬ)" % "/".join(tied_with[best_lost[1]])
+        continue
+    assigned[aid] = best_mine[1]
 
 # --- 判定 ---
 rows = []  # (agent, expect, actual, time, effort_note, status, session_name)

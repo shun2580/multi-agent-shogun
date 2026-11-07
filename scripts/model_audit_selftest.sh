@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # model_audit_selftest.sh - scripts/model_audit.sh の試験(cmd_264 ■1)。
-# 一致・不一致・記録なし・サブエージェント混在・別名表記の5ケース(+対応不明1ケース)を、
+# 一致・不一致・記録なし・サブエージェント混在・別名表記の5ケース(+対応不明1ケース)と、
+# 対応づけの3ケース(他人への偶然の1件一致で取り違えぬ・同数1位は対応取れず・同数で取りこぼした新しい方があれば対応取れず)を、
 # mktemp -d の一時ディレクトリに作った jsonl で固定する。本物のセッション記録・audit ログには触れない。
 # 使い方: bash scripts/model_audit_selftest.sh   (全件通れば終了コード 0)
 set -u
@@ -101,6 +102,101 @@ run_case "5 別名表記" "$WORK/c5" 0 "全員一致" ""
 # 6. 対応表に無い名前 → 対応不明(一致にも不一致にも数えず)→ 3
 mk_case "$WORK/c6" claude-opus-5-5 high mystery-model-9 1
 run_case "6 対応不明" "$WORK/c6" 3 "対応不明" ""
+
+# --- 対応づけ(セッションを一致数が最多のエージェントに帰属させる)の試験: karo と gunshi の2体 ---
+# mk2 <dir>: 2体とも settings は opus/high。audit・セッションは後から追記する。
+mk2() {
+  local dir="$1"
+  mkdir -p "$dir/projects/p" "$dir/audit/2026-11"
+  cat > "$dir/settings.yaml" <<EOF
+cli:
+  agents:
+    karo:
+      type: claude
+      model: claude-opus-5-5
+      effort: high
+    gunshi:
+      type: claude
+      model: claude-opus-5-5
+      effort: high
+EOF
+}
+# aud <dir> <agent> <ts(Z)> <file>: audit に Read の tool.call を1行足す
+aud() {
+  printf '%s\n' "{\"ts\":\"$3\",\"agent\":\"$2\",\"event\":\"tool.call\",\"tool\":\"Read\",\"ok\":true,\"file_path\":\"$4\"}" >> "$1/audit/2026-11/$2.jsonl"
+}
+# tu <jsonl> <model> <ts(Z)> <file>: セッションに Read の tool_use を1行足す(本文なし)
+tu() {
+  printf '%s\n' "{\"type\":\"assistant\",\"timestamp\":\"$3\",\"effort\":\"high\",\"message\":{\"model\":\"$2\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Read\",\"input\":{\"file_path\":\"$4\"}}],\"usage\":{\"output_tokens\":1}}}" >> "$1"
+}
+# ev <jsonl> <model> <ts(Z)>: 最後の assistant+usage 記録
+ev() {
+  printf '%s\n' "{\"type\":\"assistant\",\"timestamp\":\"$3\",\"effort\":\"high\",\"message\":{\"model\":\"$2\",\"content\":[],\"usage\":{\"output_tokens\":2}}}" >> "$1"
+}
+# audit_out <dir>: 表(stdout)だけを返す
+audit_out() {
+  bash "$AUDIT_SH" --settings "$1/settings.yaml" --projects-dir "$1/projects" --audit-dir "$1/audit" --days 100000 2>/dev/null
+}
+
+# 7. 他人のセッションに1件だけ偶然一致しても取り違えぬ(同じモデル同士)
+#    karo の本当のセッション(k1〜k3 に一致3・実測 sonnet=不一致のはず)は古い。
+#    gunshi のセッション(g1〜g3 に一致3・opus)は新しく、karo の audit の1件(k1)にも偶然一致する。
+#    取り違えれば karo に gunshi の opus が当たり、誤って「一致」と出る。
+mk2 "$WORK/c7"
+aud "$WORK/c7" karo 2026-11-01T01:00:00.000Z /x/k1
+aud "$WORK/c7" karo 2026-11-01T01:10:00.000Z /x/k2
+aud "$WORK/c7" karo 2026-11-01T01:20:00.000Z /x/k3
+aud "$WORK/c7" gunshi 2026-11-01T02:00:00.000Z /x/g1
+aud "$WORK/c7" gunshi 2026-11-01T02:10:00.000Z /x/g2
+aud "$WORK/c7" gunshi 2026-11-01T02:20:00.000Z /x/g3
+tu "$WORK/c7/projects/p/karo_sess.jsonl" claude-sonnet-5-5 2026-11-01T01:00:01.000Z /x/k1
+tu "$WORK/c7/projects/p/karo_sess.jsonl" claude-sonnet-5-5 2026-11-01T01:10:01.000Z /x/k2
+tu "$WORK/c7/projects/p/karo_sess.jsonl" claude-sonnet-5-5 2026-11-01T01:20:01.000Z /x/k3
+ev "$WORK/c7/projects/p/karo_sess.jsonl" claude-sonnet-5-5 2026-11-01T01:30:00.000Z
+tu "$WORK/c7/projects/p/gunshi_sess.jsonl" claude-opus-5-5 2026-11-01T01:00:01.000Z /x/k1
+tu "$WORK/c7/projects/p/gunshi_sess.jsonl" claude-opus-5-5 2026-11-01T02:00:01.000Z /x/g1
+tu "$WORK/c7/projects/p/gunshi_sess.jsonl" claude-opus-5-5 2026-11-01T02:10:01.000Z /x/g2
+tu "$WORK/c7/projects/p/gunshi_sess.jsonl" claude-opus-5-5 2026-11-01T02:20:01.000Z /x/g3
+ev "$WORK/c7/projects/p/gunshi_sess.jsonl" claude-opus-5-5 2026-11-01T02:30:00.000Z
+run_case "7 他人への偶然の1件一致で取り違えぬ" "$WORK/c7" 1 "不一致 1 件" "MISMATCH karo: .*実測=claude-sonnet-5-5"
+out7="$(audit_out "$WORK/c7")"
+if printf '%s\n' "$out7" | grep '^karo ' | grep -q 'karo_sess.jsonl' \
+   && printf '%s\n' "$out7" | grep '^gunshi ' | grep -q 'gunshi_sess.jsonl' \
+   && printf '%s\n' "$out7" | grep '^gunshi ' | grep -q '一致'; then
+  PASS=$((PASS + 1)); echo "PASS: 7b karo=karo_sess / gunshi=gunshi_sess に帰属"
+else
+  FAIL=$((FAIL + 1)); echo "FAIL: 7b 帰属が違う"; printf '%s\n' "$out7" | sed 's/^/    out: /'
+fi
+
+# 8. 同数1位(どちらの audit も同じ1件に一致)→ 誰にも帰属させず、2人とも対応取れず → 3
+mk2 "$WORK/c8"
+aud "$WORK/c8" karo 2026-11-01T01:00:00.000Z /x/shared
+aud "$WORK/c8" gunshi 2026-11-01T01:00:00.000Z /x/shared
+tu "$WORK/c8/projects/p/only_sess.jsonl" claude-opus-5-5 2026-11-01T01:00:01.000Z /x/shared
+ev "$WORK/c8/projects/p/only_sess.jsonl" claude-opus-5-5 2026-11-01T01:05:00.000Z
+run_case "8 同数1位は対応取れず" "$WORK/c8" 3 "判定できぬ者 2 人" ""
+if [ "$(audit_out "$WORK/c8" | grep -c '対応取れず(.*同数')" = "2" ]; then
+  PASS=$((PASS + 1)); echo "PASS: 8b 2人とも『同数』の理由つき対応取れず(一致とは出ない)"
+else
+  FAIL=$((FAIL + 1)); echo "FAIL: 8b 同数の理由が2行出ていない"; audit_out "$WORK/c8" | sed 's/^/    out: /'
+fi
+
+# 9. 同数で取りこぼしたセッションの方が、単独で帰属した古いセッションより新しい
+#    → 古い方を黙って採らず対応取れず。karo: 古い karo_old(k1・単独)と新しい tied_new(shared・gunshi と同数)。
+mk2 "$WORK/c9"
+aud "$WORK/c9" karo 2026-11-01T01:00:00.000Z /x/k1
+aud "$WORK/c9" karo 2026-11-01T03:00:00.000Z /x/shared
+aud "$WORK/c9" gunshi 2026-11-01T03:00:00.000Z /x/shared
+tu "$WORK/c9/projects/p/karo_old.jsonl" claude-opus-5-5 2026-11-01T01:00:01.000Z /x/k1
+ev "$WORK/c9/projects/p/karo_old.jsonl" claude-opus-5-5 2026-11-01T01:05:00.000Z
+tu "$WORK/c9/projects/p/tied_new.jsonl" claude-opus-5-5 2026-11-01T03:00:01.000Z /x/shared
+ev "$WORK/c9/projects/p/tied_new.jsonl" claude-opus-5-5 2026-11-01T03:05:00.000Z
+run_case "9 同数で取りこぼした新しい方があれば古い方を採らず対応取れず" "$WORK/c9" 3 "判定できぬ者 2 人" ""
+if audit_out "$WORK/c9" | grep '^karo ' | grep -q '対応取れず'; then
+  PASS=$((PASS + 1)); echo "PASS: 9b karo の行が対応取れず(古い karo_old を採っていない)"
+else
+  FAIL=$((FAIL + 1)); echo "FAIL: 9b karo が古いセッションを採った疑い"; audit_out "$WORK/c9" | sed 's/^/    out: /'
+fi
 
 echo "---"
 echo "結果: PASS=$PASS FAIL=$FAIL SKIP=0"
