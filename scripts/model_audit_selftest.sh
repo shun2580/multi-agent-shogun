@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # model_audit_selftest.sh - scripts/model_audit.sh の試験(cmd_264 ■1)。
 # 一致・不一致・記録なし・サブエージェント混在・別名表記の5ケース(+対応不明1ケース)と、
-# 対応づけの3ケース(他人への偶然の1件一致で取り違えぬ・同数1位は対応取れず・同数で取りこぼした新しい方があれば対応取れず)を、
+# 対応づけの5ケース(他人への偶然の1件一致で取り違えぬ・同数1位は対応取れず・同数で取りこぼした新しい方があれば対応取れず・
+# 本人の一致0で他人の偶然の1件一致は他人に帰属させぬ・一致1件だけ(下限2件未満)は対応取れず)を、
 # mktemp -d の一時ディレクトリに作った jsonl で固定する。本物のセッション記録・audit ログには触れない。
 # 使い方: bash scripts/model_audit_selftest.sh   (全件通れば終了コード 0)
 set -u
@@ -34,13 +35,16 @@ cli:
       effort: $exp_effort
 EOF
   if [ "$with_audit" = "1" ]; then
+    # 帰属には一致 2 件以上が要る(MIN_MATCHES)ゆえ 2 件
     printf '%s\n' "{\"ts\":\"$AUDIT_TS\",\"agent\":\"karo\",\"event\":\"tool.call\",\"tool\":\"Read\",\"ok\":true,\"file_path\":\"/x/queue/tasks/karo.yaml\"}" \
       > "$dir/audit/2026-11/karo.jsonl"
+    printf '%s\n' "{\"ts\":\"$AUDIT_TS\",\"agent\":\"karo\",\"event\":\"tool.call\",\"tool\":\"Read\",\"ok\":true,\"file_path\":\"/x/queue/tasks/karo2.yaml\"}" \
+      >> "$dir/audit/2026-11/karo.jsonl"
   fi
   if [ -n "$act_model" ]; then
     {
       # tool_use(突き合わせ用。本文は含めない)
-      printf '%s\n' "{\"type\":\"assistant\",\"timestamp\":\"$SESS_TS\",\"effort\":\"high\",\"message\":{\"model\":\"$act_model\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Read\",\"input\":{\"file_path\":\"/x/queue/tasks/karo.yaml\"}}],\"usage\":{\"output_tokens\":1}}}"
+      printf '%s\n' "{\"type\":\"assistant\",\"timestamp\":\"$SESS_TS\",\"effort\":\"high\",\"message\":{\"model\":\"$act_model\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Read\",\"input\":{\"file_path\":\"/x/queue/tasks/karo.yaml\"}},{\"type\":\"tool_use\",\"name\":\"Read\",\"input\":{\"file_path\":\"/x/queue/tasks/karo2.yaml\"}}],\"usage\":{\"output_tokens\":1}}}"
       # 最後の assistant+usage 記録
       printf '%s\n' "{\"type\":\"assistant\",\"timestamp\":\"$LAST_TS\",\"effort\":\"high\",\"message\":{\"model\":\"$act_model\",\"content\":[],\"usage\":{\"output_tokens\":2}}}"
     } > "$dir/projects/p/sess1.jsonl"
@@ -168,11 +172,14 @@ else
   FAIL=$((FAIL + 1)); echo "FAIL: 7b 帰属が違う"; printf '%s\n' "$out7" | sed 's/^/    out: /'
 fi
 
-# 8. 同数1位(どちらの audit も同じ1件に一致)→ 誰にも帰属させず、2人とも対応取れず → 3
+# 8. 同数1位(どちらの audit も同じ2件に一致)→ 誰にも帰属させず、2人とも対応取れず → 3
 mk2 "$WORK/c8"
 aud "$WORK/c8" karo 2026-11-01T01:00:00.000Z /x/shared
+aud "$WORK/c8" karo 2026-11-01T01:00:10.000Z /x/shared2
 aud "$WORK/c8" gunshi 2026-11-01T01:00:00.000Z /x/shared
+aud "$WORK/c8" gunshi 2026-11-01T01:00:10.000Z /x/shared2
 tu "$WORK/c8/projects/p/only_sess.jsonl" claude-opus-5-5 2026-11-01T01:00:01.000Z /x/shared
+tu "$WORK/c8/projects/p/only_sess.jsonl" claude-opus-5-5 2026-11-01T01:00:11.000Z /x/shared2
 ev "$WORK/c8/projects/p/only_sess.jsonl" claude-opus-5-5 2026-11-01T01:05:00.000Z
 run_case "8 同数1位は対応取れず" "$WORK/c8" 3 "判定できぬ者 2 人" ""
 if [ "$(audit_out "$WORK/c8" | grep -c '対応取れず(.*同数')" = "2" ]; then
@@ -182,20 +189,63 @@ else
 fi
 
 # 9. 同数で取りこぼしたセッションの方が、単独で帰属した古いセッションより新しい
-#    → 古い方を黙って採らず対応取れず。karo: 古い karo_old(k1・単独)と新しい tied_new(shared・gunshi と同数)。
+#    → 古い方を黙って採らず対応取れず。karo: 古い karo_old(k1,k2・単独)と新しい tied_new(shared,shared2・gunshi と同数)。
 mk2 "$WORK/c9"
 aud "$WORK/c9" karo 2026-11-01T01:00:00.000Z /x/k1
+aud "$WORK/c9" karo 2026-11-01T01:00:10.000Z /x/k2
 aud "$WORK/c9" karo 2026-11-01T03:00:00.000Z /x/shared
+aud "$WORK/c9" karo 2026-11-01T03:00:10.000Z /x/shared2
 aud "$WORK/c9" gunshi 2026-11-01T03:00:00.000Z /x/shared
+aud "$WORK/c9" gunshi 2026-11-01T03:00:10.000Z /x/shared2
 tu "$WORK/c9/projects/p/karo_old.jsonl" claude-opus-5-5 2026-11-01T01:00:01.000Z /x/k1
+tu "$WORK/c9/projects/p/karo_old.jsonl" claude-opus-5-5 2026-11-01T01:00:11.000Z /x/k2
 ev "$WORK/c9/projects/p/karo_old.jsonl" claude-opus-5-5 2026-11-01T01:05:00.000Z
 tu "$WORK/c9/projects/p/tied_new.jsonl" claude-opus-5-5 2026-11-01T03:00:01.000Z /x/shared
+tu "$WORK/c9/projects/p/tied_new.jsonl" claude-opus-5-5 2026-11-01T03:00:11.000Z /x/shared2
 ev "$WORK/c9/projects/p/tied_new.jsonl" claude-opus-5-5 2026-11-01T03:05:00.000Z
 run_case "9 同数で取りこぼした新しい方があれば古い方を採らず対応取れず" "$WORK/c9" 3 "判定できぬ者 2 人" ""
 if audit_out "$WORK/c9" | grep '^karo ' | grep -q '対応取れず'; then
   PASS=$((PASS + 1)); echo "PASS: 9b karo の行が対応取れず(古い karo_old を採っていない)"
 else
   FAIL=$((FAIL + 1)); echo "FAIL: 9b karo が古いセッションを採った疑い"; audit_out "$WORK/c9" | sed 's/^/    out: /'
+fi
+
+# 10. 下限: 本人の一致が 0(そのセッションで file_path つきの記録が無い)で、他人が偶然1件だけ一致するセッション
+#     → 他人に帰属させぬ。karo の本当のセッション karo_sess(一致3・sonnet=不一致)は古い。
+#     gunshi の新しいセッション gunshi_sess は Bash のみ+karo の audit の1件(k1)に偶然一致(opus)。
+#     下限が無ければ gunshi_sess が karo に帰属し、誤って karo が「一致」と出る。
+mk2 "$WORK/c10"
+aud "$WORK/c10" karo 2026-11-01T01:00:00.000Z /x/k1
+aud "$WORK/c10" karo 2026-11-01T01:10:00.000Z /x/k2
+aud "$WORK/c10" karo 2026-11-01T01:20:00.000Z /x/k3
+aud "$WORK/c10" gunshi 2026-11-01T02:00:00.000Z /x/g1
+tu "$WORK/c10/projects/p/karo_sess.jsonl" claude-sonnet-5-5 2026-11-01T01:00:01.000Z /x/k1
+tu "$WORK/c10/projects/p/karo_sess.jsonl" claude-sonnet-5-5 2026-11-01T01:10:01.000Z /x/k2
+tu "$WORK/c10/projects/p/karo_sess.jsonl" claude-sonnet-5-5 2026-11-01T01:20:01.000Z /x/k3
+ev "$WORK/c10/projects/p/karo_sess.jsonl" claude-sonnet-5-5 2026-11-01T01:30:00.000Z
+tu "$WORK/c10/projects/p/gunshi_sess.jsonl" claude-opus-5-5 2026-11-01T01:00:01.000Z /x/k1
+printf '%s\n' "{\"type\":\"assistant\",\"timestamp\":\"2026-11-01T02:00:01.000Z\",\"effort\":\"high\",\"message\":{\"model\":\"claude-opus-5-5\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Bash\",\"input\":{\"command\":\"ls\"}}],\"usage\":{\"output_tokens\":1}}}" \
+  >> "$WORK/c10/projects/p/gunshi_sess.jsonl"
+ev "$WORK/c10/projects/p/gunshi_sess.jsonl" claude-opus-5-5 2026-11-01T02:30:00.000Z
+run_case "10 本人の一致0・他人の偶然の1件一致は他人に帰属させぬ" "$WORK/c10" 1 "不一致 1 件" "MISMATCH karo: .*実測=claude-sonnet-5-5"
+out10="$(audit_out "$WORK/c10")"
+if printf '%s\n' "$out10" | grep '^karo ' | grep -q 'karo_sess.jsonl' \
+   && ! printf '%s\n' "$out10" | grep '^karo ' | grep -q 'gunshi_sess.jsonl' \
+   && printf '%s\n' "$out10" | grep '^gunshi ' | grep -q '対応取れず'; then
+  PASS=$((PASS + 1)); echo "PASS: 10b karo=karo_sess(gunshi_sess を奪わぬ) / gunshi=対応取れず"
+else
+  FAIL=$((FAIL + 1)); echo "FAIL: 10b 帰属が違う"; printf '%s\n' "$out10" | sed 's/^/    out: /'
+fi
+
+# 11. 下限: 本人の一致が1件だけのセッション(下限 2 件未満)→ 誰にも帰属させず『対応取れず』・終了コード 3
+mk_case "$WORK/c11" claude-opus-5-5 high claude-opus-5-5 1
+head -n 1 "$WORK/c11/audit/2026-11/karo.jsonl" > "$WORK/c11/audit/one.jsonl" \
+  && mv -- "$WORK/c11/audit/one.jsonl" "$WORK/c11/audit/2026-11/karo.jsonl"
+run_case "11 一致1件だけは対応取れず(下限2件)" "$WORK/c11" 3 "判定できぬ者 1 人" ""
+if audit_out "$WORK/c11" | grep '^karo ' | grep -q '対応取れず'; then
+  PASS=$((PASS + 1)); echo "PASS: 11b karo の行が対応取れず(一致とは出ない)"
+else
+  FAIL=$((FAIL + 1)); echo "FAIL: 11b 一致1件で帰属した疑い"; audit_out "$WORK/c11" | sed 's/^/    out: /'
 fi
 
 echo "---"

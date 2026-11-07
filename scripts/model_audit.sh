@@ -22,9 +22,11 @@
 #   logs/audit/<月>/<agent>.jsonl(mods/audit)の直近の tool.call のうち file_path を持つもの
 #   (tool 名・file_path・時刻±WINDOW 秒)が、セッション jsonl の tool_use と一致した件数を、
 #   セッション×エージェントごとに数える。
-#   1) セッションは、一致数が最も多いエージェント1体に帰属させる(1件以上のみ)。同数1位なら誰にも帰属させない。
-#      (他人のセッションに偶然1件だけ一致しても、本人の一致の方が多ければ取り違えぬ。同じ報告ファイルを
-#       同時に読んだ家老と軍師のような場合も、一致数で分かれる)
+#   1) セッションは、一致数が最も多いエージェント1体に帰属させる。ただし1位でも一致が MIN_MATCHES(2)件未満の
+#      セッションは誰にも帰属させない。同数1位なら誰にも帰属させない。
+#      (他人のセッションに偶然1件だけ一致しても、本人の一致の方が多ければ取り違えぬ。本人がそのセッションで
+#       file_path つきの記録を持たず他人が偶然1件だけ一致する場合も、下限で誰にも帰属させない。
+#       同じ報告ファイルを同時に読んだ家老と軍師のような場合も、一致数で分かれる)
 #   2) 各エージェントは、自分に帰属したセッションのうち最後の記録が最も新しいものを「最新セッション」とする
 #      (/clear 後の新しいセッションも、本人の一致が最多ゆえ拾える)。
 #   帰属するセッションが無い・自分が同数で取りこぼしたセッションの方が新しい場合は、推測で埋めず
@@ -75,6 +77,9 @@ settings_path, projects_dir, audit_dir, days_s, window_s = sys.argv[1:6]
 DAYS = float(days_s)
 WINDOW = float(window_s)
 RECENT = 40  # 直近何件の file_path つき tool.call で突き合わせるか
+# セッションを誰かに帰属させるのに要る最小の一致数。1件だけの偶然の一致で他人のセッションを取り違えて
+# 誤って「一致」と出すより、判定できぬ(終了コード 3)と出す方が甘い側に倒れぬ(S-44 ②)。
+MIN_MATCHES = 2
 
 # --- 別名 → 正式ID の対応表(ここに無い名前は「対応不明」)。新しいモデルが出たらここへ足す ---
 ALIASES = {
@@ -215,7 +220,7 @@ def match_count(recs, uses):
 
 
 # 帰属の2段:
-#  1) セッションごとに、一致数が最も多いエージェント1体に帰属させる(一致数 1 以上のみ)。
+#  1) セッションごとに、一致数が最も多いエージェント1体に帰属させる(1位の一致数が MIN_MATCHES 以上のときのみ)。
 #     同数1位が複数ならそのセッションは誰にも帰属させない(「同数」として覚えておく)。
 #  2) 各エージェントは、自分に帰属したセッションのうち最後の記録が最も新しいものを採る。
 #     ただし、自分が(同数で)取りこぼしたセッションの方が新しければ、推測で古い方を採らず「対応取れず」。
@@ -248,6 +253,8 @@ for p, s in sessions.items():
         continue
     counts[p] = c
     top = max(c.values())
+    if top < MIN_MATCHES:
+        continue  # 下限未満: 偶然の一致かもしれぬゆえ誰にも帰属させぬ
     leaders = sorted(a for a, n in c.items() if n == top)
     if len(leaders) == 1:
         owner[p] = leaders[0]
@@ -257,11 +264,11 @@ for p, s in sessions.items():
 
 for aid in agent_recs:
     mine = [(to_epoch(sessions[p]["last"]["ts"]) or 0, p) for p, o in owner.items() if o == aid]
-    # 自分が同数で取りこぼしたセッション(自分の一致が 1 以上で、1位が同数のもの)
+    # 自分が同数で取りこぼしたセッション(1位が下限以上で、自分も同数1位のもの)
     lost = [(to_epoch(sessions[p]["last"]["ts"]) or 0, p) for p, ids in tied_with.items() if aid in ids]
     if not mine and not lost:
         assigned[aid] = None
-        reason[aid] = "対応取れず(audit と一致するセッション無し、または他者の方が一致数が多い)"
+        reason[aid] = "対応取れず(audit と一致するセッション無し、他者の方が一致数が多い、または一致が %d 件未満)" % MIN_MATCHES
         continue
     best_mine = max(mine) if mine else None
     best_lost = max(lost) if lost else None
