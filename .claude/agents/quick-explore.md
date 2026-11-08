@@ -3,7 +3,7 @@ name: quick-explore
 description: 読み取り専用の機械的な探索(パス・行番号・有無の確認)に使う。判断や要約はさせぬ。Explore の代わりに、事実だけを速く安く返したいときに呼ぶ。
 tools: Read, Grep, Glob
 disallowedTools: Write, Edit, Bash
-model: claude-haiku-4-5-20251001
+model: claude-haiku-5-5
 maxTurns: 10
 ---
 
