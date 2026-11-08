@@ -231,6 +231,11 @@ _bg_posint() {
 BUSYGUARD_UNREAD_MIN=$(_bg_posint "${BUSYGUARD_UNREAD_MIN:-$(_read_busy_guard_setting unread_notify_minutes 30)}" 30)
 BUSYGUARD_CONTINUOUS_MIN=$(_bg_posint "${BUSYGUARD_CONTINUOUS_MIN:-$(_read_busy_guard_setting continuous_notify_minutes 60)}" 60)
 BUSYGUARD_REPEAT_MIN=$(_bg_posint "${BUSYGUARD_REPEAT_MIN:-$(_read_busy_guard_setting repeat_notify_minutes 60)}" 60)
+# cmd_267 / 殿裁定 2026-11-08: 『待機と言い切れぬまま未読が残る』(①)は、まず家老へ inbox(キーは送らぬ)、
+# 家老へ知らせてから unread_ntfy_after_minutes 分たっても解けなければ殿へ ntfy する(既定30分)。
+# 閾値(unread_notify_minutes=30・continuous_notify_minutes=60・repeat_notify_minutes=60)は変えない。
+# 誤記(正の整数でない)は既定へ戻る。env での上書き: BUSYGUARD_UNREAD_NTFY_AFTER_MIN
+BUSYGUARD_UNREAD_NTFY_AFTER_MIN=$(_bg_posint "${BUSYGUARD_UNREAD_NTFY_AFTER_MIN:-$(_read_busy_guard_setting unread_ntfy_after_minutes 30)}" 30)
 # 観測がこれ以上途切れたら(見張り役の停止等)、働き中の連続は数え直す
 BUSYGUARD_RESUME_GAP_SEC=${BUSYGUARD_RESUME_GAP_SEC:-300}
 # ntfy が失敗したときの再試行間隔(毎tick叩かぬ)
@@ -1664,6 +1669,7 @@ _bg_load() {
     BG_ST_NTFY_SENT=0; BG_ST_ATTEMPT=0; BG_ST_NTFY_ATTEMPT=0; BG_ST_STATE=0
     BG_AI_SINCE=0; BG_AI_SENT=0; BG_AI_SENT_SIG=0; BG_AI_RUN_FIRST=0
     BG_AI_NTFY_SENT=0; BG_AI_ATTEMPT=0; BG_AI_NTFY_ATTEMPT=0; BG_AI_STATE=0
+    BG_UNREAD_KARO=0; BG_UNREAD_KARO_ATTEMPT=0
     local f k v
     f=$(_bg_state_file)
     [ -f "$f" ] || return 0
@@ -1698,6 +1704,8 @@ _bg_load() {
             ai_attempt) BG_AI_ATTEMPT=$v ;;
             ai_ntfy_attempt) BG_AI_NTFY_ATTEMPT=$v ;;
             ai_state) BG_AI_STATE=$v ;;
+            unread_karo) BG_UNREAD_KARO=$v ;;
+            unread_karo_attempt) BG_UNREAD_KARO_ATTEMPT=$v ;;
         esac
     done < "$f"
     return 0
@@ -1737,6 +1745,8 @@ _bg_save() {
         echo "ai_attempt=$BG_AI_ATTEMPT"
         echo "ai_ntfy_attempt=$BG_AI_NTFY_ATTEMPT"
         echo "ai_state=$BG_AI_STATE"
+        echo "unread_karo=$BG_UNREAD_KARO"
+        echo "unread_karo_attempt=$BG_UNREAD_KARO_ATTEMPT"
     } > "$tmp" 2>/dev/null && mv -f "$tmp" "$f" 2>/dev/null || rm -f "$tmp" 2>/dev/null
     return 0
 }
@@ -1746,6 +1756,7 @@ _bg_reset_confirm() { BG_CONFIRM_SINCE=0; BG_CONFIRM_SIG=0; BG_CONFIRM_NOTIFIED=
 _bg_reset_run() {
     BG_BUSY_SINCE=0; BG_UNREAD_SINCE=0
     BG_UNREAD_NOTIFIED=0; BG_LONG_NOTIFIED=0; BG_UNREAD_ATTEMPT=0; BG_LONG_ATTEMPT=0
+    BG_UNREAD_KARO=0; BG_UNREAD_KARO_ATTEMPT=0
     _bg_reset_confirm
 }
 
@@ -2316,6 +2327,69 @@ except Exception:
 }
 
 
+# _bg_send_karo_unread <本文> — ①の1段目。家老へ scripts/inbox_write.sh(from=inbox_watcher, type=info)。0=送れた。
+# type は既存の info(cmd_252 の待機停滞・cmd_255 の全員待機の1段目と同じ。家老は command-layer ゆえ /clear の対象外で、
+# 未読が info(inbox_watcher)だけでも Phase3 の /clear は起きぬ)。task_id=busyguard_<足軽名>(allidle_ とも足軽の task_id とも衝突せぬ)。
+# キーは打たない。既存の inbox の経路に乗せるだけ。戻り値はログに残す(呼び側)。
+_bg_send_karo_unread() {
+    local rc=0
+    timeout 20 bash "${SCRIPT_DIR}/scripts/inbox_write.sh" karo "$1" info inbox_watcher \
+        --task_id="busyguard_${AGENT_ID}" >/dev/null 2>&1 || rc=$?
+    return "$rc"
+}
+
+# _bg_unread_stage <いま> <未読件数> <task_id> <未読の分> <待機でない分> <what> <画面の分類> — ①の2段
+#   1段目: 未読が unread_notify_minutes 残ったら、まず家老へ inbox で知らせる(殿へは出さぬ)。家老が画面を読んで判断する。
+#   2段目: 家老へ知らせてから unread_ntfy_after_minutes 分たっても解けなければ殿へ ntfy(従来どおり repeat_notify_minutes ごとに再通知)。
+#   『解けた』= 既存の判定そのまま: 未読が0になった(BG_UNREAD_SINCE を戻す)/待機の画面に戻った(_bg_reset_run)。
+#     どちらも状態を戻すので、この関数が呼ばれなくなり ntfy は出ない。家老の inbox の既読は『解けた』に使わぬ
+#     (家老自身が止まっていて未読のままでも、既読にして動かぬままでも、30分で殿へ出す)。
+#   家老の見張り役(AGENT_ID=karo)は自分へ知らせても意味が無いので、1段目を飛ばして従来どおり直接 ntfy する(ログに理由を残す)。
+#   家老への inbox_write が失敗したときは、殿へ知らせる道を塞がぬよう、その場で従来どおり ntfy する(fail-safe)。
+_bg_unread_stage() {
+    local now="$1" unread="$2" task_id="$3" mins="$4" busy_mins="$5" what="$6" cls="${7:-?}"
+    local repeat_sec=$((BUSYGUARD_REPEAT_MIN * 60)) after_sec=$((BUSYGUARD_UNREAD_NTFY_AFTER_MIN * 60))
+    local do_ntfy=0 msg karo_msg
+    local pane_note="tmux capture-pane -t ${PANE_TARGET:-?} -p で画面を読む(読むだけ。キーは送るな)"
+
+    if [ "$AGENT_ID" = "karo" ]; then
+        do_ntfy=1
+        if [ "$BG_UNREAD_NOTIFIED" -eq 0 ]; then
+            echo "[$(date)] [BUSY-GUARD] stage1-skip agent=$AGENT_ID reason=self_is_karo — 家老自身の止まりは家老へ知らせても読まれぬ。従来どおり殿へ直接知らせる" >&2
+        fi
+    elif [ "$BG_UNREAD_KARO" -eq 0 ] && [ "$BG_UNREAD_NOTIFIED" -eq 0 ]; then
+        # 1段目がまだ。再試行は BUSYGUARD_RETRY_SEC 間隔
+        if [ "$BG_UNREAD_KARO_ATTEMPT" -eq 0 ] || [ "$((now - BG_UNREAD_KARO_ATTEMPT))" -ge "$BUSYGUARD_RETRY_SEC" ]; then
+            BG_UNREAD_KARO_ATTEMPT=$now
+            karo_msg="${AGENT_ID}が${what}まま未読${unread:-?}件が${mins}分残っている(task=${task_id}、待機でない状態${busy_mins}分)。見張り役はキーを送っていない。家老は ${pane_note} → 確認の画面で止まっているなら、答えが安全(破壊的な操作・push・秘匿値に関わらない)なら答える/危ういなら答えずに殿へ上げる。コマンドが前面で回ったまま止まっているなら Escape を送って止める。それ以外は何もせず画面の内容を殿へ上げる。この通知を既読(read: true)にしてよい。${BUSYGUARD_UNREAD_NTFY_AFTER_MIN}分たっても解けなければ見張り役が殿へ ntfy する(家老の既読では止まらぬ)。"
+            if _bg_send_karo_unread "$karo_msg"; then
+                BG_UNREAD_KARO=$now
+                echo "[$(date)] [BUSY-GUARD] stage1(karo) agent=$AGENT_ID screen_unread_for=${mins}m task=$task_id — inbox_write.sh で家老へ送った(from=inbox_watcher type=info)。殿へは${BUSYGUARD_UNREAD_NTFY_AFTER_MIN}分後に解けていなければ出す" >&2
+            else
+                echo "[$(date)] [BUSY-GUARD] stage1-FAIL agent=$AGENT_ID task=$task_id — 家老への inbox_write.sh が失敗した。知らせの道を塞がぬよう、その場で殿へ ntfy する" >&2
+                do_ntfy=1
+            fi
+        fi
+    elif [ "$BG_UNREAD_KARO" -gt 0 ] && [ "$((now - BG_UNREAD_KARO))" -lt "$after_sec" ]; then
+        :  # 家老へ知らせた後の猶予の間。殿へはまだ出さぬ
+    else
+        do_ntfy=1  # 家老へ知らせて猶予が過ぎた(または既に ntfy 済みで再通知の周期)
+    fi
+
+    if [ "$do_ntfy" -eq 1 ] \
+       && { [ "$BG_UNREAD_NOTIFIED" -eq 0 ] || [ "$((now - BG_UNREAD_NOTIFIED))" -ge "$repeat_sec" ]; } \
+       && { [ "$BG_UNREAD_ATTEMPT" -eq 0 ] || [ "$((now - BG_UNREAD_ATTEMPT))" -ge "$BUSYGUARD_RETRY_SEC" ]; }; then
+        msg="⏳ ${AGENT_ID}が${what}まま未読${unread:-?}件が${mins}分残っている(task=${task_id}、待機でない状態${busy_mins}分)。キーは送っていない"
+        if [ "$BG_UNREAD_KARO" -gt 0 ]; then
+            msg="${msg}。家老へ inbox で知らせて$(( (now - BG_UNREAD_KARO) / 60 ))分たっても解けぬ"
+        fi
+        echo "[$(date)] [BUSY-GUARD] notify(unread) agent=$AGENT_ID screen=$cls unread_for=${mins}m busy_for=${busy_mins}m task=$task_id karo_notified=$([ "$BG_UNREAD_KARO" -gt 0 ] && echo yes || echo no)" >&2
+        BG_UNREAD_ATTEMPT=$now
+        if _bg_notify unread "$msg"; then BG_UNREAD_NOTIFIED=$now; fi
+    fi
+    return 0
+}
+
 # busy_guard_tick <未読件数(不明なら空)>
 # 1サイクルに1回呼ぶ。画面を観測して状態ファイルを更新し、目安を超えていれば殿へ知らせる。
 busy_guard_tick() {
@@ -2347,6 +2421,7 @@ busy_guard_tick() {
             [ "$BG_BUSY_SINCE" -eq 0 ] && BG_BUSY_SINCE=$now
             if [ "$unread" = "0" ]; then
                 BG_UNREAD_SINCE=0; BG_UNREAD_NOTIFIED=0; BG_UNREAD_ATTEMPT=0
+                BG_UNREAD_KARO=0; BG_UNREAD_KARO_ATTEMPT=0
             elif [ -n "$unread" ] && [ "$BG_UNREAD_SINCE" -eq 0 ]; then
                 BG_UNREAD_SINCE=$now
             fi
@@ -2394,16 +2469,11 @@ busy_guard_tick() {
             _bg_reset_confirm
         fi
 
-        # ① 待機と言い切れぬまま未読が残る
-        if [ "$BG_UNREAD_SINCE" -gt 0 ] && [ "$((now - BG_UNREAD_SINCE))" -ge "$((BUSYGUARD_UNREAD_MIN * 60))" ] \
-           && { [ "$BG_UNREAD_NOTIFIED" -eq 0 ] || [ "$((now - BG_UNREAD_NOTIFIED))" -ge "$repeat_sec" ]; } \
-           && { [ "$BG_UNREAD_ATTEMPT" -eq 0 ] || [ "$((now - BG_UNREAD_ATTEMPT))" -ge "$BUSYGUARD_RETRY_SEC" ]; }; then
+        # ① 待機と言い切れぬまま未読が残る(cmd_267: まず家老へ inbox、30分で解けなければ殿へ ntfy)
+        if [ "$BG_UNREAD_SINCE" -gt 0 ] && [ "$((now - BG_UNREAD_SINCE))" -ge "$((BUSYGUARD_UNREAD_MIN * 60))" ]; then
             mins=$(( (now - BG_UNREAD_SINCE) / 60 ))
             busy_mins=$(( (now - BG_BUSY_SINCE) / 60 ))
-            msg="⏳ ${AGENT_ID}が${what}まま未読${unread:-?}件が${mins}分残っている(task=${task_id}、待機でない状態${busy_mins}分)。キーは送っていない"
-            echo "[$(date)] [BUSY-GUARD] notify(unread) agent=$AGENT_ID screen=$cls unread_for=${mins}m busy_for=${busy_mins}m task=$task_id" >&2
-            BG_UNREAD_ATTEMPT=$now
-            if _bg_notify unread "$msg"; then BG_UNREAD_NOTIFIED=$now; fi
+            _bg_unread_stage "$now" "$unread" "$task_id" "$mins" "$busy_mins" "$what" "$cls"
         fi
 
         # ② 未読の有無を問わず待機と言い切れぬ状態が連続(判別不能だけは未読が無ければ知らせぬ=無害な見慣れぬ画面で騒がぬ)
