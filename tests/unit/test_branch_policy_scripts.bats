@@ -39,23 +39,6 @@ teardown() {
     rm -rf "$TEST_TMPDIR"
 }
 
-@test "pre_deploy_verify passes on configured primary branch" {
-    run env BRANCH_POLICY_SETTINGS="$TEST_SETTINGS" \
-        bash "$PROJECT_ROOT/scripts/pre_deploy_verify.sh" --repo "$TEST_REPO" --dry-run
-
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"[OK] deploy branch confirmed: main"* ]]
-}
-
-@test "branch_drift_check reports stale non-primary remote branch in dry-run" {
-    run env BRANCH_POLICY_SETTINGS="$TEST_SETTINGS" \
-        bash "$PROJECT_ROOT/scripts/branch_drift_check.sh" --dry-run --no-fetch
-
-    [ "$status" -eq 0 ]
-    [[ "$output" == *"[DRIFT] branch drift: origin/codd/demo-20000101"* ]]
-    [[ "$output" == *"[DRY-RUN] notify:"* ]]
-}
-
 @test "auto_merge_short_lived previews stale matching branch without mutation" {
     run env BRANCH_POLICY_SETTINGS="$TEST_SETTINGS" \
         bash "$PROJECT_ROOT/scripts/auto_merge_short_lived.sh" --dry-run --no-fetch

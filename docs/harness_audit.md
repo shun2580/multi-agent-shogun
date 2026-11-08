@@ -4,10 +4,10 @@ cmd_264 ■3。2026-11-08 時点の実ファイルを読んで作った。推測
 
 ## 1. 数え方（何を1行とするか）
 
-- **1行 = 実ファイル1本**。`scripts/` 直下の 33 本、`scripts/githooks/pre-push` 1 本。
+- **1行 = 実ファイル1本**。`scripts/` 直下の 31 本、`scripts/githooks/pre-push` 1 本。
 - 実ファイルを持たない機構は、機構ごとに1行: `.claude/settings.json` の `permissions.deny`（48 パターン）を1行、`mods/` の4本を各1行。
 - 1ファイルの中に**独立した off スイッチを持つ別機構**があれば、副行を足す（`pretooluse_yaml_guard.sh` の中の parent_cmd_done_gate）。
-- 合計 **40 行** = 33 + 1 + 1 + 4 + 1。
+- 合計 **38 行** = 31 + 1 + 1 + 4 + 1。
 - フラグ（スイッチ）は 3章に別表。行ではなく、行への対応として数える。
 - 範囲外（数えていない）: リポジトリ直下の `shutsujin_departure.sh`・`first_setup.sh`・`setup.sh`、`lib/*.sh`、`tests/`。`lib/quote_masking.py` は git_push_block が使う共有部品で、独立の機構ではない。
 
@@ -43,7 +43,7 @@ cmd_264 ■3。2026-11-08 時点の実ファイルを読んで作った。推測
 
 > G6 の内訳 20 + 25 + 3 = 48 は、deny 配列の通し番号（0-19／20-43 と 47／44-46）で数えた。
 
-### 2.2 ○ 判定を持つが、呼ばれたときだけ働く = 9 行
+### 2.2 ○ 判定を持つが、呼ばれたときだけ働く = 7 行
 
 | # | 行 | 段 | 関門 | セッション内 | 後段の受け皿 | 人 | fail-open | off スイッチ | selftest | 根拠 |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -54,8 +54,6 @@ cmd_264 ■3。2026-11-08 時点の実ファイルを読んで作った。推測
 | C5 | `scripts/preflight_check.sh`（起動前の依存検査） | 決定的（起動手順と watcher_supervisor から） | ○ | ✗ セッション前に走る | ✗ | ✓ 起動失敗として表に出る（exit 1 で起動中止） | いいえ（致命欠落は中止） | ない | `tests/unit/test_preflight.bats` | preflight_check.sh:2-5 / shutsujin_departure.sh:898・watcher_supervisor.sh:109 |
 | C6 | `scripts/mcp_health_check.sh` | 決定的（起動手順） | ○ | ✗ | ✗ | ✓ 起動時の標準出力とログ `logs/mcp_health.log` | いいえ | ない | ない | mcp_health_check.sh:34-47 / shutsujin_departure.sh:1109。**注**: 見るのは codex の pane だけで、現行は全員 Claude のため 0 件検査（`logs/mcp_health.log` 末尾 `checked 0 codex panes`）。何も検査していない |
 | C7 | `scripts/run_e2e_isolated.sh`（E2E を使い捨て tmux でだけ走らせる。生きた陣に触れさせない） | 人間（手で走らせる） | ○ | ✓ 生きた陣に繋がる状況を拒否 | ✗ | ✗ | いいえ | ない | `tests/unit/test_run_e2e_isolated_cleanup.bats`・`test_e2e_disposable_guard.bats` | run_e2e_isolated.sh:2-15 |
-| C8 | `scripts/pre_deploy_verify.sh`（配備先が主ブランチでなければ abort） | 人間（**呼び元がリポジトリ内に無い**） | ○ | ✗ | ✗ | ✗ | いいえ（abort） | ない | `tests/unit/test_branch_policy_scripts.bats` | pre_deploy_verify.sh:34-48。呼び元の grep 結果 = 試験と自身のみ。**3列とも ✗** |
-| C9 | `scripts/branch_drift_check.sh`（主ブランチ以外の長命ブランチを警告） | 決定的（設計=cron）だが**現状未配線** | ○ | ✗ | ✗ | ✗ | いいえ（`monitored_repos` が空なら SystemExit） | ない（cron を入れない=止まっている） | `tests/unit/test_branch_policy_scripts.bats` | branch_drift_check.sh:71（`[DRIFT]` を出すだけ）, lib/branch_policy.sh:70-82 / `crontab -l` に項目なし・`logs/branch_drift_check.log` なし・`settings.yaml`/`.example` に `branch_policy:` なし。**3列とも ✗** |
 
 ### 2.3 — 判定を持たない道具・注入・観測 = 25 行
 
@@ -80,8 +78,8 @@ cmd_264 ■3。2026-11-08 時点の実ファイルを読んで作った。推測
 | T15 | `scripts/agent_status.sh`（busy/idle の表示） | 人間 | — | ない | ない（専用なし。busyguard 等の試験が参照するだけ） | — |
 | T16 | `scripts/ratelimit_check.sh`（レート制限の表示） | 人間 | — | ない | ない | — |
 | T17 | `scripts/resume_auto_heal.sh`（auto_heal の停止解除） | 人間（**自動呼出し禁止**と冒頭に明記） | — | ない | `tests/test_resume_auto_heal.bats` | resume_auto_heal.sh:4-7 |
-| T18 | `scripts/auto_merge_short_lived.sh`（短命ブランチを主ブランチへ merge） | 決定的（設計=cron）だが**現状未配線** | — | ない（cron を入れない=止まっている） | `tests/unit/test_branch_policy_scripts.bats` | 配線の欠如は C9 と同じ事実（cron なし・`branch_policy:` なし）。判定ではなく操作を行う道具のため関門に数えない |
-| T19 | `scripts/setup_cron.sh`（T18・C9 の cron を表示・導入） | 人間 | — | ない | ない | `--install` するまで crontab は変わらない |
+| T18 | `scripts/auto_merge_short_lived.sh`（短命ブランチを主ブランチへ merge） | 決定的（設計=cron）だが**現状未配線** | — | ない（cron を入れない=止まっている） | `tests/unit/test_branch_policy_scripts.bats` | 配線の欠如: cron なし・`branch_policy:` なし。判定ではなく操作を行う道具のため関門に数えない |
+| T19 | `scripts/setup_cron.sh`（T18 の cron を表示・導入） | 人間 | — | ない | ない | `--install` するまで crontab は変わらない |
 | T20 | `scripts/model_update_check.sh`（T21 の薄い包み） | 人間（**リポジトリ内に呼び元なし**。cron 例が冒頭にあるのみ） | — | `config/model_autoupdate.yaml` の `enabled: true` | ない | `logs/model_update_check.log` に 11-04・11-08 の実行跡。crontab は空 |
 | T21 | `scripts/model_update_check.py`（新モデル版の検知・通知のみ） | 人間（T20 経由） | — | 同上 | ない | 自動適用はしない旨が冒頭に明記 |
 | T22 | `scripts/cmd254_aggregate.py`（cmd_254 の前後比較集計・読取専用） | 人間 | — | ない | ない | — |
@@ -91,16 +89,16 @@ cmd_264 ■3。2026-11-08 時点の実ファイルを読んで作った。推測
 
 ### 行数の検算
 
-行は G 6 + C 9 + T 25 = **40**。
+行は G 6 + C 7 + T 25 = **38**。
 
 | 内訳 | 行 | 数 |
 |---|---|---|
-| `scripts/` 直下の実ファイル | G1・G3・G4、C1-C9、T1・T2・T7-T25 | 3 + 9 + 21 = **33**（`ls scripts/*.sh scripts/*.py` = 33） |
+| `scripts/` 直下の実ファイル | G1・G3・G4、C1-C7、T1・T2・T7-T25 | 3 + 7 + 21 = **31**（`ls scripts/*.sh scripts/*.py` = 31） |
 | `scripts/githooks/pre-push` | G5 | 1 |
 | `permissions.deny` | G6 | 1 |
 | `mods/` | T3-T6 | 4 |
 | 副行（G1 のファイルの中の別機構） | G2 | 1 |
-| 合計 | | 33 + 1 + 1 + 4 + 1 = **40** |
+| 合計 | | 31 + 1 + 1 + 4 + 1 = **38** |
 
 ## 3. フラグ（スイッチ）一覧
 
@@ -135,14 +133,13 @@ cmd_264 ■3。2026-11-08 時点の実ファイルを読んで作った。推測
 
 これで 9 − 6 = 3 flag（G1〜G3）+ stop hook 1 = 4 が旧定義の実数。ここへ、旧定義には無かった pre-push（cmd_213）と `permissions.deny` を、◎ の定義（作業経路に常設の関門）で加えると **6**。
 
-**定義の選び方で数は変わる**（旧定義のまま = 4／本表の ◎ = 6／○ まで入れれば 15）。本表は ◎ を採る。定義の採否は家老・将軍の判断。`guard_capacity` を読むコードは無い（コメントとしてのみ存在）。
+**定義の選び方で数は変わる**（旧定義のまま = 4／本表の ◎ = 6／○ まで入れれば 13）。本表は ◎ を採る。定義の採否は家老・将軍の判断。`guard_capacity` を読むコードは無い（コメントとしてのみ存在）。
 
 `config/settings.yaml` の `guard_capacity` は、2026-11-08 に定員を 6（本表の ◎ の実数）に置き直した（将軍の裁き）。新設 1 件につき退役 1 件の規則は変わらない。
 
 ## 5. 3列とも ✗ の行（対策は書かない）
 
-- **C8** `scripts/pre_deploy_verify.sh` — 呼び元がリポジトリ内に無い。
-- **C9** `scripts/branch_drift_check.sh` — cron 未導入・`branch_policy:` 設定なし。
+なし。旧 C8 `pre_deploy_verify.sh`・旧 C9 `branch_drift_check.sh` は、いずれも3列とも ✗ だったが、殿裁定（2026-11-08・cmd_266）で退役した。
 
 ## 6. 表を作る途中で見えた事実（判断せず記す）
 

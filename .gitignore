@@ -166,9 +166,7 @@ scripts/seo_qc.sh
 !scripts/pretooluse_clear_idle.sh
 !scripts/pretooluse_git_push_block.sh
 !scripts/pretooluse_yaml_guard.sh
-!scripts/branch_drift_check.sh
 !scripts/auto_merge_short_lived.sh
-!scripts/pre_deploy_verify.sh
 !scripts/setup_cron.sh
 !scripts/resume_auto_heal.sh
 !scripts/dispatch.sh
