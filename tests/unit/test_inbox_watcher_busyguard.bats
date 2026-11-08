@@ -19,7 +19,9 @@
 # T-BG-B1/B2 : 【直した後】新版 は同じ場面で /clear を送らず、時間を進めても送らない
 # T-BG-B3    : 働き中でない足軽は従来どおり段階的に起こす(本番と同一の入力列)
 # T-BG-B4    : 受け取りの印(read: true)に頼らず成り立つ(未読が残ったままでも送らない)
-# T-BG-C1〜C6: 固まった足軽の知らせ(30分/60分/60分ごと・名と長さ・秘匿値なし・idleで止まる・途切れで数え直す)
+# T-BG-C1〜C7: 固まった足軽の知らせ(cmd_267 以後: 未読30分で まず家老へ inbox → 家老へ知らせて30分(未読の開始から60分)で殿へ ntfy /
+#   連続60分は殿へ直接 / 60分ごとの再通知 / 名と長さ / 秘匿値なし / idleで止まる / 途切れで数え直す /
+#   C7 = 家老への inbox_write が失敗したら殿へ直接(fail-safe))。使い捨ての木に本物の scripts/inbox_write.sh を置き、本物の経路で縛る
 # T-BG-S1〜S2: settings の鍵と既定値
 # T-BG-P1〜P2: 差替が完結している(.new が残らず、旧版は履歴から取れ、本番は旧版と別物) / 起動経路に .new が入っていない
 #
@@ -49,6 +51,9 @@ setup() {
     else
         cp "$SCRIPT_DIR/config/settings.yaml.example" "$WORK/config/settings.yaml"
     fi
+    # cmd_267: ①の1段目(家老へ inbox)は scripts/inbox_write.sh を呼ぶ。置かぬと1段目が失敗して fail-safe の道(殿へ直接)で
+    #   通ってしまい、本物の経路の証明にならぬ。ゆえに本物を置く(失敗の道を縛る C7 だけが、これを消す)
+    cp "$SCRIPT_DIR/scripts/inbox_write.sh" "$WORK/scripts/inbox_write.sh"
     ln -s "$SCRIPT_DIR/.venv" "$WORK/.venv"
     : > "$WORK/recv.log"
     : > "$WORK/notify.out"
@@ -311,7 +316,7 @@ c_run() {
     local verdict="$1" offsets="$2"; shift 2
     install_watcher "$NEW_WATCHER"
     if [ -z "${C_KEEP:-}" ]; then
-        rm -f -- "$WORK"/logs/watcher_busy/*.state
+        rm -f -- "$WORK"/logs/watcher_busy/*.state "$WORK/queue/inbox/karo.yaml"
         : > "$WORK/notify.out"
     fi
     printf '%s' "$verdict" > "$WORK/verdict"
@@ -321,19 +326,61 @@ c_run() {
 }
 
 notify_count() { grep -c . "$WORK/notify.out" || true; }
+# ①(未読が残る)の殿への ntfy の数。②(連続60分)は 未読30分+家老へ30分=60分 と重なって同時に出るので、①だけを数える
+unread_ntfy_count() { grep -c "未読[0-9?]*件が[0-9]*分残っている" "$WORK/notify.out" || true; }
+# 家老の inbox にある inbox_watcher 発の info の数 / 最初の通知のフィールド
+karo_notice_count() {
+    "$SCRIPT_DIR/.venv/bin/python3" -c "
+import sys, yaml
+try:
+    d = yaml.safe_load(open(sys.argv[1], encoding='utf-8')) or {}
+except Exception:
+    d = {}
+print(sum(1 for m in (d.get('messages') or []) if m.get('from') == 'inbox_watcher' and m.get('type') == 'info'))
+" "$WORK/queue/inbox/karo.yaml" 2>/dev/null || echo 0
+}
+karo_field() {
+    "$SCRIPT_DIR/.venv/bin/python3" -c "
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1], encoding='utf-8')) or {}
+ms = [m for m in d.get('messages', []) if m.get('from') == 'inbox_watcher']
+print(ms[0].get(sys.argv[2], '') if ms else '')
+" "$WORK/queue/inbox/karo.yaml" "$1"
+}
 
-@test "T-BG-C1: 働き中のまま未読が30分残ると ntfy が1回(30分前は0回)。足軽の名・task_id・長さが載り、/clear は送らない" {
+@test "T-BG-C1: 働き中のまま未読が30分残ると、まず家老へ inbox が1通(殿へはまだ出ぬ)。家老へ知らせて30分(未読の開始から60分)で殿へ ntfy が1回。/clear は送らない" {
     # 5分刻み。unread は inbox に残ったまま(read:false)
     c_run 0 "0 300 600 900 1200 1500 1799"
     [ "$(notify_count)" -eq 0 ]
+    [ "$(karo_notice_count)" -eq 0 ]
+    # 30分: 1段目 = 家老へ inbox。殿への ntfy はまだ 0
     c_run 0 "0 300 600 900 1200 1500 1799 1800 1860"
+    echo "--- karo inbox content ---"; karo_field content
+    [ "$(karo_notice_count)" -eq 1 ]
+    [ "$(karo_field from)" = "inbox_watcher" ]
+    [ "$(karo_field type)" = "info" ]
+    [ "$(karo_field task_id)" = "busyguard_ashigaru9" ]
+    [[ "$(karo_field content)" == *"ashigaru9"* ]]
+    [[ "$(karo_field content)" == *"subtask_999_A"* ]]
+    [[ "$(karo_field content)" == *"30分"* ]]
+    [ "$(notify_count)" -eq 0 ]
+    grep -q "stage1(karo)" "$WORK/driver.log"
+    # 家老へ知らせて30分(=未読の開始から60分)の直前までは殿へ出ない
+    c_run 0 "0 300 600 900 1200 1500 1799 1800 1860 2400 3000 3599"
+    [ "$(unread_ntfy_count)" -eq 0 ]
+    [ "$(karo_notice_count)" -eq 1 ]
+    # 60分: 2段目 = 殿へ ntfy が1回(名・task_id・長さ・家老へ知らせた旨)
+    c_run 0 "0 300 600 900 1200 1500 1799 1800 1860 2400 3000 3599 3600 3660"
     echo "--- notify.out ---"; cat "$WORK/notify.out"
-    [ "$(notify_count)" -eq 1 ]
+    [ "$(unread_ntfy_count)" -eq 1 ]
+    [ "$(karo_notice_count)" -eq 1 ]
     grep -q "ashigaru9" "$WORK/notify.out"
     grep -q "subtask_999_A" "$WORK/notify.out"
-    grep -q "30分" "$WORK/notify.out"
+    grep -q "60分" "$WORK/notify.out"
     grep -q "未読" "$WORK/notify.out"
+    grep -q "家老へ inbox で知らせて30分" "$WORK/notify.out"
     ! grep -q "Sending /clear" "$WORK/driver.log"
+    [ ! -s "$WORK/recv.log" ]
 }
 
 @test "T-BG-C2: 未読の有無を問わず働き中が連続60分で ntfy が1回(未読0でも出る)" {
@@ -348,22 +395,26 @@ notify_count() { grep -c . "$WORK/notify.out" || true; }
     grep -q "subtask_999_A" "$WORK/notify.out"
     grep -q "60分" "$WORK/notify.out"
     grep -q "連続" "$WORK/notify.out"
+    # ②(連続60分)は従来どおり殿へ直接。家老へは何も送らぬ(未読0ゆえ①の1段目も無い)
+    [ "$(karo_notice_count)" -eq 0 ]
 }
 
-@test "T-BG-C3: 続く間は60分ごとに1回(未読あり: 30/60/90/120/150分で①②が各回出て、その間は出ない)" {
+@test "T-BG-C3: 続く間の殿への再通知は60分ごと(未読あり: 家老へは30分で1通のみ。殿へ①は60/120分、②は60/120分で出て、その間は出ない)" {
     # 5分刻みで 0〜150分(未読は残ったまま)
     local offs="" t
     for t in $(seq 0 300 9000); do offs="$offs $t"; done
     c_run 0 "$offs"
     echo "--- notify.out ---"; cat "$WORK/notify.out"
-    # ①(未読): 30,90 分 → 2回(150分目は 9000s=150分ちょうどで3回目)  ②(連続): 60,120 分 → 2回
+    # 家老へ(1段目): 30分に1通のみ。再送せぬ
+    [ "$(karo_notice_count)" -eq 1 ]
+    # ①(未読): 家老へ知らせて30分=未読60分で1回目 → 以後60分ごと(120分で2回目。180分は範囲外)  ②(連続): 60,120 分 → 2回
     local unread_n cont_n
-    unread_n=$(grep -c "未読.*分残っている" "$WORK/notify.out" || true)
+    unread_n=$(unread_ntfy_count)
     cont_n=$(grep -c "連続している" "$WORK/notify.out" || true)
     echo "unread_n=$unread_n cont_n=$cont_n"
-    [ "$unread_n" -eq 3 ]
+    [ "$unread_n" -eq 2 ]
     [ "$cont_n" -eq 2 ]
-    [ "$(notify_count)" -eq 5 ]
+    [ "$(notify_count)" -eq 4 ]
 }
 
 @test "T-BG-C4: idleが1度観測されたら連続は止まり、数え直す(35分→idle→35分では出ない。止めなければ72分で出る)" {
@@ -403,8 +454,27 @@ notify_count() { grep -c . "$WORK/notify.out" || true; }
     local fake="ZZ_FAKE_SECRET_TOPIC_9f3a"
     c_run 0 "0 600 1200 1800 2400 3000 3600 4200" NTFY_TOPIC="$fake" SHOGUN_SECRETS_FILE="$WORK/none.env"
     [ "$(notify_count)" -ge 1 ]
+    # 家老の inbox(本物の経路で書かれる)・状態ファイル・ログ・写しのどこにも漏れぬ
+    [ "$(karo_notice_count)" -eq 1 ]
     ! grep -rqF "$fake" "$WORK/notify.out" "$WORK/driver.log" "$WORK/logs" "$WORK/queue"
     ! grep -qiE "topic|token|bearer|password" "$WORK/notify.out"
+    ! grep -qiE "topic|token|bearer|password" <<<"$(karo_field content)"
+}
+
+@test "T-BG-C7: fail-safe — 家老への inbox_write が失敗したら、知らせの道を塞がぬよう30分でその場で殿へ ntfy する(家老の inbox は作られぬ)" {
+    # c_run は install_watcher しか呼ばぬ。inbox_write.sh を消してから走らせる(setup が置いた本物を消す)
+    rm -f "$WORK/scripts/inbox_write.sh"
+    c_run 0 "0 300 600 900 1200 1500 1799"
+    [ "$(notify_count)" -eq 0 ]
+    c_run 0 "0 300 600 900 1200 1500 1799 1800 1860"
+    echo "--- notify.out ---"; cat "$WORK/notify.out"
+    [ "$(unread_ntfy_count)" -eq 1 ]
+    grep -q "ashigaru9" "$WORK/notify.out"
+    grep -q "30分" "$WORK/notify.out"
+    grep -q "stage1-FAIL" "$WORK/driver.log"
+    # 1段目が成り立たなかったので「家老へ知らせて」の文言は付かず、家老の inbox も無い
+    ! grep -q "家老へ inbox で知らせて" "$WORK/notify.out"
+    [ ! -f "$WORK/queue/inbox/karo.yaml" ]
 }
 
 # ═══════════════════════════════════════════════════════════════
