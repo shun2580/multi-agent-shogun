@@ -1005,3 +1005,4 @@ External PRs are reinforcements. Treat with respect.
     - `blocked` は `mods/status/hooks/lib.js` の `CMD_ACTIVE` に既にある値であり、mods/status の進行 cmd の数え方は変わらない。終端(`done` 等)ではないので、裁定が出るまで cmd は閉じない(上記13の終端規則とは別)。
 18. **`src/` を変える peak-sim の cmd は、採点の前後差を報告に付ける(cmd_257・peak-sim 指示書#06 G の5)**: peak-sim の `src/` を変える cmd では、家老がその task YAML に「正解データによる採点の前後差を報告に付ける」を書く。軍師の QC は、報告にその前後差が付いているかを見る。
     - 採点の道具と正解データは peak-sim の `benchmarks/real-apps/` にある。使い方はそのディレクトリの記述を正とし、ここには道具の名前や引数を書かない。
+19. **足軽の画面へキーを送る手順(条件つき・cmd_268・殿裁定 2026-11-08。Foreground Block Prevention 表の『capture-pane FORBIDDEN』と CLAUDE.md の『Agents NEVER call tmux send-keys directly』の例外)**: 送る前に必ず `capture-pane` で画面を読んで写しを残す。送ってよいのは、評価のアンケートを閉じること(`0`)と、前面で止まったコマンドを Escape で止めることだけ。許可の確認画面のうち、破壊的な操作・push・秘匿値に関わるものには答えず殿へ上げる。送ったら毎回 dashboard に記録する。
