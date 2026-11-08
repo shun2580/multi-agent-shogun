@@ -221,6 +221,17 @@ continuous_ntfy_count() { grep -c "分連続している" "$WORK/notify.out" || 
     [ "$(karo_notice_count)" -eq 1 ]
 }
 
+@test "T-ON-A3b: 連続が先に出た止まりでも、抑止し続けて殿へ永久に出なくなることはない(60分ごとに1通ずつ続く)" {
+    write_inbox ashigaru9 true
+    uk_run 0 "$(offs 0 20)"
+    write_inbox ashigaru9 false
+    UK_KEEP=1 uk_run 0 "$(offs 21 125)"
+    [ "$(lord_notice_count)" -eq 2 ]
+    UK_KEEP=1 uk_run 0 "$(offs 126 185)"
+    echo "--- notify.out ---"; cat "$WORK/notify.out"
+    [ "$(lord_notice_count)" -eq 3 ]
+}
+
 @test "T-ON-A4: 家老の見張り役(AGENT_ID=karo)も同じ: 30分の直接 ntfy の後、60分の連続は重ねて出さぬ" {
     cp "$WORK/queue/inbox/ashigaru9.yaml" "$WORK/queue/inbox/karo.yaml"
     cat > "$WORK/queue/tasks/karo.yaml" <<'NEOF'

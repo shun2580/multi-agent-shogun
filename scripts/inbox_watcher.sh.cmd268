@@ -2338,6 +2338,15 @@ _bg_send_karo_unread() {
     return "$rc"
 }
 
+# _bg_lord_recent <いま> <他方の殿への⏳の最終送信時刻> — 0=他方が repeat_notify_minutes 以内に殿へ出している(cmd_268)。
+#   殿へ ⏳ を出す2経路(①未読が残る・②連続)は、同じ止まりで同時に満ちると2通届いた。先に出した方が持ち、
+#   もう一方は出さずに自分の『最終送信』を相手の時刻へ揃える(now にすると周期がずれて後の再通知が止まり続けるため)。
+#   送信に失敗した側は NOTIFIED が 0 のままゆえ、他方が出す(殿への道を塞がぬ)。確認画面の🛑は別の知らせで対象外。
+_bg_lord_recent() {
+    local now="$1" other="$2"
+    [ "$other" -gt 0 ] && [ "$((now - other))" -lt "$((BUSYGUARD_REPEAT_MIN * 60))" ]
+}
+
 # _bg_unread_stage <いま> <未読件数> <task_id> <未読の分> <待機でない分> <what> <画面の分類> — ①の2段
 #   1段目: 未読が unread_notify_minutes 残ったら、まず家老へ inbox で知らせる(殿へは出さぬ)。家老が画面を読んで判断する。
 #   2段目: 家老へ知らせてから unread_ntfy_after_minutes 分たっても解けなければ殿へ ntfy(従来どおり repeat_notify_minutes ごとに再通知)。
@@ -2377,6 +2386,12 @@ _bg_unread_stage() {
     fi
 
     if [ "$do_ntfy" -eq 1 ] \
+       && { [ "$BG_UNREAD_NOTIFIED" -eq 0 ] || [ "$((now - BG_UNREAD_NOTIFIED))" -ge "$repeat_sec" ]; } \
+       && _bg_lord_recent "$now" "$BG_LONG_NOTIFIED"; then
+        # cmd_268: ②(連続)が repeat_notify_minutes 以内に殿へ出している → 同じ止まりで重ねて出さぬ。周期は②に揃える
+        echo "[$(date)] [BUSY-GUARD] notify(unread) suppressed agent=$AGENT_ID reason=lord_notified_by_continuous — 同じ止まりで殿へは②が出した。重ねて出さぬ" >&2
+        BG_UNREAD_NOTIFIED=$BG_LONG_NOTIFIED
+    elif [ "$do_ntfy" -eq 1 ] \
        && { [ "$BG_UNREAD_NOTIFIED" -eq 0 ] || [ "$((now - BG_UNREAD_NOTIFIED))" -ge "$repeat_sec" ]; } \
        && { [ "$BG_UNREAD_ATTEMPT" -eq 0 ] || [ "$((now - BG_UNREAD_ATTEMPT))" -ge "$BUSYGUARD_RETRY_SEC" ]; }; then
         msg="⏳ ${AGENT_ID}が${what}まま未読${unread:-?}件が${mins}分残っている(task=${task_id}、待機でない状態${busy_mins}分)。キーは送っていない"
@@ -2478,6 +2493,13 @@ busy_guard_tick() {
 
         # ② 未読の有無を問わず待機と言い切れぬ状態が連続(判別不能だけは未読が無ければ知らせぬ=無害な見慣れぬ画面で騒がぬ)
         if [ "$cls" != "undetermined" ] \
+           && [ "$((now - BG_BUSY_SINCE))" -ge "$((BUSYGUARD_CONTINUOUS_MIN * 60))" ] \
+           && { [ "$BG_LONG_NOTIFIED" -eq 0 ] || [ "$((now - BG_LONG_NOTIFIED))" -ge "$repeat_sec" ]; } \
+           && _bg_lord_recent "$now" "$BG_UNREAD_NOTIFIED"; then
+            # cmd_268: ①(未読)が repeat_notify_minutes 以内に殿へ出している → 同じ止まりで重ねて出さぬ。周期は①に揃える
+            echo "[$(date)] [BUSY-GUARD] notify(continuous) suppressed agent=$AGENT_ID reason=lord_notified_by_unread — 同じ止まりで殿へは①が出した。重ねて出さぬ" >&2
+            BG_LONG_NOTIFIED=$BG_UNREAD_NOTIFIED
+        elif [ "$cls" != "undetermined" ] \
            && [ "$((now - BG_BUSY_SINCE))" -ge "$((BUSYGUARD_CONTINUOUS_MIN * 60))" ] \
            && { [ "$BG_LONG_NOTIFIED" -eq 0 ] || [ "$((now - BG_LONG_NOTIFIED))" -ge "$repeat_sec" ]; } \
            && { [ "$BG_LONG_ATTEMPT" -eq 0 ] || [ "$((now - BG_LONG_ATTEMPT))" -ge "$BUSYGUARD_RETRY_SEC" ]; }; then
